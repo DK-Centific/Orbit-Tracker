@@ -395,11 +395,61 @@ nav {
    FIELD COLLECTION EQUIPMENT CHECKER (welcome page)
    ========================================================= */
 .equipment-card-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   gap: 16px; margin-bottom: 4px;
   flex-wrap: wrap;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 10px;
+  margin: -6px;
+  padding: 6px;
+  transition: background 0.18s ease;
+}
+.equipment-card-head:hover {
+  background: var(--bg3);
 }
 .equipment-card-head > div:first-child { min-width: 0; flex: 1; }
+.eq-head-right {
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.eq-toggle {
+  width: 30px; height: 30px;
+  background: var(--bg3); border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2);
+  transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s;
+  flex-shrink: 0;
+}
+.equipment-card-head:hover .eq-toggle {
+  background: var(--bg4);
+  color: var(--text);
+}
+.eq-toggle svg {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(180deg);  /* expanded: chevron points up */
+}
+.equipment-card.collapsed .eq-toggle svg {
+  transform: rotate(0deg);    /* collapsed: chevron points down */
+}
+
+/* Smooth grid-template-rows collapse — no fixed max-height needed */
+.equipment-collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.equipment-collapsible > .eq-collapsible-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.equipment-card.collapsed .equipment-collapsible {
+  grid-template-rows: 0fr;
+}
+.equipment-card.collapsed .card-desc {
+  display: none;
+}
 
 .equipment-progress {
   display: inline-flex; align-items: center; gap: 8px;
@@ -1531,6 +1581,7 @@ function defaultState() {
     sessionDate: todayISO(),
     theme: 'dark',
     equipment: {},
+    equipmentCollapsed: false,
     stations: {},
   };
   // Initialize equipment as unpacked
@@ -1588,6 +1639,7 @@ function migrateState(loaded) {
   EQUIPMENT_LIST.forEach(it => {
     if (typeof loaded.equipment[it.id] !== 'boolean') loaded.equipment[it.id] = false;
   });
+  if (typeof loaded.equipmentCollapsed !== 'boolean') loaded.equipmentCollapsed = false;
 
   // Stations
   if (!loaded.stations || typeof loaded.stations !== 'object') loaded.stations = {};
@@ -1821,14 +1873,15 @@ function equipmentCardHTML() {
   const allRequiredPacked = packedRequired === totalRequired;
   const totalAll = EQUIPMENT_LIST.length;
   const packedAll = EQUIPMENT_LIST.filter(i => eq[i.id]).length;
+  const collapsed = state.equipmentCollapsed === true;
 
   const progressLabel = allRequiredPacked
     ? `<svg width="11" height="9" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Ready to head out`
     : `<span class="equipment-progress-ring"><svg width="9" height="7" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> ${packedRequired} / ${totalRequired} packed`;
 
   return `
-    <div class="card equipment-card">
-      <div class="equipment-card-head">
+    <div class="card equipment-card ${collapsed ? 'collapsed' : ''}">
+      <div class="equipment-card-head" id="eqHead" role="button" tabindex="0" aria-expanded="${!collapsed}" aria-controls="eqBody">
         <div>
           <div class="card-title">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="color:var(--accent-ink)">
@@ -1840,10 +1893,19 @@ function equipmentCardHTML() {
           </div>
           <div class="card-desc">Pack and verify all of the following before heading out.</div>
         </div>
-        <div class="equipment-progress ${allRequiredPacked ? 'complete' : ''}">
-          ${progressLabel}
+        <div class="eq-head-right">
+          <div class="equipment-progress ${allRequiredPacked ? 'complete' : ''}">
+            ${progressLabel}
+          </div>
+          <span class="eq-toggle" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
         </div>
       </div>
+      <div class="equipment-collapsible" id="eqBody">
+        <div class="eq-collapsible-inner">
       <div class="equipment-list">
         ${EQUIPMENT_LIST.map(item => `
           <div class="equipment-row ${eq[item.id] ? 'packed' : ''}" data-eq="${item.id}" role="button" tabindex="0" aria-pressed="${eq[item.id] ? 'true' : 'false'}">
@@ -1877,20 +1939,54 @@ function equipmentCardHTML() {
           ${packedAll} of ${totalAll} items checked${EQUIPMENT_LIST.some(i => i.optional) ? ' (incl. optional)' : ''}
         </span>
       </div>
+        </div>
+      </div>
     </div>
   `;
 }
 
 function bindEquipmentRows() {
+  // Helper: snapshot whether all REQUIRED items are packed
+  const allRequiredPacked = () => {
+    return EQUIPMENT_LIST.filter(i => !i.optional).every(i => state.equipment[i.id]);
+  };
+
+  // Equipment row toggles
   document.querySelectorAll('.equipment-row').forEach(row => {
     const toggle = (e) => {
-      // Don't toggle when clicking a link inside the description
       if (e.target.closest('a')) return;
       const id = row.dataset.eq;
+      const wasComplete = allRequiredPacked();
+
       state.equipment[id] = !state.equipment[id];
-      saveState();
-      // Re-render only the welcome (current page is welcome)
-      renderApp();
+      const isNowComplete = allRequiredPacked();
+
+      // Auto-collapse trigger: transitioning incomplete → complete.
+      // We render expanded first so the user sees their final check land,
+      // then animate to collapsed after a brief beat.
+      const shouldAutoCollapse = !wasComplete && isNowComplete;
+
+      if (shouldAutoCollapse) {
+        state.equipmentCollapsed = false;  // ensure expanded for the render
+        saveState();
+        renderApp();
+        // Wait long enough for the user's eye to register the last check
+        // (~0.55s), then trigger the collapse animation surgically — no
+        // re-render, so the CSS transition plays smoothly.
+        setTimeout(() => {
+          // Verify state is still complete (in case user un-packed during the delay)
+          if (!allRequiredPacked()) return;
+          state.equipmentCollapsed = true;
+          saveState();
+          const card = document.querySelector('.equipment-card');
+          const head = document.getElementById('eqHead');
+          if (card) card.classList.add('collapsed');
+          if (head) head.setAttribute('aria-expanded', 'false');
+        }, 550);
+      } else {
+        saveState();
+        renderApp();
+      }
     };
     row.addEventListener('click', toggle);
     row.addEventListener('keydown', (e) => {
@@ -1900,15 +1996,59 @@ function bindEquipmentRows() {
       }
     });
   });
+
+  // Manual toggle: click anywhere on the card head to expand/collapse
+  const head = document.getElementById('eqHead');
+  if (head) {
+    const toggleCollapsed = () => {
+      state.equipmentCollapsed = !state.equipmentCollapsed;
+      saveState();
+      const card = document.querySelector('.equipment-card');
+      if (card) card.classList.toggle('collapsed', state.equipmentCollapsed);
+      head.setAttribute('aria-expanded', String(!state.equipmentCollapsed));
+    };
+    head.addEventListener('click', (e) => {
+      // Don't toggle when interacting with focusable children inside the head
+      if (e.target.closest('a, input, select, button')) return;
+      toggleCollapsed();
+    });
+    head.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        toggleCollapsed();
+      }
+    });
+  }
+
+  // "Mark all packed" / "Reset all" button
   const markAll = document.getElementById('eqMarkAll');
   if (markAll) {
     markAll.addEventListener('click', () => {
       const totalAll = EQUIPMENT_LIST.length;
       const packedAll = EQUIPMENT_LIST.filter(i => state.equipment[i.id]).length;
-      const setTo = !(packedAll === totalAll);  // if all packed, reset; else mark all
+      const setTo = !(packedAll === totalAll);
+      const wasComplete = allRequiredPacked();
       EQUIPMENT_LIST.forEach(it => { state.equipment[it.id] = setTo; });
-      saveState();
-      renderApp();
+      const isNowComplete = allRequiredPacked();
+
+      // Same auto-collapse behaviour when marking all packed
+      if (!wasComplete && isNowComplete) {
+        state.equipmentCollapsed = false;
+        saveState();
+        renderApp();
+        setTimeout(() => {
+          if (!allRequiredPacked()) return;
+          state.equipmentCollapsed = true;
+          saveState();
+          const card = document.querySelector('.equipment-card');
+          const head = document.getElementById('eqHead');
+          if (card) card.classList.add('collapsed');
+          if (head) head.setAttribute('aria-expanded', 'false');
+        }, 550);
+      } else {
+        saveState();
+        renderApp();
+      }
       toast(setTo ? 'All equipment marked packed' : 'Equipment list reset');
     });
   }
