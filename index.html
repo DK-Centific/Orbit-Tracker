@@ -3597,6 +3597,295 @@ nav {
 /* Old .scenario-status select styles are now unused but kept for backwards
    compat with any cached pages. Newer pages won't render selects. */
 
+
+/* =========================================================
+   ADMIN OVERVIEW DASHBOARD
+   Apple-inspired tiles + filter bar + charts
+   ========================================================= */
+.ov-root {
+  display: flex; flex-direction: column;
+  gap: 18px;
+}
+
+/* ---- Filter bar ---- */
+.ov-filterbar {
+  display: flex; align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+.ov-filter-spacer { flex: 1 1 auto; min-width: 12px; }
+.ov-filter-group {
+  display: inline-flex;
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  border: 0.5px solid var(--border);
+}
+.ov-pill {
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.ov-pill:hover { color: var(--text); background: var(--bg4); }
+.ov-pill.active {
+  background: var(--card-bg);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 0 0 0.5px var(--border-strong);
+}
+
+.ov-select-group {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.ov-select-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ov-select {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 8px 30px 8px 12px;
+  background-color: var(--bg3);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--text);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  min-width: 150px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.ov-select:hover { border-color: var(--text3); }
+.ov-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---- Stat tiles ---- */
+.ov-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.ov-stat-tile {
+  position: relative;
+  padding: 18px 20px;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  display: flex; gap: 14px; align-items: flex-start;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.2s;
+  cursor: default;
+}
+.ov-stat-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+}
+.ov-stat-glow {
+  position: absolute;
+  top: -40%; right: -40%;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at center, var(--accent-soft) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.ov-stat-tile:hover .ov-stat-glow { opacity: 1; }
+.ov-stat-tile.ov-stat-moderators .ov-stat-glow { background: radial-gradient(circle at center, rgba(0,240,255,0.25) 0%, transparent 70%); }
+.ov-stat-tile.ov-stat-teams .ov-stat-glow { background: radial-gradient(circle at center, rgba(168,85,247,0.20) 0%, transparent 70%); }
+.ov-stat-tile.ov-stat-participants .ov-stat-glow { background: radial-gradient(circle at center, rgba(34,197,94,0.20) 0%, transparent 70%); }
+.ov-stat-tile.ov-stat-bookings .ov-stat-glow { background: radial-gradient(circle at center, rgba(245,158,11,0.20) 0%, transparent 70%); }
+
+.ov-stat-icon {
+  flex-shrink: 0;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  z-index: 1;
+}
+.ov-stat-icon svg { width: 20px; height: 20px; }
+.ov-stat-tile.ov-stat-moderators .ov-stat-icon { background: rgba(0,240,255,0.10); color: var(--accent-ink); }
+.ov-stat-tile.ov-stat-teams .ov-stat-icon { background: rgba(168,85,247,0.12); color: #a855f7; }
+.ov-stat-tile.ov-stat-participants .ov-stat-icon { background: rgba(34,197,94,0.12); color: var(--green-text); }
+.ov-stat-tile.ov-stat-bookings .ov-stat-icon { background: rgba(245,158,11,0.12); color: var(--amber-text); }
+
+.ov-stat-body { z-index: 1; min-width: 0; }
+.ov-stat-value {
+  font-family: var(--font-num);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.ov-stat-label {
+  font-size: 12px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  font-weight: 500;
+}
+
+@media (max-width: 980px) {
+  .ov-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .ov-stats { grid-template-columns: 1fr; }
+  .ov-filter-spacer { display: none; }
+  .ov-select { min-width: 130px; }
+}
+
+/* ---- Charts ---- */
+.ov-charts {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+}
+.ov-chart-card {
+  padding: 18px 20px;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  position: relative;
+  overflow: hidden;
+}
+.ov-chart-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 14px;
+}
+.ov-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+.ov-chart-sub {
+  font-size: 11px;
+  color: var(--text3);
+  letter-spacing: -0.005em;
+  font-family: var(--font-num);
+  font-weight: 500;
+}
+
+.ov-line-wrap { width: 100%; }
+.ov-line-svg { width: 100%; height: 180px; display: block; }
+
+.ov-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text3);
+  font-size: 12px;
+  letter-spacing: -0.005em;
+}
+
+/* Donut */
+.ov-donut-wrap {
+  display: flex; gap: 22px; align-items: center;
+  padding: 4px 0;
+}
+.ov-donut-svg-wrap {
+  position: relative;
+  width: 140px; height: 140px;
+  flex-shrink: 0;
+}
+.ov-donut-svg { width: 100%; height: 100%; }
+.ov-donut-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.ov-donut-pct {
+  font-family: var(--font-num);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  line-height: 1;
+}
+.ov-donut-cap {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-top: 3px;
+  font-weight: 500;
+}
+.ov-donut-legend {
+  flex: 1;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: -0.005em;
+}
+.ov-donut-legend-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border-radius: 8px;
+}
+.ov-donut-legend-row span:nth-child(2) { flex: 1; color: var(--text2); }
+.ov-donut-num {
+  font-family: var(--font-num);
+  font-weight: 600;
+  color: var(--text);
+}
+.ov-donut-swatch {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ov-sw-done { background: var(--accent); }
+.ov-sw-rem { background: var(--bg4); border: 0.5px solid var(--border-strong); }
+
+@media (max-width: 760px) {
+  .ov-charts { grid-template-columns: 1fr; }
+  .ov-donut-wrap { flex-direction: column; gap: 16px; align-items: stretch; }
+  .ov-donut-svg-wrap { margin: 0 auto; }
+}
+
+/* Subtle entrance animation on render */
+.ov-stat-tile, .ov-chart-card {
+  animation: ov-fade-up 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.ov-stats .ov-stat-tile:nth-child(1) { animation-delay: 0.00s; }
+.ov-stats .ov-stat-tile:nth-child(2) { animation-delay: 0.04s; }
+.ov-stats .ov-stat-tile:nth-child(3) { animation-delay: 0.08s; }
+.ov-stats .ov-stat-tile:nth-child(4) { animation-delay: 0.12s; }
+.ov-charts .ov-chart-card:nth-child(1) { animation-delay: 0.16s; }
+.ov-charts .ov-chart-card:nth-child(2) { animation-delay: 0.20s; }
+@keyframes ov-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Cancelled assignment chip — visible but visually muted */
 .cal-asgn.cancelled {
   background: var(--bg4);
@@ -5840,6 +6129,12 @@ const adminState = {
   calView: 'week',           // 'day' | 'week'
   calAnchor: null,           // YYYY-MM-DD anchor date (week start = this day - dow)
   modal: null,               // { kind: 'createTeam' | 'editTeam' | 'createAssignment' | 'viewAssignment', ...payload }
+  // Overview dashboard state
+  overview: {
+    timeScope: 'all',        // 'day' | 'week' | 'month' | 'all'
+    teamId: 'all',           // 'all' | <teamId number>
+    moderatorId: 'all',      // 'all' | <orbitLoginId>
+  },
 };
 
 // Field-name resolver: tolerates camelCase, PascalCase, snake_case,
@@ -6042,10 +6337,421 @@ function renderAdmin() {
   renderAdminTabBody();
 }
 
+
+/* ============================================================
+   ADMIN — OVERVIEW DASHBOARD
+   Filter-driven metrics dashboard with stat tiles + charts.
+   ============================================================ */
+
+// Returns a date range [startMs, endMs] for the active time scope.
+// `all` returns null/null (no bounds).
+function overviewDateRange(scope) {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+  if (scope === 'day') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return [start, end];
+  }
+  if (scope === 'week') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+    return [start, end];
+  }
+  if (scope === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29).getTime();
+    return [start, end];
+  }
+  return [null, null];
+}
+
+// Pure function: filters + raw state -> metrics object
+function computeOverviewMetrics() {
+  const f = adminState.overview;
+  const [startMs, endMs] = overviewDateRange(f.timeScope);
+
+  // ----- Source data
+  const allMods = adminState.moderators || [];
+  const allParts = adminState.participants || [];
+  const allTeams = adminState.teams || [];
+  const allAsgns = adminState.assignments || [];
+  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+
+  // ----- Apply team + moderator filters
+  // A "live team" is a team with at least one assignment (in scope).
+  const teamMatch = (teamId) => f.teamId === 'all' || String(teamId) === String(f.teamId);
+
+  // Helper: does this assignment match the moderator filter?
+  const modMatch = (asgn) => {
+    if (f.moderatorId === 'all') return true;
+    const target = String(f.moderatorId).toLowerCase();
+    return (asgn.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === target);
+  };
+
+  // Helper: parse YYYY-MM-DD + startMin into millis
+  const asgnStartMs = (a) => {
+    if (!a.date) return 0;
+    const [y, mo, d] = a.date.split('-').map(Number);
+    const sm = a.startMin || 0;
+    return new Date(y, mo - 1, d, Math.floor(sm / 60), sm % 60).getTime();
+  };
+
+  // Filtered assignments (by date + team + mod)
+  const inDateRange = (ms) => (startMs === null) || (ms >= startMs && ms <= endMs);
+  const filteredAsgns = allAsgns.filter(a =>
+    inDateRange(asgnStartMs(a)) && teamMatch(a.teamId) && modMatch(a)
+  );
+
+  // ----- Tile metrics
+  // Total Moderators — filtered by team membership if a team is selected, and
+  // by mod selection if a single mod is chosen.
+  let modList = allMods.slice();
+  if (f.teamId !== 'all') {
+    const team = allTeams.find(t => String(t.id) === String(f.teamId));
+    if (team) {
+      const ids = new Set([...(team.primaryIds || []), team.backupId].filter(Boolean).map(String).map(s => s.toLowerCase()));
+      modList = modList.filter(m => ids.has(String(m.orbitLoginId || '').toLowerCase()));
+    } else {
+      modList = [];
+    }
+  }
+  if (f.moderatorId !== 'all') {
+    modList = modList.filter(m => String(m.orbitLoginId || '').toLowerCase() === String(f.moderatorId).toLowerCase());
+  }
+  const totalMods = modList.length;
+
+  // Total live teams — teams that own at least one filtered assignment
+  const liveTeamIds = new Set(filteredAsgns.map(a => a.teamId).filter(x => x !== null && x !== undefined));
+  // If a specific team is chosen, treat it as live regardless (operator view of "this team")
+  if (f.teamId !== 'all') liveTeamIds.add(Number(f.teamId));
+  const totalLiveTeams = liveTeamIds.size;
+
+  // Total participants — unique participants in the filtered assignments
+  const partIds = new Set();
+  filteredAsgns.forEach(a => {
+    const pid = a.participantOrbitId || (a.participantData && (a.participantData.email || a.participantData.firstName + '|' + a.participantData.lastName));
+    if (pid) partIds.add(String(pid).toLowerCase());
+  });
+  const totalParticipants = partIds.size;
+
+  // Total bookings — filtered assignment count (excluding cancelled)
+  const totalBookings = filteredAsgns.filter(a => a.status !== 'Cancelled').length;
+
+  // ----- Bookings by day (chart 1)
+  const dayBuckets = new Map();   // 'YYYY-MM-DD' -> count
+  filteredAsgns.forEach(a => {
+    if (a.status === 'Cancelled') return;
+    if (!a.date) return;
+    dayBuckets.set(a.date, (dayBuckets.get(a.date) || 0) + 1);
+  });
+  // Build a contiguous date series so the chart draws a clean line even on empty days
+  let series = [];
+  if (filteredAsgns.length > 0 || f.timeScope !== 'all') {
+    let lo, hi;
+    if (f.timeScope === 'all') {
+      const dates = [...dayBuckets.keys()].sort();
+      if (dates.length === 0) {
+        series = [];
+      } else {
+        lo = dates[0]; hi = dates[dates.length - 1];
+      }
+    } else {
+      const range = overviewDateRange(f.timeScope);
+      lo = ymd(new Date(range[0]));
+      hi = ymd(new Date(range[1]));
+    }
+    if (lo && hi) {
+      const start = new Date(lo + 'T00:00:00');
+      const end = new Date(hi + 'T00:00:00');
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        const key = ymd(cursor);
+        series.push({ date: key, count: dayBuckets.get(key) || 0 });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+  }
+
+  // ----- Completed vs Remaining (chart 2)
+  // A participant counts as "completed" if at least one of their filtered
+  // assignments has a `session_done` row in the worklog cache.
+  const completedPartIds = new Set();
+  const filteredAsgnIds = new Set(filteredAsgns.map(a => a.id));
+  cache.forEach(row => {
+    if (row.status !== 'session_done') return;
+    if (!filteredAsgnIds.has(row.assignmentId)) return;
+    // Find the assignment to extract the participant key
+    const a = filteredAsgns.find(x => x.id === row.assignmentId);
+    if (!a) return;
+    const pid = a.participantOrbitId || (a.participantData && (a.participantData.email || a.participantData.firstName + '|' + a.participantData.lastName));
+    if (pid) completedPartIds.add(String(pid).toLowerCase());
+  });
+  const completedCount = completedPartIds.size;
+  const remainingCount = Math.max(0, totalParticipants - completedCount);
+
+  return {
+    totalMods, totalLiveTeams, totalParticipants, totalBookings,
+    series, completedCount, remainingCount,
+  };
+}
+
+// ----- Renderers
+function renderOverview(body) {
+  // Lazy-load missing data so the dashboard works even when the admin opens
+  // Overview as their first action.
+  if (!adminState.moderators) loadModerators(false);
+  if (!adminState.participants) loadParticipants(false);
+  // Hydrate teams + assignments from localStorage if they haven't been loaded yet
+  if (!adminState._asgnLoaded) {
+    const stored = (typeof loadAssignmentData === 'function') ? loadAssignmentData() : { teams: [], assignments: [] };
+    adminState.teams = stored.teams;
+    adminState.assignments = stored.assignments;
+    adminState._asgnLoaded = true;
+  }
+
+  const f = adminState.overview;
+  const m = computeOverviewMetrics();
+  const teams = adminState.teams || [];
+  const allMods = adminState.moderators || [];
+
+  // Cascade: when a team is selected, the moderator dropdown only shows team mods
+  let modListForFilter = allMods;
+  if (f.teamId !== 'all') {
+    const team = teams.find(t => String(t.id) === String(f.teamId));
+    if (team) {
+      const ids = new Set([...(team.primaryIds || []), team.backupId].filter(Boolean).map(String).map(s => s.toLowerCase()));
+      modListForFilter = allMods.filter(mod => ids.has(String(mod.orbitLoginId || '').toLowerCase()));
+    } else {
+      modListForFilter = [];
+    }
+  }
+
+  body.innerHTML = `
+    <div class="ov-root">
+      <!-- Filter bar -->
+      <div class="ov-filterbar">
+        <div class="ov-filter-group" role="group" aria-label="Time scope">
+          ${['all','day','week','month'].map(scope => `
+            <button class="ov-pill ${f.timeScope === scope ? 'active' : ''}" data-ov-scope="${scope}">
+              ${scope === 'all' ? 'All time' : scope === 'day' ? 'Today' : scope === 'week' ? 'This week' : 'This month'}
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="ov-filter-spacer"></div>
+
+        <div class="ov-select-group">
+          <label class="ov-select-label">Team</label>
+          <select id="ovTeamSelect" class="ov-select">
+            <option value="all" ${f.teamId === 'all' ? 'selected' : ''}>All teams</option>
+            ${teams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(f.teamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="ov-select-group">
+          <label class="ov-select-label">Moderator</label>
+          <select id="ovModSelect" class="ov-select">
+            <option value="all" ${f.moderatorId === 'all' ? 'selected' : ''}>All moderators</option>
+            ${modListForFilter.map(mod => `<option value="${escapeHTML(mod.orbitLoginId || '')}" ${String(f.moderatorId).toLowerCase() === String(mod.orbitLoginId || '').toLowerCase() ? 'selected' : ''}>${escapeHTML([mod.firstName, mod.lastName].filter(Boolean).join(' ') || mod.orbitLoginId)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <!-- Stat tiles -->
+      <div class="ov-stats">
+        ${statTileHTML('moderators', 'Moderators', m.totalMods)}
+        ${statTileHTML('teams', 'Live teams', m.totalLiveTeams)}
+        ${statTileHTML('participants', 'Participants', m.totalParticipants)}
+        ${statTileHTML('bookings', 'Bookings', m.totalBookings)}
+      </div>
+
+      <!-- Charts -->
+      <div class="ov-charts">
+        <div class="ov-chart-card ov-chart-line">
+          <div class="ov-chart-head">
+            <div class="ov-chart-title">Bookings by day</div>
+            <div class="ov-chart-sub">${m.series.length > 0 ? `${m.series.length} day${m.series.length === 1 ? '' : 's'}` : 'No data'}</div>
+          </div>
+          ${bookingsLineChartHTML(m.series)}
+        </div>
+        <div class="ov-chart-card ov-chart-donut">
+          <div class="ov-chart-head">
+            <div class="ov-chart-title">Participant progress</div>
+            <div class="ov-chart-sub">${m.totalParticipants > 0 ? `${m.completedCount} of ${m.totalParticipants} done` : 'No participants in scope'}</div>
+          </div>
+          ${donutChartHTML(m.completedCount, m.remainingCount)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ----- Bindings
+  body.querySelectorAll('[data-ov-scope]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminState.overview.timeScope = btn.dataset.ovScope;
+      renderAdminTabBody();
+    });
+  });
+  const teamSel = body.querySelector('#ovTeamSelect');
+  if (teamSel) {
+    teamSel.addEventListener('change', () => {
+      adminState.overview.teamId = teamSel.value;
+      // If the chosen mod is no longer on the chosen team, reset to All
+      if (adminState.overview.moderatorId !== 'all' && teamSel.value !== 'all') {
+        const team = (adminState.teams || []).find(t => String(t.id) === String(teamSel.value));
+        if (team) {
+          const ids = new Set([...(team.primaryIds || []), team.backupId].filter(Boolean).map(String).map(s => s.toLowerCase()));
+          if (!ids.has(String(adminState.overview.moderatorId).toLowerCase())) {
+            adminState.overview.moderatorId = 'all';
+          }
+        }
+      }
+      renderAdminTabBody();
+    });
+  }
+  const modSel = body.querySelector('#ovModSelect');
+  if (modSel) {
+    modSel.addEventListener('change', () => {
+      adminState.overview.moderatorId = modSel.value;
+      renderAdminTabBody();
+    });
+  }
+}
+
+// ----- Stat tile HTML
+function statTileHTML(kind, label, value) {
+  const icons = {
+    moderators: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"9\" cy=\"8\" r=\"3.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"16\" cy=\"9\" r=\"2.6\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M3 19c0-3 2.7-5 6-5s6 2 6 5M14 19c0-2.4 2-4 4.5-4S23 16.6 23 19\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
+    teams: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M12 2l9 5v6l-9 5-9-5V7l9-5z\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/><path d=\"M3 7l9 5 9-5M12 12v10\" stroke=\"currentColor\" stroke-width=\"1.6\"/></svg>`,
+    participants: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"12\" cy=\"8\" r=\"3.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M5 20c0-4 3-6 7-6s7 2 7 6\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
+    bookings: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"15\" rx=\"2.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M3 10h18M8 3v4M16 3v4\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
+  };
+  return `
+    <div class=\"ov-stat-tile ov-stat-${kind}\">
+      <div class=\"ov-stat-icon\">${icons[kind] || ''}</div>
+      <div class=\"ov-stat-body\">
+        <div class=\"ov-stat-value\" data-ov-count=\"${value}\">${value}</div>
+        <div class=\"ov-stat-label\">${escapeHTML(label)}</div>
+      </div>
+      <div class=\"ov-stat-glow\"></div>
+    </div>
+  `;
+}
+
+// ----- Bookings line / area chart (inline SVG)
+function bookingsLineChartHTML(series) {
+  if (!series || series.length === 0) {
+    return `<div class=\"ov-empty\">No bookings in this period.</div>`;
+  }
+  const W = 600, H = 180;
+  const padL = 8, padR = 14, padT = 18, padB = 28;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const maxCount = Math.max(1, ...series.map(s => s.count));
+
+  // Always show grid at 0 and at max (and a midline if max >= 2)
+  const gridLines = maxCount >= 2
+    ? [0, Math.ceil(maxCount / 2), maxCount]
+    : [0, maxCount];
+
+  const xFor = (i) => padL + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
+  const yFor = (count) => padT + innerH - (count / maxCount) * innerH;
+
+  // Build the line + area path
+  let linePath = '';
+  let areaPath = '';
+  series.forEach((pt, i) => {
+    const x = xFor(i), y = yFor(pt.count);
+    linePath += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    if (i === 0) areaPath = `M${x.toFixed(1)} ${(padT + innerH).toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}`;
+    else areaPath += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
+  });
+  if (series.length > 0) {
+    const lastX = xFor(series.length - 1);
+    areaPath += ` L${lastX.toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
+  }
+
+  // X-axis labels — show ~5 evenly spaced
+  const labelStep = Math.max(1, Math.ceil(series.length / 6));
+  const fmtShort = (yyyymmdd) => {
+    const d = parseYMD(yyyymmdd);
+    if (!d) return yyyymmdd;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  return `
+    <div class=\"ov-line-wrap\">
+      <svg class=\"ov-line-svg\" viewBox=\"0 0 ${W} ${H}\" preserveAspectRatio=\"none\">
+        <defs>
+          <linearGradient id=\"ovLineGrad\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">
+            <stop offset=\"0%\" stop-color=\"var(--accent)\" stop-opacity=\"0.45\"/>
+            <stop offset=\"100%\" stop-color=\"var(--accent)\" stop-opacity=\"0\"/>
+          </linearGradient>
+        </defs>
+        ${gridLines.map(g => {
+          const y = yFor(g);
+          return `<line x1=\"${padL}\" x2=\"${W - padR}\" y1=\"${y.toFixed(1)}\" y2=\"${y.toFixed(1)}\" stroke=\"var(--border)\" stroke-width=\"0.5\" stroke-dasharray=\"2 3\"/>
+                  <text x=\"${W - padR}\" y=\"${(y - 3).toFixed(1)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--text3)\" font-family=\"var(--font-num)\">${g}</text>`;
+        }).join('')}
+        <path d=\"${areaPath}\" fill=\"url(#ovLineGrad)\"/>
+        <path d=\"${linePath.trim()}\" fill=\"none\" stroke=\"var(--accent)\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>
+        ${series.map((pt, i) => {
+          if (pt.count === 0) return '';
+          const x = xFor(i), y = yFor(pt.count);
+          return `<circle cx=\"${x.toFixed(1)}\" cy=\"${y.toFixed(1)}\" r=\"2.5\" fill=\"var(--accent)\" stroke=\"var(--card-bg)\" stroke-width=\"1.5\"/>`;
+        }).join('')}
+        ${series.map((pt, i) => {
+          if (i % labelStep !== 0 && i !== series.length - 1) return '';
+          const x = xFor(i);
+          return `<text x=\"${x.toFixed(1)}\" y=\"${(H - 8).toFixed(1)}\" text-anchor=\"middle\" font-size=\"9\" fill=\"var(--text3)\" font-family=\"var(--font)\">${escapeHTML(fmtShort(pt.date))}</text>`;
+        }).join('')}
+      </svg>
+    </div>
+  `;
+}
+
+// ----- Donut chart for completed vs remaining
+function donutChartHTML(completed, remaining) {
+  const total = completed + remaining;
+  if (total === 0) {
+    return `<div class=\"ov-donut-wrap\">
+      <div class=\"ov-empty\">No participants in scope.</div>
+    </div>`;
+  }
+  const completedPct = (completed / total) * 100;
+  const r = 52;
+  const C = 2 * Math.PI * r;
+  const completedDash = (completedPct / 100) * C;
+  const remainingDash = C - completedDash;
+
+  return `
+    <div class=\"ov-donut-wrap\">
+      <div class=\"ov-donut-svg-wrap\">
+        <svg class=\"ov-donut-svg\" viewBox=\"0 0 140 140\">
+          <circle cx=\"70\" cy=\"70\" r=\"${r}\" fill=\"none\" stroke=\"var(--bg4)\" stroke-width=\"14\"/>
+          <circle cx=\"70\" cy=\"70\" r=\"${r}\" fill=\"none\"
+                  stroke=\"var(--accent)\" stroke-width=\"14\" stroke-linecap=\"round\"
+                  stroke-dasharray=\"${completedDash.toFixed(2)} ${remainingDash.toFixed(2)}\"
+                  transform=\"rotate(-90 70 70)\"/>
+        </svg>
+        <div class=\"ov-donut-center\">
+          <div class=\"ov-donut-pct\">${Math.round(completedPct)}%</div>
+          <div class=\"ov-donut-cap\">complete</div>
+        </div>
+      </div>
+      <div class=\"ov-donut-legend\">
+        <div class=\"ov-donut-legend-row\"><span class=\"ov-donut-swatch ov-sw-done\"></span><span>Completed</span><span class=\"ov-donut-num\">${completed}</span></div>
+        <div class=\"ov-donut-legend-row\"><span class=\"ov-donut-swatch ov-sw-rem\"></span><span>Remaining</span><span class=\"ov-donut-num\">${remaining}</span></div>
+      </div>
+    </div>
+  `;
+}
+
 function renderAdminTabBody() {
   const body = document.getElementById('adminTabBody');
-  if (adminState.tab === 'overview' || adminState.tab === 'performance') {
-    const labels = { overview: 'Overview', performance: 'Performance' };
+  if (adminState.tab === 'overview') {
+    renderOverview(body);
+    return;
+  }
+  if (adminState.tab === 'performance') {
     body.innerHTML = `
       <div class="card" style="padding: 64px 24px; text-align: center;">
         <div style="width: 48px; height: 48px; margin: 0 auto 16px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center;">
@@ -6054,7 +6760,7 @@ function renderAdminTabBody() {
             <path d="M7 11h8M7 14h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
           </svg>
         </div>
-        <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px;">${labels[adminState.tab]}</div>
+        <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px;">Performance</div>
         <div style="font-size: 13px; color: var(--text2); letter-spacing: -0.005em;">Coming soon.</div>
       </div>
     `;
