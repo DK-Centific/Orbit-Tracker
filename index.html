@@ -3599,20 +3599,15 @@ nav {
 
 
 /* =========================================================
-   ADMIN OVERVIEW DASHBOARD
-   Apple-inspired tiles + filter bar + charts
+   ADMIN OVERVIEW DASHBOARD — large stats + animated charts
    ========================================================= */
-.ov-root {
-  display: flex; flex-direction: column;
-  gap: 18px;
-}
+.ov-root { display: flex; flex-direction: column; gap: 22px; }
 
 /* ---- Filter bar ---- */
 .ov-filterbar {
   display: flex; align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 14px 16px;
+  gap: 14px; flex-wrap: wrap;
+  padding: 14px 18px;
   background: var(--card-bg);
   border: 0.5px solid var(--border);
   border-radius: var(--rl);
@@ -3621,17 +3616,15 @@ nav {
 }
 .ov-filter-spacer { flex: 1 1 auto; min-width: 12px; }
 .ov-filter-group {
-  display: inline-flex;
+  display: inline-flex; gap: 2px;
   background: var(--bg3);
   border-radius: 10px;
   padding: 3px;
-  gap: 2px;
   border: 0.5px solid var(--border);
 }
 .ov-pill {
   font-family: var(--font);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12.5px; font-weight: 600;
   letter-spacing: -0.01em;
   padding: 7px 14px;
   border-radius: 7px;
@@ -3648,20 +3641,15 @@ nav {
   box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 0 0 0.5px var(--border-strong);
 }
 
-.ov-select-group {
-  display: inline-flex; align-items: center; gap: 8px;
-}
+.ov-select-group { display: inline-flex; align-items: center; gap: 8px; }
 .ov-select-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text3);
-  text-transform: uppercase;
+  font-size: 11px; font-weight: 600;
+  color: var(--text3); text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .ov-select {
   font-family: var(--font);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 13px; font-weight: 500;
   letter-spacing: -0.01em;
   padding: 8px 30px 8px 12px;
   background-color: var(--bg3);
@@ -3671,93 +3659,141 @@ nav {
   border: 0.5px solid var(--border-strong);
   border-radius: 9px;
   color: var(--text);
-  appearance: none;
-  -webkit-appearance: none;
+  appearance: none; -webkit-appearance: none;
   cursor: pointer;
   min-width: 150px;
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 .ov-select:hover { border-color: var(--text3); }
-.ov-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
+.ov-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-/* ---- Stat tiles ---- */
+/* ---- Stat tiles — bigger, colorful, value on the right ---- */
 .ov-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: 16px;
 }
 .ov-stat-tile {
   position: relative;
-  padding: 18px 20px;
+  min-height: 132px;
+  padding: 22px 24px;
   background: var(--card-bg);
   border: 0.5px solid var(--border);
-  border-radius: var(--rl);
-  display: flex; gap: 14px; align-items: flex-start;
+  border-radius: 18px;
+  display: flex; align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   overflow: hidden;
-  transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.2s;
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.22s, box-shadow 0.32s;
   cursor: default;
 }
+.ov-stat-tile::before {
+  /* Top accent stripe */
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--ov-tint, var(--accent)) 0%, transparent 80%);
+  opacity: 0.65;
+  pointer-events: none;
+}
 .ov-stat-tile:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-strong);
+  transform: translateY(-3px);
+  border-color: var(--ov-tint-border, var(--border-strong));
+  box-shadow: 0 12px 28px -16px var(--ov-tint-shadow, rgba(0,0,0,0.18)),
+              0 1px 2px rgba(0,0,0,0.06);
 }
 .ov-stat-glow {
   position: absolute;
-  top: -40%; right: -40%;
-  width: 180px; height: 180px;
-  border-radius: 50%;
+  inset: 0;
+  border-radius: 18px;
   pointer-events: none;
-  background: radial-gradient(circle at center, var(--accent-soft) 0%, transparent 70%);
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.4s ease;
 }
-.ov-stat-tile:hover .ov-stat-glow { opacity: 1; }
-.ov-stat-tile.ov-stat-moderators .ov-stat-glow { background: radial-gradient(circle at center, rgba(0,240,255,0.25) 0%, transparent 70%); }
-.ov-stat-tile.ov-stat-teams .ov-stat-glow { background: radial-gradient(circle at center, rgba(168,85,247,0.20) 0%, transparent 70%); }
-.ov-stat-tile.ov-stat-participants .ov-stat-glow { background: radial-gradient(circle at center, rgba(34,197,94,0.20) 0%, transparent 70%); }
-.ov-stat-tile.ov-stat-bookings .ov-stat-glow { background: radial-gradient(circle at center, rgba(245,158,11,0.20) 0%, transparent 70%); }
+.ov-stat-tile:hover .ov-stat-glow { opacity: 0.55; }
 
+.ov-stat-left {
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: flex-start;
+  z-index: 1; min-width: 0;
+}
 .ov-stat-icon {
-  flex-shrink: 0;
-  width: 38px; height: 38px;
+  width: 44px; height: 44px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 11px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  z-index: 1;
+  border-radius: 12px;
+  background: var(--ov-tint-bg, var(--accent-soft));
+  color: var(--ov-tint, var(--accent-ink));
+  border: 0.5px solid var(--ov-tint-border, transparent);
 }
-.ov-stat-icon svg { width: 20px; height: 20px; }
-.ov-stat-tile.ov-stat-moderators .ov-stat-icon { background: rgba(0,240,255,0.10); color: var(--accent-ink); }
-.ov-stat-tile.ov-stat-teams .ov-stat-icon { background: rgba(168,85,247,0.12); color: #a855f7; }
-.ov-stat-tile.ov-stat-participants .ov-stat-icon { background: rgba(34,197,94,0.12); color: var(--green-text); }
-.ov-stat-tile.ov-stat-bookings .ov-stat-icon { background: rgba(245,158,11,0.12); color: var(--amber-text); }
+.ov-stat-icon svg { width: 22px; height: 22px; }
+.ov-stat-label {
+  font-size: 13px; font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text2);
+  white-space: nowrap;
+}
 
-.ov-stat-body { z-index: 1; min-width: 0; }
 .ov-stat-value {
   font-family: var(--font-num);
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.05;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-.ov-stat-label {
-  font-size: 12px;
-  color: var(--text2);
-  letter-spacing: -0.005em;
-  font-weight: 500;
+  font-size: 56px; font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  color: var(--ov-tint, var(--text));
+  z-index: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* Subtle gradient for richness */
+  background: linear-gradient(180deg, var(--ov-tint, var(--text)) 0%, var(--ov-tint-shade, var(--text)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.02);
 }
 
-@media (max-width: 980px) {
-  .ov-stats { grid-template-columns: repeat(2, 1fr); }
+/* Per-tile color tints — drives icon, value, accent stripe, hover shadow */
+.ov-stat-moderators {
+  --ov-tint: #00b8c9;
+  --ov-tint-shade: #0089a3;
+  --ov-tint-bg: rgba(0, 240, 255, 0.10);
+  --ov-tint-border: rgba(0, 184, 201, 0.25);
+  --ov-tint-shadow: rgba(0, 184, 201, 0.30);
 }
-@media (max-width: 480px) {
+[data-theme="dark"] .ov-stat-moderators { --ov-tint: #67e8f9; --ov-tint-shade: #22d3ee; --ov-tint-bg: rgba(0, 240, 255, 0.14); --ov-tint-border: rgba(103, 232, 249, 0.30); --ov-tint-shadow: rgba(103, 232, 249, 0.30); }
+.ov-stat-moderators .ov-stat-glow { background: radial-gradient(circle at top right, rgba(0, 240, 255, 0.18) 0%, transparent 60%); }
+
+.ov-stat-teams {
+  --ov-tint: #9333ea;
+  --ov-tint-shade: #7e22ce;
+  --ov-tint-bg: rgba(168, 85, 247, 0.10);
+  --ov-tint-border: rgba(147, 51, 234, 0.25);
+  --ov-tint-shadow: rgba(147, 51, 234, 0.30);
+}
+[data-theme="dark"] .ov-stat-teams { --ov-tint: #c084fc; --ov-tint-shade: #a855f7; --ov-tint-bg: rgba(168, 85, 247, 0.16); --ov-tint-border: rgba(192, 132, 252, 0.30); --ov-tint-shadow: rgba(192, 132, 252, 0.30); }
+.ov-stat-teams .ov-stat-glow { background: radial-gradient(circle at top right, rgba(168, 85, 247, 0.16) 0%, transparent 60%); }
+
+.ov-stat-participants {
+  --ov-tint: #15803d;
+  --ov-tint-shade: #166534;
+  --ov-tint-bg: rgba(34, 197, 94, 0.10);
+  --ov-tint-border: rgba(21, 128, 61, 0.25);
+  --ov-tint-shadow: rgba(21, 128, 61, 0.30);
+}
+[data-theme="dark"] .ov-stat-participants { --ov-tint: #86efac; --ov-tint-shade: #4ade80; --ov-tint-bg: rgba(34, 197, 94, 0.18); --ov-tint-border: rgba(134, 239, 172, 0.30); --ov-tint-shadow: rgba(134, 239, 172, 0.30); }
+.ov-stat-participants .ov-stat-glow { background: radial-gradient(circle at top right, rgba(34, 197, 94, 0.16) 0%, transparent 60%); }
+
+.ov-stat-bookings {
+  --ov-tint: #b45309;
+  --ov-tint-shade: #92400e;
+  --ov-tint-bg: rgba(245, 158, 11, 0.10);
+  --ov-tint-border: rgba(180, 83, 9, 0.25);
+  --ov-tint-shadow: rgba(180, 83, 9, 0.30);
+}
+[data-theme="dark"] .ov-stat-bookings { --ov-tint: #fbbf24; --ov-tint-shade: #f59e0b; --ov-tint-bg: rgba(245, 158, 11, 0.16); --ov-tint-border: rgba(251, 191, 36, 0.30); --ov-tint-shadow: rgba(251, 191, 36, 0.30); }
+.ov-stat-bookings .ov-stat-glow { background: radial-gradient(circle at top right, rgba(245, 158, 11, 0.16) 0%, transparent 60%); }
+
+@media (max-width: 1100px) { .ov-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) {
   .ov-stats { grid-template-columns: 1fr; }
+  .ov-stat-value { font-size: 48px; }
   .ov-filter-spacer { display: none; }
   .ov-select { min-width: 130px; }
 }
@@ -3765,40 +3801,85 @@ nav {
 /* ---- Charts ---- */
 .ov-charts {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 14px;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
 }
 .ov-chart-card {
-  padding: 18px 20px;
+  padding: 22px 24px;
   background: var(--card-bg);
   border: 0.5px solid var(--border);
-  border-radius: var(--rl);
+  border-radius: 18px;
   position: relative;
   overflow: hidden;
 }
 .ov-chart-head {
   display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .ov-chart-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-size: 15px; font-weight: 600;
+  letter-spacing: -0.018em;
   color: var(--text);
 }
 .ov-chart-sub {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text3);
   letter-spacing: -0.005em;
   font-family: var(--font-num);
   font-weight: 500;
+  transition: opacity 0.3s ease;
 }
 
-.ov-line-wrap { width: 100%; }
-.ov-line-svg { width: 100%; height: 180px; display: block; }
+.ov-line-wrap {
+  width: 100%;
+  position: relative;
+  cursor: crosshair;
+}
+.ov-line-svg { width: 100%; height: 220px; display: block; }
+#ovLineHoverArea { cursor: crosshair; }
+
+/* Line chart tooltip */
+.ov-line-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg3);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 5;
+  min-width: 140px;
+  animation: ov-tooltip-in 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes ov-tooltip-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+.ov-tooltip-date {
+  font-size: 11px; font-weight: 600;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  margin-bottom: 6px;
+}
+.ov-tooltip-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px;
+}
+.ov-tooltip-swatch {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.ov-tooltip-label { color: var(--text3); flex: 1; }
+.ov-tooltip-num {
+  font-family: var(--font-num);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 
 .ov-empty {
-  padding: 40px 20px;
+  padding: 56px 20px;
   text-align: center;
   color: var(--text3);
   font-size: 12px;
@@ -3807,12 +3888,12 @@ nav {
 
 /* Donut */
 .ov-donut-wrap {
-  display: flex; gap: 22px; align-items: center;
-  padding: 4px 0;
+  display: flex; gap: 24px; align-items: center;
+  padding: 6px 0;
 }
 .ov-donut-svg-wrap {
   position: relative;
-  width: 140px; height: 140px;
+  width: 160px; height: 160px;
   flex-shrink: 0;
 }
 .ov-donut-svg { width: 100%; height: 100%; }
@@ -3821,68 +3902,95 @@ nav {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
+  pointer-events: none;
 }
 .ov-donut-pct {
   font-family: var(--font-num);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-size: 34px; font-weight: 700;
+  letter-spacing: -0.035em;
   color: var(--text);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .ov-donut-cap {
   font-size: 10px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text3);
-  margin-top: 3px;
-  font-weight: 500;
+  margin-top: 4px;
+  font-weight: 600;
 }
+
+/* Donut tooltip */
+.ov-donut-tooltip {
+  position: absolute;
+  top: -56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg3);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 5;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ov-tooltip-in 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
 .ov-donut-legend {
   flex: 1;
   display: flex; flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
+  gap: 10px;
+  font-size: 13px;
   letter-spacing: -0.005em;
 }
 .ov-donut-legend-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
   background: var(--bg3);
-  border-radius: 8px;
+  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
 }
-.ov-donut-legend-row span:nth-child(2) { flex: 1; color: var(--text2); }
+.ov-donut-legend-row:hover { background: var(--bg4); border-color: var(--border-strong); }
+.ov-donut-legend-row span:nth-child(2) { flex: 1; color: var(--text2); font-weight: 500; }
 .ov-donut-num {
   font-family: var(--font-num);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 .ov-donut-swatch {
-  width: 10px; height: 10px;
+  width: 12px; height: 12px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.ov-sw-done { background: var(--accent); }
+.ov-sw-done { background: var(--accent); box-shadow: 0 0 0 2px rgba(0,240,255,0.20); }
 .ov-sw-rem { background: var(--bg4); border: 0.5px solid var(--border-strong); }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .ov-charts { grid-template-columns: 1fr; }
-  .ov-donut-wrap { flex-direction: column; gap: 16px; align-items: stretch; }
+  .ov-donut-wrap { flex-direction: column; gap: 18px; align-items: stretch; }
   .ov-donut-svg-wrap { margin: 0 auto; }
 }
 
-/* Subtle entrance animation on render */
+/* Subtle entrance animation on first paint */
 .ov-stat-tile, .ov-chart-card {
-  animation: ov-fade-up 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: ov-fade-up 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 .ov-stats .ov-stat-tile:nth-child(1) { animation-delay: 0.00s; }
-.ov-stats .ov-stat-tile:nth-child(2) { animation-delay: 0.04s; }
-.ov-stats .ov-stat-tile:nth-child(3) { animation-delay: 0.08s; }
-.ov-stats .ov-stat-tile:nth-child(4) { animation-delay: 0.12s; }
-.ov-charts .ov-chart-card:nth-child(1) { animation-delay: 0.16s; }
-.ov-charts .ov-chart-card:nth-child(2) { animation-delay: 0.20s; }
+.ov-stats .ov-stat-tile:nth-child(2) { animation-delay: 0.06s; }
+.ov-stats .ov-stat-tile:nth-child(3) { animation-delay: 0.12s; }
+.ov-stats .ov-stat-tile:nth-child(4) { animation-delay: 0.18s; }
+.ov-charts .ov-chart-card:nth-child(1) { animation-delay: 0.24s; }
+.ov-charts .ov-chart-card:nth-child(2) { animation-delay: 0.30s; }
 @keyframes ov-fade-up {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -6508,7 +6616,6 @@ function renderOverview(body) {
   }
 
   const f = adminState.overview;
-  const m = computeOverviewMetrics();
   const teams = adminState.teams || [];
   const allMods = adminState.moderators || [];
 
@@ -6535,9 +6642,7 @@ function renderOverview(body) {
             </button>
           `).join('')}
         </div>
-
         <div class="ov-filter-spacer"></div>
-
         <div class="ov-select-group">
           <label class="ov-select-label">Team</label>
           <select id="ovTeamSelect" class="ov-select">
@@ -6545,7 +6650,6 @@ function renderOverview(body) {
             ${teams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(f.teamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
           </select>
         </div>
-
         <div class="ov-select-group">
           <label class="ov-select-label">Moderator</label>
           <select id="ovModSelect" class="ov-select">
@@ -6555,29 +6659,29 @@ function renderOverview(body) {
         </div>
       </div>
 
-      <!-- Stat tiles -->
+      <!-- Stat tiles (static shell — values populated by updateOverviewMetrics) -->
       <div class="ov-stats">
-        ${statTileHTML('moderators', 'Moderators', m.totalMods)}
-        ${statTileHTML('teams', 'Live teams', m.totalLiveTeams)}
-        ${statTileHTML('participants', 'Participants', m.totalParticipants)}
-        ${statTileHTML('bookings', 'Bookings', m.totalBookings)}
+        ${statTileShellHTML('moderators', 'Moderators')}
+        ${statTileShellHTML('teams', 'Live teams')}
+        ${statTileShellHTML('participants', 'Participants')}
+        ${statTileShellHTML('bookings', 'Bookings')}
       </div>
 
-      <!-- Charts -->
+      <!-- Charts (static shell — values populated by updateOverviewMetrics) -->
       <div class="ov-charts">
         <div class="ov-chart-card ov-chart-line">
           <div class="ov-chart-head">
             <div class="ov-chart-title">Bookings by day</div>
-            <div class="ov-chart-sub">${m.series.length > 0 ? `${m.series.length} day${m.series.length === 1 ? '' : 's'}` : 'No data'}</div>
+            <div class="ov-chart-sub" id="ovLineSub">—</div>
           </div>
-          ${bookingsLineChartHTML(m.series)}
+          ${bookingsLineChartShellHTML()}
         </div>
         <div class="ov-chart-card ov-chart-donut">
           <div class="ov-chart-head">
             <div class="ov-chart-title">Participant progress</div>
-            <div class="ov-chart-sub">${m.totalParticipants > 0 ? `${m.completedCount} of ${m.totalParticipants} done` : 'No participants in scope'}</div>
+            <div class="ov-chart-sub" id="ovDonutSub">—</div>
           </div>
-          ${donutChartHTML(m.completedCount, m.remainingCount)}
+          ${donutChartShellHTML()}
         </div>
       </div>
     </div>
@@ -6586,8 +6690,14 @@ function renderOverview(body) {
   // ----- Bindings
   body.querySelectorAll('[data-ov-scope]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (adminState.overview.timeScope === btn.dataset.ovScope) return;
       adminState.overview.timeScope = btn.dataset.ovScope;
-      renderAdminTabBody();
+      // Update pill state
+      body.querySelectorAll('[data-ov-scope]').forEach(b =>
+        b.classList.toggle('active', b.dataset.ovScope === adminState.overview.timeScope)
+      );
+      // Smooth in-place update — no full re-render
+      updateOverviewMetrics();
     });
   });
   const teamSel = body.querySelector('#ovTeamSelect');
@@ -6604,146 +6714,489 @@ function renderOverview(body) {
           }
         }
       }
-      renderAdminTabBody();
+      // Mod dropdown options need to refresh — re-render them in place
+      refreshModDropdown();
+      updateOverviewMetrics();
     });
   }
   const modSel = body.querySelector('#ovModSelect');
   if (modSel) {
     modSel.addEventListener('change', () => {
       adminState.overview.moderatorId = modSel.value;
-      renderAdminTabBody();
+      updateOverviewMetrics();
     });
   }
+
+  // Initial paint — populate metrics with animation from 0
+  // Reset cached "previous values" so the first render animates from 0
+  window._ovPrev = null;
+  updateOverviewMetrics();
 }
 
-// ----- Stat tile HTML
-function statTileHTML(kind, label, value) {
+// Refresh the moderator dropdown options based on the current team filter
+// without rebuilding the entire dashboard.
+function refreshModDropdown() {
+  const sel = document.getElementById('ovModSelect');
+  if (!sel) return;
+  const f = adminState.overview;
+  const teams = adminState.teams || [];
+  const allMods = adminState.moderators || [];
+  let mods = allMods;
+  if (f.teamId !== 'all') {
+    const team = teams.find(t => String(t.id) === String(f.teamId));
+    if (team) {
+      const ids = new Set([...(team.primaryIds || []), team.backupId].filter(Boolean).map(String).map(s => s.toLowerCase()));
+      mods = allMods.filter(mod => ids.has(String(mod.orbitLoginId || '').toLowerCase()));
+    } else {
+      mods = [];
+    }
+  }
+  const html = `<option value="all" ${f.moderatorId === 'all' ? 'selected' : ''}>All moderators</option>` +
+    mods.map(mod => `<option value="${escapeHTML(mod.orbitLoginId || '')}" ${String(f.moderatorId).toLowerCase() === String(mod.orbitLoginId || '').toLowerCase() ? 'selected' : ''}>${escapeHTML([mod.firstName, mod.lastName].filter(Boolean).join(' ') || mod.orbitLoginId)}</option>`).join('');
+  sel.innerHTML = html;
+}
+
+// Stat tile shell — values populated by updateOverviewMetrics
+function statTileShellHTML(kind, label) {
   const icons = {
-    moderators: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"9\" cy=\"8\" r=\"3.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"16\" cy=\"9\" r=\"2.6\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M3 19c0-3 2.7-5 6-5s6 2 6 5M14 19c0-2.4 2-4 4.5-4S23 16.6 23 19\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
-    teams: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M12 2l9 5v6l-9 5-9-5V7l9-5z\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/><path d=\"M3 7l9 5 9-5M12 12v10\" stroke=\"currentColor\" stroke-width=\"1.6\"/></svg>`,
-    participants: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"12\" cy=\"8\" r=\"3.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M5 20c0-4 3-6 7-6s7 2 7 6\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
-    bookings: `<svg viewBox=\"0 0 24 24\" fill=\"none\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"15\" rx=\"2.5\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M3 10h18M8 3v4M16 3v4\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>`,
+    moderators: `<svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.5" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.6" stroke="currentColor" stroke-width="1.7"/><path d="M3 19c0-3 2.7-5 6-5s6 2 6 5M14 19c0-2.4 2-4 4.5-4S23 16.6 23 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+    teams: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 2l9 5v6l-9 5-9-5V7l9-5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3 7l9 5 9-5M12 12v10" stroke="currentColor" stroke-width="1.7"/></svg>`,
+    participants: `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.7"/><path d="M5 20c0-4 3-6 7-6s7 2 7 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+    bookings: `<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="15" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
   };
   return `
-    <div class=\"ov-stat-tile ov-stat-${kind}\">
-      <div class=\"ov-stat-icon\">${icons[kind] || ''}</div>
-      <div class=\"ov-stat-body\">
-        <div class=\"ov-stat-value\" data-ov-count=\"${value}\">${value}</div>
-        <div class=\"ov-stat-label\">${escapeHTML(label)}</div>
+    <div class="ov-stat-tile ov-stat-${kind}" data-tile="${kind}">
+      <div class="ov-stat-glow"></div>
+      <div class="ov-stat-left">
+        <div class="ov-stat-icon">${icons[kind] || ''}</div>
+        <div class="ov-stat-label">${escapeHTML(label)}</div>
       </div>
-      <div class=\"ov-stat-glow\"></div>
+      <div class="ov-stat-value" data-ov-count="0">0</div>
     </div>
   `;
 }
 
-// ----- Bookings line / area chart (inline SVG)
-function bookingsLineChartHTML(series) {
-  if (!series || series.length === 0) {
-    return `<div class=\"ov-empty\">No bookings in this period.</div>`;
+// Line chart shell — populated by updateOverviewMetrics
+function bookingsLineChartShellHTML() {
+  return `
+    <div class="ov-line-wrap" id="ovLineWrap">
+      <svg class="ov-line-svg" id="ovLineSvg" viewBox="0 0 600 220" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="ovLineGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.50"/>
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g id="ovLineGrid"></g>
+        <path id="ovLineArea" d="" fill="url(#ovLineGrad)"/>
+        <path id="ovLinePath" d="" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <g id="ovLineDots"></g>
+        <g id="ovLineXLabels"></g>
+        <line id="ovLineHoverV" x1="0" x2="0" y1="0" y2="0" stroke="var(--accent-ink)" stroke-width="0.7" stroke-dasharray="3 3" opacity="0"/>
+        <circle id="ovLineHoverDot" cx="0" cy="0" r="5" fill="var(--accent)" stroke="var(--card-bg)" stroke-width="2" opacity="0"/>
+        <rect id="ovLineHoverArea" x="0" y="0" width="600" height="220" fill="transparent"/>
+      </svg>
+      <div class="ov-line-tooltip" id="ovLineTooltip" style="display: none;">
+        <div class="ov-tooltip-date" id="ovTooltipDate"></div>
+        <div class="ov-tooltip-row"><span class="ov-tooltip-swatch"></span><span class="ov-tooltip-label">Bookings</span><span class="ov-tooltip-num" id="ovTooltipCount"></span></div>
+      </div>
+      <div class="ov-empty" id="ovLineEmpty" style="display:none">No bookings in this period.</div>
+    </div>
+  `;
+}
+
+// Donut chart shell — populated by updateOverviewMetrics
+function donutChartShellHTML() {
+  const r = 58;
+  return `
+    <div class="ov-donut-wrap">
+      <div class="ov-donut-svg-wrap">
+        <svg class="ov-donut-svg" id="ovDonutSvg" viewBox="0 0 160 160">
+          <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--bg4)" stroke-width="16" id="ovDonutBg"/>
+          <circle cx="80" cy="80" r="${r}" fill="none"
+                  stroke="var(--accent)" stroke-width="16" stroke-linecap="round"
+                  stroke-dasharray="0 ${(2 * Math.PI * r).toFixed(2)}"
+                  transform="rotate(-90 80 80)" id="ovDonutArc"/>
+          <circle cx="80" cy="80" r="${r}" fill="transparent" id="ovDonutHover" style="cursor: pointer;"/>
+        </svg>
+        <div class="ov-donut-center">
+          <div class="ov-donut-pct" id="ovDonutPct">0%</div>
+          <div class="ov-donut-cap">complete</div>
+        </div>
+        <div class="ov-donut-tooltip" id="ovDonutTooltip" style="display:none;">
+          <div class="ov-tooltip-date" id="ovDonutTooltipTitle">Completed</div>
+          <div class="ov-tooltip-row"><span class="ov-tooltip-num" id="ovDonutTooltipNum">0</span><span class="ov-tooltip-label">participants</span></div>
+        </div>
+      </div>
+      <div class="ov-donut-legend">
+        <div class="ov-donut-legend-row" id="ovLegendDone"><span class="ov-donut-swatch ov-sw-done"></span><span>Completed</span><span class="ov-donut-num" data-ov-count="0">0</span></div>
+        <div class="ov-donut-legend-row" id="ovLegendRem"><span class="ov-donut-swatch ov-sw-rem"></span><span>Remaining</span><span class="ov-donut-num" data-ov-count="0">0</span></div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Animated update — recomputes metrics + tweens DOM to new state.
+// Called whenever a filter changes. NEVER re-renders the whole tab.
+// ============================================================
+function updateOverviewMetrics() {
+  const m = computeOverviewMetrics();
+
+  // 1. Tween stat numbers
+  const tilePairs = [
+    ['moderators', m.totalMods],
+    ['teams', m.totalLiveTeams],
+    ['participants', m.totalParticipants],
+    ['bookings', m.totalBookings],
+  ];
+  tilePairs.forEach(([kind, target]) => {
+    const tile = document.querySelector(`.ov-stat-tile[data-tile="${kind}"] .ov-stat-value`);
+    if (tile) tweenNumber(tile, target);
+  });
+
+  // 2. Update line chart sub
+  const lineSub = document.getElementById('ovLineSub');
+  if (lineSub) lineSub.textContent = m.series.length > 0 ? `${m.series.length} day${m.series.length === 1 ? '' : 's'}` : 'No data';
+
+  // 3. Animate the line chart
+  animateLineChart(m.series);
+
+  // 4. Donut sub + tween
+  const donutSub = document.getElementById('ovDonutSub');
+  if (donutSub) donutSub.textContent = m.totalParticipants > 0 ? `${m.completedCount} of ${m.totalParticipants} done` : 'No participants in scope';
+  animateDonutChart(m.completedCount, m.remainingCount);
+
+  // Cache for next animation
+  window._ovPrev = m;
+}
+
+// ----- Number tween (count up/down) ------------------------------------
+function tweenNumber(el, target, duration) {
+  duration = duration || 600;
+  const start = parseInt(el.getAttribute('data-ov-count') || el.textContent || '0', 10) || 0;
+  if (start === target) {
+    el.setAttribute('data-ov-count', String(target));
+    el.textContent = String(target);
+    return;
   }
-  const W = 600, H = 180;
-  const padL = 8, padR = 14, padT = 18, padB = 28;
+  const t0 = performance.now();
+  // Cancel any prior tween on this element
+  if (el._ovTweenRaf) cancelAnimationFrame(el._ovTweenRaf);
+  const ease = (t) => 1 - Math.pow(1 - t, 3); // easeOutCubic — matches Apple's count-up feel
+  const tick = (now) => {
+    const t = Math.min(1, (now - t0) / duration);
+    const v = Math.round(start + (target - start) * ease(t));
+    el.textContent = String(v);
+    if (t < 1) {
+      el._ovTweenRaf = requestAnimationFrame(tick);
+    } else {
+      el.setAttribute('data-ov-count', String(target));
+      el._ovTweenRaf = null;
+    }
+  };
+  el._ovTweenRaf = requestAnimationFrame(tick);
+}
+
+// ----- Line chart animation -------------------------------------------
+function animateLineChart(targetSeries) {
+  const svg = document.getElementById('ovLineSvg');
+  if (!svg) return;
+  const empty = document.getElementById('ovLineEmpty');
+  const wrap = document.getElementById('ovLineWrap');
+
+  if (!targetSeries || targetSeries.length === 0) {
+    if (empty) empty.style.display = '';
+    if (svg) svg.style.opacity = '0.2';
+    // Clear paths
+    svg.querySelector('#ovLinePath').setAttribute('d', '');
+    svg.querySelector('#ovLineArea').setAttribute('d', '');
+    svg.querySelector('#ovLineDots').innerHTML = '';
+    svg.querySelector('#ovLineXLabels').innerHTML = '';
+    svg.querySelector('#ovLineGrid').innerHTML = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (svg) svg.style.opacity = '';
+
+  const W = 600, H = 220;
+  const padL = 14, padR = 18, padT = 22, padB = 32;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const maxCount = Math.max(1, ...series.map(s => s.count));
+  const maxCount = Math.max(1, ...targetSeries.map(s => s.count));
 
-  // Always show grid at 0 and at max (and a midline if max >= 2)
-  const gridLines = maxCount >= 2
-    ? [0, Math.ceil(maxCount / 2), maxCount]
-    : [0, maxCount];
-
-  const xFor = (i) => padL + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
+  const xFor = (i, len) => padL + (len === 1 ? innerW / 2 : (i / (len - 1)) * innerW);
   const yFor = (count) => padT + innerH - (count / maxCount) * innerH;
 
-  // Build the line + area path
-  let linePath = '';
-  let areaPath = '';
-  series.forEach((pt, i) => {
-    const x = xFor(i), y = yFor(pt.count);
-    linePath += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
-    if (i === 0) areaPath = `M${x.toFixed(1)} ${(padT + innerH).toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}`;
-    else areaPath += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
-  });
-  if (series.length > 0) {
-    const lastX = xFor(series.length - 1);
-    areaPath += ` L${lastX.toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
-  }
+  // Update gridlines (instant — they're aesthetic)
+  const gridLines = maxCount >= 2 ? [0, Math.ceil(maxCount / 2), maxCount] : [0, maxCount];
+  const gridG = svg.querySelector('#ovLineGrid');
+  gridG.innerHTML = gridLines.map(g => {
+    const y = yFor(g);
+    return `<line x1="${padL}" x2="${W - padR}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2 3"/>
+            <text x="${W - padR}" y="${(y - 4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--text3)" font-family="var(--font-num)">${g}</text>`;
+  }).join('');
 
-  // X-axis labels — show ~5 evenly spaced
-  const labelStep = Math.max(1, Math.ceil(series.length / 6));
+  // X-axis labels
+  const labelStep = Math.max(1, Math.ceil(targetSeries.length / 6));
   const fmtShort = (yyyymmdd) => {
     const d = parseYMD(yyyymmdd);
     if (!d) return yyyymmdd;
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
+  const xLabelsG = svg.querySelector('#ovLineXLabels');
+  xLabelsG.innerHTML = targetSeries.map((pt, i) => {
+    if (i % labelStep !== 0 && i !== targetSeries.length - 1) return '';
+    const x = xFor(i, targetSeries.length);
+    return `<text x="${x.toFixed(1)}" y="${(H - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text3)" font-family="var(--font)">${escapeHTML(fmtShort(pt.date))}</text>`;
+  }).join('');
 
-  return `
-    <div class=\"ov-line-wrap\">
-      <svg class=\"ov-line-svg\" viewBox=\"0 0 ${W} ${H}\" preserveAspectRatio=\"none\">
-        <defs>
-          <linearGradient id=\"ovLineGrad\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">
-            <stop offset=\"0%\" stop-color=\"var(--accent)\" stop-opacity=\"0.45\"/>
-            <stop offset=\"100%\" stop-color=\"var(--accent)\" stop-opacity=\"0\"/>
-          </linearGradient>
-        </defs>
-        ${gridLines.map(g => {
-          const y = yFor(g);
-          return `<line x1=\"${padL}\" x2=\"${W - padR}\" y1=\"${y.toFixed(1)}\" y2=\"${y.toFixed(1)}\" stroke=\"var(--border)\" stroke-width=\"0.5\" stroke-dasharray=\"2 3\"/>
-                  <text x=\"${W - padR}\" y=\"${(y - 3).toFixed(1)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--text3)\" font-family=\"var(--font-num)\">${g}</text>`;
-        }).join('')}
-        <path d=\"${areaPath}\" fill=\"url(#ovLineGrad)\"/>
-        <path d=\"${linePath.trim()}\" fill=\"none\" stroke=\"var(--accent)\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>
-        ${series.map((pt, i) => {
-          if (pt.count === 0) return '';
-          const x = xFor(i), y = yFor(pt.count);
-          return `<circle cx=\"${x.toFixed(1)}\" cy=\"${y.toFixed(1)}\" r=\"2.5\" fill=\"var(--accent)\" stroke=\"var(--card-bg)\" stroke-width=\"1.5\"/>`;
-        }).join('')}
-        ${series.map((pt, i) => {
-          if (i % labelStep !== 0 && i !== series.length - 1) return '';
-          const x = xFor(i);
-          return `<text x=\"${x.toFixed(1)}\" y=\"${(H - 8).toFixed(1)}\" text-anchor=\"middle\" font-size=\"9\" fill=\"var(--text3)\" font-family=\"var(--font)\">${escapeHTML(fmtShort(pt.date))}</text>`;
-        }).join('')}
-      </svg>
-    </div>
-  `;
+  // Build target path strings
+  const buildPaths = (series) => {
+    let line = '';
+    let area = '';
+    series.forEach((pt, i) => {
+      const x = xFor(i, series.length), y = yFor(pt.count);
+      line += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+      if (i === 0) area = `M${x.toFixed(1)} ${(padT + innerH).toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}`;
+      else area += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
+    });
+    if (series.length > 0) {
+      const lastX = xFor(series.length - 1, series.length);
+      area += ` L${lastX.toFixed(1)} ${(padT + innerH).toFixed(1)} Z`;
+    }
+    return { line: line.trim(), area };
+  };
+
+  // Animate from previous series → target series. We need same-length arrays for
+  // a clean tween, so we resample to a fixed number of frames using interpolation.
+  const prev = (window._ovPrev && window._ovPrev.series) ? window._ovPrev.series : null;
+
+  // Sample the SOURCE shape — convert prev counts to align with target X positions
+  const sampleSeries = (src, n) => {
+    if (!src || src.length === 0) return Array(n).fill({ count: 0 });
+    if (src.length === n) return src.slice();
+    // Linear-interpolate counts onto n positions
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = (n === 1) ? 0 : (i / (n - 1));
+      const idx = t * (src.length - 1);
+      const i0 = Math.floor(idx), i1 = Math.min(src.length - 1, i0 + 1);
+      const frac = idx - i0;
+      const c = (src[i0].count || 0) * (1 - frac) + (src[i1].count || 0) * frac;
+      out.push({ count: c });
+    }
+    return out;
+  };
+
+  const startSample = sampleSeries(prev, targetSeries.length);
+
+  const linePath = svg.querySelector('#ovLinePath');
+  const areaPath = svg.querySelector('#ovLineArea');
+  const dotsG = svg.querySelector('#ovLineDots');
+
+  // Cancel prior animation
+  if (window._ovLineRaf) cancelAnimationFrame(window._ovLineRaf);
+
+  const duration = 650;
+  const t0 = performance.now();
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const tick = (now) => {
+    const t = Math.min(1, (now - t0) / duration);
+    const e = ease(t);
+    const interp = targetSeries.map((target, i) => ({
+      date: target.date,
+      count: (startSample[i] ? startSample[i].count : 0) * (1 - e) + target.count * e,
+    }));
+    const { line, area } = buildPaths(interp);
+    linePath.setAttribute('d', line);
+    areaPath.setAttribute('d', area);
+    if (t < 1) {
+      window._ovLineRaf = requestAnimationFrame(tick);
+    } else {
+      // Render dots at final positions
+      dotsG.innerHTML = targetSeries.map((pt, i) => {
+        if (pt.count === 0) return '';
+        const x = xFor(i, targetSeries.length), y = yFor(pt.count);
+        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)" stroke="var(--card-bg)" stroke-width="2"/>`;
+      }).join('');
+      window._ovLineRaf = null;
+    }
+  };
+  // Clear dots during animation (they'd lag the line)
+  dotsG.innerHTML = '';
+  window._ovLineRaf = requestAnimationFrame(tick);
+
+  // Wire hover
+  setupLineHover(targetSeries, xFor, yFor, padL, padR, W, H, padT, innerH);
 }
 
-// ----- Donut chart for completed vs remaining
-function donutChartHTML(completed, remaining) {
+// Line chart hover tooltip
+function setupLineHover(series, xFor, yFor, padL, padR, W, H, padT, innerH) {
+  const svg = document.getElementById('ovLineSvg');
+  const wrap = document.getElementById('ovLineWrap');
+  const tooltip = document.getElementById('ovLineTooltip');
+  const hoverV = document.getElementById('ovLineHoverV');
+  const hoverDot = document.getElementById('ovLineHoverDot');
+  const hoverArea = document.getElementById('ovLineHoverArea');
+  if (!svg || !wrap || !tooltip || !hoverV || !hoverDot || !hoverArea) return;
+
+  const fmtFull = (yyyymmdd) => {
+    const d = parseYMD(yyyymmdd);
+    if (!d) return yyyymmdd;
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  const pickIdxFromMouseX = (mouseX) => {
+    // Convert mouseX (within wrap, which displays SVG at variable width) to series index
+    const rect = wrap.getBoundingClientRect();
+    const ratio = (mouseX - rect.left) / rect.width;
+    const svgX = ratio * W;
+    if (series.length === 1) return 0;
+    // Find nearest point
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < series.length; i++) {
+      const x = xFor(i, series.length);
+      const d = Math.abs(svgX - x);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  };
+
+  // Cleanup any prior listener
+  if (wrap._ovHoverHandler) wrap.removeEventListener('mousemove', wrap._ovHoverHandler);
+  if (wrap._ovLeaveHandler) wrap.removeEventListener('mouseleave', wrap._ovLeaveHandler);
+
+  wrap._ovHoverHandler = (ev) => {
+    if (series.length === 0) return;
+    const idx = pickIdxFromMouseX(ev.clientX);
+    const pt = series[idx];
+    const x = xFor(idx, series.length);
+    const y = yFor(pt.count);
+
+    hoverV.setAttribute('x1', x);
+    hoverV.setAttribute('x2', x);
+    hoverV.setAttribute('y1', padT);
+    hoverV.setAttribute('y2', padT + innerH);
+    hoverV.setAttribute('opacity', '0.5');
+    hoverDot.setAttribute('cx', x);
+    hoverDot.setAttribute('cy', y);
+    hoverDot.setAttribute('opacity', '1');
+
+    // Position tooltip — convert SVG X back to wrap-space
+    const rect = wrap.getBoundingClientRect();
+    const wrapX = (x / W) * rect.width;
+    const wrapY = (y / H) * rect.height;
+    tooltip.style.display = 'block';
+    document.getElementById('ovTooltipDate').textContent = fmtFull(pt.date);
+    document.getElementById('ovTooltipCount').textContent = pt.count;
+    // Center the tooltip horizontally on the dot, with edge clamping
+    const tooltipW = tooltip.offsetWidth || 140;
+    let leftPx = wrapX - tooltipW / 2;
+    leftPx = Math.max(4, Math.min(rect.width - tooltipW - 4, leftPx));
+    tooltip.style.left = leftPx + 'px';
+    tooltip.style.top = Math.max(4, wrapY - 50) + 'px';
+  };
+  wrap._ovLeaveHandler = () => {
+    hoverV.setAttribute('opacity', '0');
+    hoverDot.setAttribute('opacity', '0');
+    tooltip.style.display = 'none';
+  };
+  wrap.addEventListener('mousemove', wrap._ovHoverHandler);
+  wrap.addEventListener('mouseleave', wrap._ovLeaveHandler);
+}
+
+// ----- Donut animation ------------------------------------------------
+function animateDonutChart(completed, remaining) {
+  const arc = document.getElementById('ovDonutArc');
+  const pctEl = document.getElementById('ovDonutPct');
+  const legendDone = document.querySelector('#ovLegendDone .ov-donut-num');
+  const legendRem = document.querySelector('#ovLegendRem .ov-donut-num');
+  if (!arc || !pctEl) return;
+
   const total = completed + remaining;
-  if (total === 0) {
-    return `<div class=\"ov-donut-wrap\">
-      <div class=\"ov-empty\">No participants in scope.</div>
-    </div>`;
-  }
-  const completedPct = (completed / total) * 100;
-  const r = 52;
+  const pct = total === 0 ? 0 : (completed / total) * 100;
+  const r = 58;
   const C = 2 * Math.PI * r;
-  const completedDash = (completedPct / 100) * C;
-  const remainingDash = C - completedDash;
+  const targetDash = (pct / 100) * C;
 
-  return `
-    <div class=\"ov-donut-wrap\">
-      <div class=\"ov-donut-svg-wrap\">
-        <svg class=\"ov-donut-svg\" viewBox=\"0 0 140 140\">
-          <circle cx=\"70\" cy=\"70\" r=\"${r}\" fill=\"none\" stroke=\"var(--bg4)\" stroke-width=\"14\"/>
-          <circle cx=\"70\" cy=\"70\" r=\"${r}\" fill=\"none\"
-                  stroke=\"var(--accent)\" stroke-width=\"14\" stroke-linecap=\"round\"
-                  stroke-dasharray=\"${completedDash.toFixed(2)} ${remainingDash.toFixed(2)}\"
-                  transform=\"rotate(-90 70 70)\"/>
-        </svg>
-        <div class=\"ov-donut-center\">
-          <div class=\"ov-donut-pct\">${Math.round(completedPct)}%</div>
-          <div class=\"ov-donut-cap\">complete</div>
-        </div>
-      </div>
-      <div class=\"ov-donut-legend\">
-        <div class=\"ov-donut-legend-row\"><span class=\"ov-donut-swatch ov-sw-done\"></span><span>Completed</span><span class=\"ov-donut-num\">${completed}</span></div>
-        <div class=\"ov-donut-legend-row\"><span class=\"ov-donut-swatch ov-sw-rem\"></span><span>Remaining</span><span class=\"ov-donut-num\">${remaining}</span></div>
-      </div>
-    </div>
-  `;
+  // Tween stroke-dasharray + percent text
+  if (window._ovDonutRaf) cancelAnimationFrame(window._ovDonutRaf);
+  const startDashStr = arc.getAttribute('stroke-dasharray') || '0 0';
+  const startDash = parseFloat(startDashStr.split(' ')[0]) || 0;
+  const startPct = parseFloat(pctEl.textContent) || 0;
+  const t0 = performance.now();
+  const duration = 700;
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const tick = (now) => {
+    const t = Math.min(1, (now - t0) / duration);
+    const e = ease(t);
+    const dash = startDash + (targetDash - startDash) * e;
+    arc.setAttribute('stroke-dasharray', `${dash.toFixed(2)} ${(C - dash).toFixed(2)}`);
+    const curPct = startPct + (pct - startPct) * e;
+    pctEl.textContent = `${Math.round(curPct)}%`;
+    if (t < 1) window._ovDonutRaf = requestAnimationFrame(tick);
+    else window._ovDonutRaf = null;
+  };
+  window._ovDonutRaf = requestAnimationFrame(tick);
+
+  if (legendDone) tweenNumber(legendDone, completed);
+  if (legendRem) tweenNumber(legendRem, remaining);
+
+  // Donut hover
+  setupDonutHover(completed, remaining, total);
 }
+
+function setupDonutHover(completed, remaining, total) {
+  const hoverEl = document.getElementById('ovDonutHover');
+  const tooltip = document.getElementById('ovDonutTooltip');
+  const tooltipTitle = document.getElementById('ovDonutTooltipTitle');
+  const tooltipNum = document.getElementById('ovDonutTooltipNum');
+  const legendDone = document.getElementById('ovLegendDone');
+  const legendRem = document.getElementById('ovLegendRem');
+  if (!hoverEl || !tooltip) return;
+
+  const showTip = (kind) => {
+    if (kind === 'done') {
+      tooltipTitle.textContent = 'Completed';
+      tooltipNum.textContent = completed;
+    } else {
+      tooltipTitle.textContent = 'Remaining';
+      tooltipNum.textContent = remaining;
+    }
+    tooltip.style.display = 'block';
+  };
+  const hideTip = () => { tooltip.style.display = 'none'; };
+
+  // Replace any prior listeners
+  ['mouseenter','mouseleave'].forEach(ev => {
+    [hoverEl, legendDone, legendRem].forEach(el => {
+      if (!el) return;
+      const key = '_ovDonutH_' + ev;
+      if (el[key]) el.removeEventListener(ev, el[key]);
+    });
+  });
+
+  if (legendDone) {
+    legendDone._ovDonutH_mouseenter = () => showTip('done');
+    legendDone._ovDonutH_mouseleave = hideTip;
+    legendDone.addEventListener('mouseenter', legendDone._ovDonutH_mouseenter);
+    legendDone.addEventListener('mouseleave', legendDone._ovDonutH_mouseleave);
+  }
+  if (legendRem) {
+    legendRem._ovDonutH_mouseenter = () => showTip('rem');
+    legendRem._ovDonutH_mouseleave = hideTip;
+    legendRem.addEventListener('mouseenter', legendRem._ovDonutH_mouseenter);
+    legendRem.addEventListener('mouseleave', legendRem._ovDonutH_mouseleave);
+  }
+  if (hoverEl) {
+    hoverEl._ovDonutH_mouseenter = () => showTip('done');
+    hoverEl._ovDonutH_mouseleave = hideTip;
+    hoverEl.addEventListener('mouseenter', hoverEl._ovDonutH_mouseenter);
+    hoverEl.addEventListener('mouseleave', hoverEl._ovDonutH_mouseleave);
+  }
+}
+
 
 function renderAdminTabBody() {
   const body = document.getElementById('adminTabBody');
