@@ -6030,6 +6030,42 @@ nav {
   line-height: 1.45;
 }
 .admin-banner-detail strong { color: var(--text); font-weight: 600; }
+.admin-banner-action {
+  display: inline-block;
+  margin-left: 6px;
+  background: transparent;
+  border: none;
+  color: var(--accent-ink);
+  font-family: var(--font);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: -0.005em;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.admin-banner-action:hover { color: var(--accent); }
+.admin-banner-steps {
+  margin-top: 10px;
+  padding: 12px 14px 12px 32px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text2);
+  line-height: 1.55;
+}
+.admin-banner-steps ol { margin: 0; padding-left: 8px; }
+.admin-banner-steps li { margin-bottom: 6px; }
+.admin-banner-steps li:last-child { margin-bottom: 0; }
+.admin-banner-steps code {
+  font-family: var(--font-num);
+  background: var(--bg4);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--text);
+}
 .avail-hub-diag-retry {
   flex-shrink: 0;
   font-size: 12px !important;
@@ -10284,7 +10320,37 @@ function renderAssignment() {
 
   ensureCalAnchor();
 
+  // Sync-status banner. When ASSIGNMENT_PA_READ_URL is empty, every admin
+  // browser reads from its own localStorage cache and never sees what other
+  // admins have created. The symptom users hit is "different totals in
+  // different browsers" — incognito is the most common trigger because it
+  // starts with empty localStorage. Surface this directly so the admin
+  // knows to wire up the Power Automate read flow.
+  const showSyncBanner = !ASSIGNMENT_PA_READ_URL;
+
   body.innerHTML = `
+    ${showSyncBanner ? `
+      <div class="admin-banner admin-banner-warn" id="asgnSyncBanner">
+        <div class="admin-banner-icon">⚠</div>
+        <div class="admin-banner-body">
+          <div class="admin-banner-title">Local cache only — schedules not synced across admins</div>
+          <div class="admin-banner-detail">
+            This browser is showing <strong>${adminState.teams.length}</strong> team${adminState.teams.length === 1 ? '' : 's'} and <strong>${adminState.assignments.length}</strong> booking${adminState.assignments.length === 1 ? '' : 's'} from local storage. Other admins (or this browser in incognito) will see different totals because the <strong>Assignment Read</strong> Power Automate flow hasn't been created yet. Saved bookings still write to Excel correctly — but nothing reads them back. Set up the read flow to fix this.
+            <button class="admin-banner-action" id="asgnSyncBannerDetails" type="button">Show setup steps</button>
+          </div>
+          <div id="asgnSyncBannerSteps" class="admin-banner-steps" hidden>
+            <ol>
+              <li>In Power Automate, create a new flow with trigger <strong>"When an HTTP request is received"</strong> (POST, body schema can be empty <code>{}</code>).</li>
+              <li>Add action <strong>"List rows present in a table"</strong> pointing at the Assignment Excel table.</li>
+              <li>Open the action's <strong>Settings</strong>, turn <strong>Pagination ON</strong>, set threshold to <strong>5000</strong>. The default 256-row cap hides rows silently.</li>
+              <li>Add a <strong>"Response"</strong> action: status <code>200</code>, body <code>@{outputs('List_rows_present_in_a_table')?['body/value']}</code>.</li>
+              <li>Save the flow. Copy the <strong>HTTP POST URL</strong> from the trigger.</li>
+              <li>Paste it in <code>orbit.html</code>, line <strong>9898</strong>, between the quotes: <code>const ASSIGNMENT_PA_READ_URL = '…';</code></li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    ` : ''}
     <div class="asgn-shell">
       ${renderTeamsPanelHTML()}
       ${renderCalendarPanelHTML()}
@@ -10294,6 +10360,18 @@ function renderAssignment() {
       <div id="asgnModalContent"></div>
     </div>
   `;
+
+  // Toggle for the inline setup-steps panel
+  const stepsBtn = document.getElementById('asgnSyncBannerDetails');
+  if (stepsBtn) {
+    stepsBtn.addEventListener('click', () => {
+      const steps = document.getElementById('asgnSyncBannerSteps');
+      if (!steps) return;
+      const open = !steps.hasAttribute('hidden');
+      if (open) { steps.setAttribute('hidden', ''); stepsBtn.textContent = 'Show setup steps'; }
+      else      { steps.removeAttribute('hidden'); stepsBtn.textContent = 'Hide setup steps'; }
+    });
+  }
 
   bindAssignmentEvents();
 }
@@ -13652,6 +13730,43 @@ function getOperatorTeam() {
   }) || null;
 }
 
+// Best-effort first-name resolution for a teammate's orbitLoginId, used in
+// the operator (mod) app where the full moderator roster may not be loaded.
+//
+// Resolution order:
+//   1. If the moderators cache has a row for this id, use the First Name
+//      field directly. This is the highest-fidelity path.
+//   2. Otherwise, fall back to the orbitLoginId itself, but strip the
+//      "-orbit" suffix that the program's id convention adds (e.g.
+//      "Jashit-orbit" → "Jashit"). This produces a clean first-name-style
+//      display even when the operator app hasn't pulled the mod list.
+//   3. As a final fallback, return the raw id so the cell isn't blank.
+//
+// Always returns a single token (first name only) — call sites can rely on
+// this and don't need to .split(' ')[0] themselves.
+function getOperatorTeammateFirstName(orbitId) {
+  if (!orbitId) return '—';
+  // 1) Try to use the loaded moderator record's First Name field.
+  if (typeof getModeratorByOrbitId === 'function') {
+    const m = getModeratorByOrbitId(orbitId);
+    if (m) {
+      const fn = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name');
+      if (fn) return String(fn).trim().split(/\s+/)[0];
+    }
+  }
+  // 2) Strip the "-orbit" suffix from the loginId. The id convention is
+  //    "FirstName-orbit" so this yields a clean display token.
+  const raw = String(orbitId);
+  const stripped = raw.replace(/-orbit\b/i, '').replace(/[._\-\s]+$/, '').trim();
+  if (stripped) {
+    // Capitalize the first letter so "jashit" displays as "Jashit" even if
+    // the original id was lowercase.
+    return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+  }
+  // 3) Final fallback — return the id as-is rather than blank.
+  return raw;
+}
+
 function getOperatorTeammates() {
   const team = getOperatorTeam();
   if (!team || !state.modProfile) return [];
@@ -13666,7 +13781,7 @@ function getOperatorTeammates() {
   ];
   return otherIds.map(id => ({
     id,
-    name: getModeratorDisplayName(id),
+    name: getOperatorTeammateFirstName(id),
     isBackup: backupIdSet.has(String(id).toLowerCase()),
   }));
 }
