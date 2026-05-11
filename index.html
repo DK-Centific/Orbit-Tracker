@@ -1059,6 +1059,13 @@ nav {
   opacity: 0.45; cursor: not-allowed;
   transform: none; box-shadow: none;
 }
+/* Notify-action button — "Send email" / "Resend email" in the View
+   Assignment modal foot. Lock icon + label sizing so the button reads
+   cleanly regardless of foot width. The parent `.asgn-modal-foot .btn`
+   rules already enforce nowrap; this just makes the SVG-and-span pair
+   look right. */
+.btn-notify > svg { flex-shrink: 0; }
+.btn-notify > span { white-space: nowrap; }
 .btn-secondary {
   background: var(--bg2); color: var(--text);
   border: 0.5px solid var(--border-strong);
@@ -1872,6 +1879,26 @@ nav {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .team-card.selected .team-card-name { color: var(--accent-ink); }
+.team-card.pending {
+  border-style: dashed;
+  background: var(--bg2);
+}
+.team-card-draft-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  vertical-align: middle;
+  background: var(--amber-bg, rgba(245, 158, 11, 0.16));
+  color: var(--amber-text, #d97706);
+  padding: 1px 7px;
+  border-radius: 99px;
+  position: relative; top: -1px;
+}
+[data-theme="dark"] .team-card-draft-badge {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
 .team-card-actions {
   display: flex; gap: 4px;
   opacity: 0; transition: opacity 0.18s;
@@ -2174,6 +2201,14 @@ nav {
   opacity: 0; pointer-events: none;
   transition: opacity 0.25s ease, transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
   display: flex; flex-direction: column;
+  /* overflow: hidden clips child content to the rounded corner shape.
+     Without it, the Save button's hover glow (box-shadow: 0 6px 18px
+     rgba(0,240,255,0.45)) extends 18px outward — past the modal's right
+     edge when the button sits near it. Same applies to any other glow,
+     hover transform, or focus ring near the modal boundary. Native form
+     dropdowns (<select>, <input type="time">) render in a separate
+     browser layer and are NOT affected by this. */
+  overflow: hidden;
 }
 .asgn-modal.open {
   opacity: 1; pointer-events: all;
@@ -2198,9 +2233,30 @@ nav {
   flex: 1;
 }
 .asgn-modal-foot {
-  padding: 14px 24px 18px;
+  /* 28px right/bottom keeps the buttons clear of the modal's 22px
+     border-radius. With overflow:hidden on the modal, any glow that
+     does escape gets clipped to the rounded shape — but the larger
+     padding means the glow rarely needs clipping in the first place. */
+  padding: 18px 28px 24px;
   border-top: 0.5px solid var(--border);
-  display: flex; justify-content: flex-end; gap: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.asgn-modal-foot .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* Spacer pattern: some modal feet (View Assignment, Cancel Assignment)
+   put a "<div style='flex: 1'></div>" between the left and right groups
+   to push them apart. That continues to work — empty flex:1 spacer
+   takes all available space and dominates over justify-content. */
+@media (max-width: 480px) {
+  .asgn-modal-foot {
+    padding: 14px 16px 16px;
+    gap: 8px;
+  }
 }
 
 .asgn-field { margin-bottom: 14px; }
@@ -2804,16 +2860,30 @@ nav {
 .tg-cell-dot.status-booked      { background: var(--accent); }
 .tg-cell-dot.status-in-progress { background: #f59e0b; }
 .tg-cell-dot.status-completed   { background: #22c55e; }
+.tg-cell-dot.status-notified    { background: #00b4d8; }
 
 /* Status-specific accents on the filled cell — left border in the status hue */
 .tg-cell.filled.status-booked      { border-left: 3px solid var(--accent); }
 .tg-cell.filled.status-in-progress { border-left: 3px solid #f59e0b; }
 .tg-cell.filled.status-completed   { border-left: 3px solid #22c55e; }
+.tg-cell.filled.status-notified    { border-left: 3px solid #00b4d8; }
 .tg-cell.filled.status-completed .tg-cell-name { color: var(--text2); }
 .tg-cell.filled.status-completed .tg-cell-status-text { color: #16a34a; }
 [data-theme="dark"] .tg-cell.filled.status-completed .tg-cell-status-text { color: #86efac; }
 .tg-cell.filled.status-in-progress .tg-cell-status-text { color: #d97706; }
 [data-theme="dark"] .tg-cell.filled.status-in-progress .tg-cell-status-text { color: #fbbf24; }
+.tg-cell.filled.status-notified .tg-cell-status-text { color: #0277bd; }
+[data-theme="dark"] .tg-cell.filled.status-notified .tg-cell-status-text { color: #4fc3f7; }
+
+/* Small envelope icon next to participant name for Notified bookings */
+.tg-cell-notified-icon {
+  font-size: 11px;
+  color: #00b4d8;
+  margin-left: 4px;
+  vertical-align: middle;
+  user-select: none;
+}
+[data-theme="dark"] .tg-cell-notified-icon { color: #4fc3f7; }
 
 .tg-cell-conflict {
   margin-left: auto;
@@ -8996,7 +9066,7 @@ function renderAdminTabBody() {
         </button>
         <button class="subtab-btn ${adminState.subtab === 'assignment' ? 'active' : ''}" data-subtab="assignment" role="tab">
           Assignment
-          <span class="subtab-count" id="asgnCount">${adminState.assignments ? adminState.assignments.length : ''}</span>
+          <span class="subtab-count" id="asgnCount">${activeAssignmentCount() || ''}</span>
         </button>
       </div>
     </div>
@@ -9523,28 +9593,36 @@ function renderParticipants() {
     return;
   }
 
-  // Normalize each participant for display
-  const norm = adminState.participants.map(p => ({
-    firstName:    pickField(p, 'firstName', 'first_name', 'FirstName', 'First Name'),
-    lastName:     pickField(p, 'lastName',  'last_name',  'LastName',  'Last Name'),
-    email:        pickField(p, 'email', 'Email'),
-    phone:        pickField(p, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone'),
-    dateEndorsed: pickField(p, 'dateEndorsed', 'date_endorsed', 'DateEndorsed', 'Date Endorsed'),
-    firstContact: pickField(p, 'firstContactDate', 'first_contact_date', 'FirstContactDate', 'First Contact Date'),
-    scheduled:    pickField(p, 'scheduledDate', 'scheduled_date', 'ScheduledDate', 'Scheduled Date'),
-    notes:        pickField(p, 'notes', 'Notes'),
-    avaDay:       pickField(p, 'avaDay', 'ava_day', 'AvaDay', 'Ava Day', 'availabilityDay', 'availabilityDay'),
-    avaTime:      pickField(p, 'avaTime', 'ava_time', 'AvaTime', 'Ava Time', 'availabilityTime'),
-    address:      pickField(p, 'address', 'Address'),
-    state:        pickField(p, 'state', 'State'),
-    zipCode:      pickField(p, 'zipCode', 'zip_code', 'ZipCode', 'Zip Code', 'zip'),
-    gender:       pickField(p, 'gender', 'Gender'),
-    homeType:     pickField(p, 'homeType', 'home_type', 'HomeType', 'Home Type'),
-    hasGarage:    pickField(p, 'hasGarage', 'has_garage', 'HasGarage', 'Garage'),
-    privateDriveway: pickField(p, 'privateDriveway', 'private_driveway', 'PrivateDriveway', 'Private Driveway'),
-    backyard:     pickField(p, 'Backyard', 'backyard', 'BackYard'),
-    indoorOutdoor:pickField(p, 'indoorOutdoor', 'indoor_outdoor', 'IndoorOutdoor', 'Indoor Outdoor', 'IndoorOrOutdoor'),
-    personalCar:  pickField(p, 'personalCarRecording', 'personal_car_recording', 'PersonalCarRecording', 'Personal Car Recording'),
+  // Normalize each participant for display. Use the centralized
+  // normalizeParticipants() which applies regex-based field detection (so
+  // first/last name columns are caught regardless of naming convention),
+  // then extend with the table-specific fields. Without this shared path,
+  // the table would miss the column-detection improvements that were made
+  // to fix the recurring "only last name shows" symptom.
+  const baseNorm = normalizeParticipants();
+  const norm = baseNorm.map(p => ({
+    firstName:    p.firstName,
+    lastName:     p.lastName,
+    email:        p.email,
+    phone:        p.phone,
+    scheduled:    p.scheduled,
+    avaDay:       p.avaDay,
+    avaTime:      p.avaTime,
+    address:      p.address,
+    state:        p.state,
+    zipCode:      p.zipCode,
+    notes:        p.notes,
+    // Table-only extras — pulled from p.raw with the same regex fallback
+    // approach so unconventional column names still match.
+    dateEndorsed:    pickField(p.raw, 'dateEndorsed', 'date_endorsed', 'DateEndorsed', 'Date Endorsed') || findField(p.raw, /^date[\s_-]?endorsed$/i),
+    firstContact:    pickField(p.raw, 'firstContactDate', 'first_contact_date', 'FirstContactDate', 'First Contact Date') || findField(p.raw, /^first[\s_-]?contact([\s_-]?date)?$/i),
+    gender:          pickField(p.raw, 'gender', 'Gender') || findField(p.raw, /^gender$/i),
+    homeType:        pickField(p.raw, 'homeType', 'home_type', 'HomeType', 'Home Type') || findField(p.raw, /^home[\s_-]?type$/i),
+    hasGarage:       pickField(p.raw, 'hasGarage', 'has_garage', 'HasGarage', 'Garage') || findField(p.raw, /^(has[\s_-]?)?garage$/i),
+    privateDriveway: pickField(p.raw, 'privateDriveway', 'private_driveway', 'PrivateDriveway', 'Private Driveway') || findField(p.raw, /^private[\s_-]?driveway$/i),
+    backyard:        pickField(p.raw, 'Backyard', 'backyard', 'BackYard') || findField(p.raw, /^backyard$/i),
+    indoorOutdoor:   pickField(p.raw, 'indoorOutdoor', 'indoor_outdoor', 'IndoorOutdoor', 'Indoor Outdoor', 'IndoorOrOutdoor') || findField(p.raw, /^indoor[\s_-]?(or[\s_-]?)?outdoor$/i),
+    personalCar:     pickField(p.raw, 'personalCarRecording', 'personal_car_recording', 'PersonalCarRecording', 'Personal Car Recording') || findField(p.raw, /^personal[\s_-]?car([\s_-]?recording)?$/i),
   }));
 
   // Filter by search
@@ -9574,6 +9652,35 @@ function renderParticipants() {
   const visibleCount = visibleCols.length;
   const hiddenCount = totalCols - visibleCount;
 
+  // Build the column-detection diagnostic banner. Shown ONLY when most
+  // participants are missing a name — the recurring symptom. Lists the
+  // actual Excel column names so we can see what's coming back without
+  // needing DevTools.
+  const diag = adminState._partColDiag;
+  const showDiag = diag && diag.total > 0 && (diag.onlyLast + diag.neither > diag.withBoth);
+  const diagBannerHTML = showDiag ? `
+    <div class="admin-banner admin-banner-warn">
+      <div class="admin-banner-icon">⚠</div>
+      <div class="admin-banner-body">
+        <div class="admin-banner-title">Only ${diag.withBoth} of ${diag.total} participants have both first &amp; last name detected</div>
+        <div class="admin-banner-detail">
+          Detected first-name column: ${diag.detectedFirstKey
+            ? `<code>${escapeHTML(diag.detectedFirstKey)}</code>`
+            : '<strong style="color: var(--red);">none found</strong>'}
+          &nbsp;·&nbsp; Last-name column: ${diag.detectedLastKey
+            ? `<code>${escapeHTML(diag.detectedLastKey)}</code>`
+            : '<strong style="color: var(--red);">none found</strong>'}
+        </div>
+        <div class="admin-banner-detail" style="margin-top: 6px;">
+          Columns Excel returned: ${diag.sampleKeys.slice(0, 16).map(k => `<code>${escapeHTML(k)}</code>`).join(' ')}${diag.sampleKeys.length > 16 ? ' …' : ''}
+        </div>
+        <div class="admin-banner-detail" style="margin-top: 6px; color: var(--text3);">
+          If your first-name data is in a column whose name doesn't match what we're detecting, paste the column name in chat and I'll add the variant. Run <code>dumpParticipantSample()</code> in DevTools console to see full row data.
+        </div>
+      </div>
+    </div>
+  ` : '';
+
   body.innerHTML = `
     <div class="ptab-wrap">
       ${adminState._partPaginationWarning ? `
@@ -9590,6 +9697,7 @@ function renderParticipants() {
           </div>
         </div>
       ` : ''}
+      ${diagBannerHTML}
       <div class="ptab-toolbar">
         <div class="ptab-search">
           <span class="ptab-search-icon">
@@ -9954,6 +10062,17 @@ if (typeof window !== 'undefined') {
     saveHiddenTeamIds([]);
     console.log('All hidden teams restored. Refresh to repopulate from Excel.');
   };
+  // Re-run the participant column-detection log without reloading. Useful
+  // when first/last names look wrong and you want to see what columns
+  // Excel is actually returning. After calling, do anything that triggers
+  // normalizeParticipants() — opening the New Assignment modal works.
+  window.debugParticipantColumns = function() {
+    if (typeof adminState !== 'undefined') {
+      delete adminState._partNormDiagLogged;
+      if (typeof normalizeParticipants === 'function') normalizeParticipants();
+    }
+    console.log('Diagnostic re-armed. Open the New Assignment modal to see column names.');
+  };
 }
 
 // Team color system — deterministic palette assignment based on team ID.
@@ -9998,6 +10117,601 @@ const ASSIGNMENT_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.4
 // reconstruction, team rebuilding, and merging with locally-pending writes.
 const ASSIGNMENT_PA_READ_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/007ccc87394e486893f6ea13a9f5769a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=L-IYHBxexwpSm67AoNE7fecJUlD0t1P4ZfW8D2byLD4';
 
+// =====================================================================
+// EMAIL — Booking-confirmation send pipeline
+//
+// When an assignment is saved (a new booking is created), we POST the
+// participant's email + a rendered HTML body to a Power Automate flow
+// that sends the actual email via Office 365 / Outlook.
+//
+// SETUP (required, one time):
+//   1. In Power Automate, create a new flow with trigger
+//      "When an HTTP request is received" (POST). Use this Request Body
+//      JSON Schema:
+//        {
+//          "type": "object",
+//          "properties": {
+//            "to":      { "type": "string" },
+//            "subject": { "type": "string" },
+//            "body":    { "type": "string" }
+//          }
+//        }
+//   2. Add action "Send an email (V2)" from the Office 365 Outlook
+//      connector (or Outlook.com if you're using a personal account).
+//      Map:
+//        To      -> triggerBody()['to']
+//        Subject -> triggerBody()['subject']
+//        Body    -> triggerBody()['body']
+//      In the Advanced options on Send-email, set "Is Html" to "Yes"
+//      so the template's styling renders properly.
+//   3. (Optional) Add a Response action returning 200 — not strictly
+//      required since the orbit code fires-and-forgets the request.
+//   4. Save the flow. Copy the HTTP POST URL from the trigger card.
+//   5. Paste it between the quotes below in EMAIL_PA_SEND_URL.
+// =====================================================================
+const EMAIL_PA_SEND_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e938e13988e64d27aee8d64118c7a7c2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YGownJUTVE8NwUrGC4op6Z2jU2B5jUbzrtBhCYMPe4Y';
+
+// =====================================================================
+// TEAM LOG — authoritative cross-admin team storage
+//
+// Teams are stored in a dedicated Excel table (separate from Assignment).
+// Each team writes N rows — one per moderator on the team — with a `role`
+// column distinguishing primary from backup. This is the only path that
+// makes backups fully sync across browsers.
+//
+// Row schema (the table you've created plus the two recommended additions):
+//   orbitLoginId       — moderator id
+//   firstName, lastName, phoneNumber, centificEmail, personalEmail
+//                      — moderator snapshot fields (same pattern as
+//                        Assignment rows)
+//   teamId             — numeric team ID (same value across all rows of
+//                        the same team)
+//   teamName           — display name
+//   role               — 'primary' | 'backup'  ← critical for sync
+//   status             — 'active' | 'deleted'  ← soft-delete via append
+//   createdTimestamp   — when team was first created (ISO string)
+//   updatedTimestamp   — when team was last edited (ISO string)
+//                        ← used by latest-wins reconstruction
+//
+// Setup: see the SETUP block lower down for step-by-step PA config.
+// =====================================================================
+const TEAMLOG_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e304e200fbc4493eb54e48f4e6bf10b9/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=GcmcF6Ind9hQXbzvrZqXWD3SvjI0yITjgZeuRRUaGqQ';
+const TEAMLOG_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e8a8a3038fca4cf2b2ee1a8bc2ca6f4e/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=yffI7k_rKtW2nlu_ScRwWUhGgUzTo75gJtnFfkXeaYA';
+
+// Build the array of rows that gets POSTed to the TeamLog write flow.
+// One row per moderator on the team. The same teamId + teamName appear on
+// every row so the reader can group rows back into team objects.
+function buildTeamLogRows(team, status) {
+  const now = new Date().toISOString();
+  const baseStatus = status || 'active';
+  const rows = [];
+  const make = (orbitId, role) => {
+    const mod = (typeof getModeratorByOrbitId === 'function') ? getModeratorByOrbitId(orbitId) : null;
+    return {
+      orbitLoginId:     orbitId || '',
+      firstName:        mod ? (pickField(mod, 'firstName', 'first_name', 'FirstName', 'First Name') || '') : '',
+      lastName:         mod ? (pickField(mod, 'lastName',  'last_name',  'LastName',  'Last Name')  || '') : '',
+      phoneNumber:      mod ? (pickField(mod, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number') || '') : '',
+      centificEmail:    mod ? (pickField(mod, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email') || '') : '',
+      personalEmail:    mod ? (pickField(mod, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email') || '') : '',
+      teamId:           team.id,
+      teamName:         team.name || '',
+      role:             role,
+      status:           baseStatus,
+      createdTimestamp: team.createdAt || now,
+      updatedTimestamp: now,
+    };
+  };
+  for (const id of (team.primaryIds || [])) rows.push(make(id, 'primary'));
+  for (const id of getTeamBackupIds(team))  rows.push(make(id, 'backup'));
+  // Edge case: team with zero mods (shouldn't happen — save validates) still
+  // gets a single "marker" row so the team exists in Excel for cross-admin
+  // visibility. Without this, an empty team is invisible everywhere.
+  if (rows.length === 0) {
+    rows.push({
+      orbitLoginId: '',
+      firstName: '', lastName: '', phoneNumber: '',
+      centificEmail: '', personalEmail: '',
+      teamId: team.id,
+      teamName: team.name || '',
+      role: 'primary',
+      status: baseStatus,
+      createdTimestamp: team.createdAt || now,
+      updatedTimestamp: now,
+    });
+  }
+  return rows;
+}
+
+// Fire a TeamLog write. Returns { ok, succeeded, failed, lastError }.
+// Never throws — caller decides whether to toast / log.
+async function writeTeamToTeamLog(team, status) {
+  if (!TEAMLOG_PA_WRITE_URL) {
+    return { ok: false, skipped: true, error: 'TEAMLOG_PA_WRITE_URL not configured' };
+  }
+  const rows = buildTeamLogRows(team, status);
+  let succeeded = 0, failed = 0, lastError = null;
+  for (const row of rows) {
+    try {
+      const res = await fetch(TEAMLOG_PA_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(row),
+      });
+      if (res.ok || res.status === 202) succeeded++;
+      else { failed++; lastError = `HTTP ${res.status}`; }
+    } catch (e) { failed++; lastError = e.message || String(e); }
+  }
+  return { ok: failed === 0, succeeded, failed, lastError };
+}
+
+// Fetch the team list from the TeamLog table. Returns an array of team
+// objects shaped like local teams ({id, name, primaryIds, backupIds}).
+// Resolves to [] on error or when the URL isn't configured — caller
+// falls back to the assignment-row reconstruction path.
+//
+// Reconstruction rules:
+//   - Group rows by teamId
+//   - Within a group, latest updatedTimestamp wins for status/name
+//   - Skip groups where the latest status is 'deleted'
+//   - Mods with role='primary' go into primaryIds
+//   - Mods with role='backup' go into backupIds
+//   - Empty orbitLoginId on the latest row = marker row for empty team
+async function fetchTeamsFromPA() {
+  if (!TEAMLOG_PA_READ_URL) {
+    return { teams: null, configured: false };
+  }
+  try {
+    const res = await fetch(TEAMLOG_PA_READ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      console.warn('[Orbit] TeamLog read failed:', res.status);
+      return { teams: null, configured: true, error: `HTTP ${res.status}` };
+    }
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) {
+      return { teams: null, configured: true, error: 'Response not JSON' };
+    }
+    let rows = extractArray(data);
+    rows = rows.filter(r => r && (r.teamId != null && r.teamId !== ''));
+
+    // Sort newest-first by updatedTimestamp so when we group, the latest
+    // row's status/name win. Empty timestamps sort last (treated as oldest).
+    rows.sort((a, b) => {
+      const ua = String(a.updatedTimestamp || '');
+      const ub = String(b.updatedTimestamp || '');
+      return ub.localeCompare(ua);
+    });
+
+    const groups = new Map();
+    for (const r of rows) {
+      // Normalize teamId to number (same fix as for assignment rows)
+      let tid = r.teamId;
+      if (typeof tid !== 'number') {
+        const n = Number(tid);
+        if (!isNaN(n)) tid = n;
+      }
+      let g = groups.get(tid);
+      if (!g) {
+        g = {
+          id: tid,
+          name: r.teamName || ('Team ' + tid),
+          status: r.status || 'active',
+          createdAt: r.createdTimestamp || '',
+          updatedAt: r.updatedTimestamp || '',
+          primaryIds: [],
+          backupIds: [],
+          _seenMods: new Set(),  // dedup across stale rows
+        };
+        groups.set(tid, g);
+      }
+      // Skip if this team is already known to be deleted from a newer row
+      if (g.status === 'deleted') continue;
+      // If this row says deleted and we haven't recorded a deletion yet,
+      // mark it. Subsequent rows for this team are then skipped.
+      if (r.status === 'deleted') {
+        g.status = 'deleted';
+        continue;
+      }
+      // Add this mod to the appropriate role bucket, deduping
+      const orbitId = String(r.orbitLoginId || '').trim();
+      if (!orbitId) continue;  // marker row for empty team
+      const dedupKey = orbitId.toLowerCase() + '|' + (r.role || 'primary');
+      if (g._seenMods.has(dedupKey)) continue;
+      g._seenMods.add(dedupKey);
+      if (r.role === 'backup') {
+        if (!g.backupIds.includes(orbitId)) g.backupIds.push(orbitId);
+      } else {
+        if (!g.primaryIds.includes(orbitId)) g.primaryIds.push(orbitId);
+      }
+    }
+    // Strip internal dedup set; filter out deleted teams
+    const teams = [...groups.values()]
+      .filter(g => g.status !== 'deleted')
+      .map(g => {
+        delete g._seenMods;
+        delete g.status;  // not part of the runtime team shape
+        return g;
+      });
+    console.log(`[Orbit] TeamLog sync: ${rows.length} rows → ${teams.length} teams`);
+    return { teams, configured: true };
+  } catch (e) {
+    console.warn('[Orbit] TeamLog read error:', e.message);
+    return { teams: null, configured: true, error: e.message };
+  }
+}
+
+// Bundled HTML template. Placeholders ({participantName}, etc.) are
+// replaced at send time by fillEmailTemplate(). The logo is embedded as
+// a base64 PNG so emails are self-contained — no external image hosting.
+const ORBIT_EMAIL_TEMPLATE_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="https://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Project Orbit — Session Reminder</title>
+<!--[if mso]>
+<style type="text/css">
+table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !important; }
+</style>
+<![endif]-->
+</head>
+<body style="margin:0; padding:0; width:100%; background-color:#F5F5F7; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+
+<!-- Preheader: shows in the inbox preview line. Hidden inside the email. -->
+<div style="display:none; font-size:1px; color:#F5F5F7; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
+  Reminder: your Project Orbit session is coming up. Details inside.
+</div>
+
+<!-- Outer table — full-width background -->
+<table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#F5F5F7;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <!-- Main container — 600px max, centered -->
+      <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="600" style="max-width:600px; width:100%; background-color:#FFFFFF; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,21,40,0.05);">
+        <!-- Header band with logo + wordmark — centered inside the frame -->
+        <tr>
+          <td align="center" style="padding:32px 24px 24px; background-color:#FFFFFF; border-bottom:1px solid #EFEFF2;">
+            <!--[if mso]>
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center"><tr><td>
+            <![endif]-->
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto;">
+              <tr>
+                <td valign="middle" style="padding-right:14px; line-height:0;">
+                  <img src="https://raw.githubusercontent.com/dk-centific/orbit-email-assets/main/centific-logo.png" alt="Centific" width="44" height="44" style="display:block; width:44px; height:44px; border:0; outline:none; text-decoration:none;">
+                </td>
+                <td valign="middle" style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:28px; font-weight:700; color:#001528; letter-spacing:-0.02em; line-height:1;">
+                  Centific
+                </td>
+              </tr>
+            </table>
+            <!--[if mso]>
+            </td></tr></table>
+            <![endif]-->
+          </td>
+        </tr>
+            </table>
+          </td>
+        </tr>
+            </table>
+            <!--[if mso]>
+            </td></tr></table>
+            <![endif]-->
+          </td>
+        </tr>
+
+        <!-- Inner message frame — body content displays within this nested table -->
+        <tr>
+          <td style="padding:16px;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#FAFAFC; border:1px solid #EBEBF0; border-radius:8px;">
+
+        <!-- Hero / title -->
+        <tr>
+          <td align="left" style="padding:32px 40px 0;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%">
+              <tr>
+                <td style="padding-bottom:8px;">
+                  <div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#C23287;">
+                    Project Orbit
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <h1 style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:28px; line-height:1.2; font-weight:700; color:#001528; letter-spacing:-0.02em;">
+                    Your session reminder
+                  </h1>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Greeting + lead paragraph -->
+        <tr>
+          <td align="left" style="padding:24px 40px 8px;">
+            <p style="margin:0 0 16px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:16px; line-height:1.55; color:#1A1A1F;">
+              Hi <strong style="color:#001528;">{participantName}</strong>,
+            </p>
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
+              This is a reminder for your Project Orbit session scheduled on <strong style="color:#001528;">{bookedDate}</strong> at <strong style="color:#001528;">{bookedTime}</strong>.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Details card -->
+        <tr>
+          <td align="center" style="padding:24px 40px 8px;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#FAF5F8; border:1px solid #F0E0EA; border-radius:10px;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%">
+
+                    <!-- DATE row -->
+                    <tr>
+                      <td width="100" valign="top" style="padding:6px 16px 6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287; white-space:nowrap;">
+                        Date
+                      </td>
+                      <td valign="top" style="padding:6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#001528; line-height:1.4;">
+                        {48hours_bookDate}
+                      </td>
+                    </tr>
+
+                    <!-- Divider -->
+                    <tr><td colspan="2" style="font-size:0; line-height:0;"><div style="border-top:1px solid #F0E0EA; height:1px; line-height:1px;">&nbsp;</div></td></tr>
+
+                    <!-- TIME row -->
+                    <tr>
+                      <td width="100" valign="top" style="padding:6px 16px 6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287; white-space:nowrap;">
+                        Time
+                      </td>
+                      <td valign="top" style="padding:6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#001528; line-height:1.4;">
+                        {bookedTime}
+                      </td>
+                    </tr>
+
+                    <!-- Divider -->
+                    <tr><td colspan="2" style="font-size:0; line-height:0;"><div style="border-top:1px solid #F0E0EA; height:1px; line-height:1px;">&nbsp;</div></td></tr>
+
+                    <!-- ADDRESS row -->
+                    <tr>
+                      <td width="100" valign="top" style="padding:6px 16px 6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287; white-space:nowrap;">
+                        Address
+                      </td>
+                      <td valign="top" style="padding:6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#001528; line-height:1.4;">
+                        {participant_address}
+                      </td>
+                    </tr>
+
+                    <!-- Divider -->
+                    <tr><td colspan="2" style="font-size:0; line-height:0;"><div style="border-top:1px solid #F0E0EA; height:1px; line-height:1px;">&nbsp;</div></td></tr>
+
+                    <!-- MODERATORS row -->
+                    <tr>
+                      <td width="100" valign="top" style="padding:6px 16px 6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287; white-space:nowrap;">
+                        Moderators
+                      </td>
+                      <td valign="top" style="padding:6px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#001528; line-height:1.4;">
+                        {moderators}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- What to expect -->
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <h2 style="margin:0 0 12px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#001528;">
+              What to expect
+            </h2>
+            <p style="margin:0 0 14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
+              The moderators will come to your home to conduct the session, set up the devices, and guide you through the entire recording process.
+            </p>
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
+              During the session, you will be asked to perform simple everyday activities outside your house in the backyard and driveway while mounted cameras record the process.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Important notes callout -->
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#FFFFFF; border-left:3px solid #C23287; border-radius:0 6px 6px 0;">
+              <tr>
+                <td style="padding:14px 18px;">
+                  <p style="margin:0 0 10px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287;">
+                    Important
+                  </p>
+                  <p style="margin:0 0 10px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#1A1A1F;">
+                    Please remember to <strong style="color:#001528;">sign the NDA</strong> before the session.
+                  </p>
+                  <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#1A1A1F;">
+                    Your moderator will also give you a call one day before the session to confirm. If you would like to reschedule or cancel, please let us know at least <strong style="color:#001528;">24 hours in advance</strong> so we can make the necessary arrangements.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Closing + signature -->
+        <tr>
+          <td align="left" style="padding:28px 40px 8px;">
+            <p style="margin:0 0 20px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
+              We look forward to working with you! Please feel free to reach out if you have any questions.
+            </p>
+            <p style="margin:0 0 4px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.5; color:#3A3A40;">
+              Best regards,
+            </p>
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:700; line-height:1.5; color:#001528;">
+              Project Orbit Team
+            </p>
+          </td>
+        </tr>
+
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="padding:32px 40px 32px;">
+            <div style="border-top:1px solid #EFEFF2; padding-top:20px;">
+              <p style="margin:0 0 6px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:12px; line-height:1.5; color:#9A9AA0; letter-spacing:0.02em;">
+                This is an automated reminder from Project Orbit.
+              </p>
+              <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; line-height:1.5; color:#9A9AA0; letter-spacing:0.04em;">
+                © Centific · Project Orbit
+              </p>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
+</body>
+</html>
+`;
+
+// Subject line — uses the participant's first name + session date.
+function buildEmailSubject(participantName, sessionDateLabel) {
+  return `Reminder: Your Project Orbit session on ${sessionDateLabel}`;
+}
+
+// Substitute placeholders in the HTML template. Every value is HTML-
+// escaped so a participant's name with apostrophes or an address with
+// "&" doesn't break the markup. The `{48hours_bookDate}` token gets
+// the same date value as `{bookedDate}` — the template was authored
+// with a separate placeholder for the formatted session date inside
+// the details card, but in practice we display the same date in both
+// spots.
+function fillEmailTemplate(template, data) {
+  const safe = (s) => escapeHTML(String(s == null ? '' : s));
+  return template
+    .replace(/\{participantName\}/g,    safe(data.participantName))
+    .replace(/\{bookedDate\}/g,         safe(data.bookedDate))
+    .replace(/\{bookedTime\}/g,         safe(data.bookedTime))
+    .replace(/\{48hours_bookDate\}/g,   safe(data.sessionDate))
+    .replace(/\{participant_address\}/g, safe(data.address))
+    .replace(/\{moderators\}/g,          safe(data.moderators));
+}
+
+// Format the time range for the email body. Single-time format when
+// start/end land on the same hour; "9:00 AM – 5:00 PM" otherwise.
+function buildEmailTimeLabel(startMin, endMin) {
+  if (startMin === endMin) return fmtTimeOfDay(startMin);
+  return `${fmtTimeOfDay(startMin)} – ${fmtTimeOfDay(endMin)}`;
+}
+
+// Send the booking-confirmation email. Returns a promise that resolves
+// to { ok, status, error }. Never throws — the caller in saveAssignment
+// uses the result to toast success/failure but never blocks on it.
+//
+// Resolves with { ok: false, skipped: true } when the PA URL isn't
+// configured — that's a silent no-op so the booking flow still works
+// when email infra isn't set up yet.
+async function sendBookingEmail(assignment) {
+  if (!assignment || !assignment.participantData) {
+    return { ok: false, error: 'No participant data on assignment' };
+  }
+  const pd = assignment.participantData;
+  const to = (pd.email || '').trim();
+  if (!to) {
+    return { ok: false, error: 'Participant has no email on file' };
+  }
+  if (!EMAIL_PA_SEND_URL) {
+    console.log('[Orbit] Email skipped — EMAIL_PA_SEND_URL not configured.');
+    return { ok: false, skipped: true, error: 'Email flow not configured' };
+  }
+
+  // Build the formatted values that go into the template.
+  const dateObj = parseYMD(assignment.date);
+  const dateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : assignment.date;
+  const shortDateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : assignment.date;
+  const timeLabel = buildEmailTimeLabel(assignment.startMin, assignment.endMin);
+  // Greeting + body: use the participant's full name when both first and
+  // last are available, otherwise whatever single name is on file. Falls
+  // back to "there" so we never produce "Hi ," with a leading comma.
+  const fname = (pd.firstName || '').trim();
+  const lname = (pd.lastName || '').trim();
+  const fullName = [fname, lname].filter(Boolean).join(' ') || 'there';
+  // Short form for the subject line — first name reads better there than
+  // the full name, and the subject is the only spot where we lean on
+  // first-name informality.
+  const firstNameForSubject = fname || lname || 'there';
+  // Address: assemble from the parts we have. Some Excel rows have a
+  // street address but not state/zip; some have everything in one field.
+  const addressParts = [pd.address, pd.state, pd.zipCode].filter(Boolean);
+  const address = addressParts.join(', ') || pd.address || '—';
+  // Moderator names — primaries only, joined with " & ". The modSnapshots
+  // array is built from the team's primaryIds at save time (see
+  // saveAssignment), so backups never appear here, which matches the
+  // template requirement. Each name uses "First Last" form; if a snapshot
+  // is missing names we fall back to the orbitLoginId so we never emit
+  // a blank entry.
+  const modList = (assignment.modSnapshots || []).map(m => {
+    const mfn = (m.firstName || '').trim();
+    const mln = (m.lastName || '').trim();
+    return [mfn, mln].filter(Boolean).join(' ') || m.orbitLoginId || '';
+  }).filter(Boolean);
+  const moderators = modList.length === 0
+    ? 'To be assigned'
+    : modList.length === 1
+    ? modList[0]
+    : modList.length === 2
+    ? modList.join(' & ')
+    : modList.slice(0, -1).join(', ') + ' & ' + modList[modList.length - 1];
+
+  const body = fillEmailTemplate(ORBIT_EMAIL_TEMPLATE_HTML, {
+    participantName: fullName,
+    bookedDate:      dateLabel,
+    bookedTime:      timeLabel,
+    sessionDate:     dateLabel,
+    address:         address,
+    moderators:      moderators,
+  });
+  const subject = buildEmailSubject(firstNameForSubject, shortDateLabel);
+
+  try {
+    const res = await fetch(EMAIL_PA_SEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, body }),
+    });
+    if (res.ok || res.status === 202) {
+      console.log(`[Orbit] Booking email sent to ${to}`);
+      return { ok: true, status: res.status, to: to };
+    }
+    const errText = await res.text().catch(() => '');
+    console.warn(`[Orbit] Email send returned HTTP ${res.status}`, errText);
+    return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+  } catch (e) {
+    console.warn('[Orbit] Email send threw:', e);
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+
 // Normalizer for team backup membership. Teams went from `backupId` (single
 // optional id) to `backupIds` (array of up to 2 ids). Old localStorage data
 // and any legacy in-memory team object can still surface a `backupId` —
@@ -10036,16 +10750,73 @@ function loadAssignmentData() {
     if (!raw) return { teams: [], assignments: [] };
     const parsed = JSON.parse(raw);
     const teams = (Array.isArray(parsed.teams) ? parsed.teams : []).map(migrateTeamShape);
-    return {
-      teams: teams,
-      assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
-    };
+    let assignments = Array.isArray(parsed.assignments) ? parsed.assignments : [];
+    // One-time migration: existing assignments in localStorage from before
+    // the _excelSynced flag existed should be assumed previously-synced.
+    // Reason: localStorage assignments only get there from either (a) a
+    // remote fetch reconstruction or (b) a local save → both paths run
+    // POSTs to PA. So legacy assignments are very likely already in Excel.
+    // Marking them as _excelSynced=true lets the new stale-cleanup logic
+    // correctly drop them on the next fetch if Excel has been wiped.
+    // Without this migration, the first refresh after deploying this fix
+    // would still show the stale data.
+    if (!parsed._migrated_excelSynced_v1 && assignments.length > 0) {
+      let migrated = 0;
+      assignments = assignments.map(a => {
+        if (a._excelSynced === undefined) {
+          migrated++;
+          return { ...a, _excelSynced: true };
+        }
+        return a;
+      });
+      try {
+        localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+          ...parsed,
+          assignments,
+          _migrated_excelSynced_v1: true,
+        }));
+        if (migrated > 0) {
+          console.log(`[Orbit] One-time migration: marked ${migrated} legacy assignments as previously-synced`);
+        }
+      } catch (_) {}
+    }
+
+    // Belt-and-suspenders dedup. If any past bug or hand-edited localStorage
+    // contains duplicate assignment IDs, the second copy is dropped here so
+    // the Overview count doesn't get inflated.
+    if (assignments.length > 0) {
+      const seen = new Set();
+      const dedupedAsgns = [];
+      let dupes = 0;
+      for (const a of assignments) {
+        if (!a || !a.id) continue;
+        if (seen.has(a.id)) { dupes++; continue; }
+        seen.add(a.id);
+        dedupedAsgns.push(a);
+      }
+      if (dupes > 0) {
+        console.warn(`[Orbit] Removed ${dupes} duplicate assignment(s) from localStorage on load`);
+        assignments = dedupedAsgns;
+        try {
+          localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+            ...parsed, assignments, _migrated_excelSynced_v1: true,
+          }));
+        } catch (_) {}
+      }
+    }
+    return { teams, assignments };
   } catch (e) { return { teams: [], assignments: [] }; }
 }
 function saveAssignmentData() {
   try {
+    // Filter out _pending teams — they live in memory only until an
+    // assignment references one of them. See the inline-team-create flow
+    // and saveAssignment() for the lifecycle. Without this filter, pending
+    // teams would leak into localStorage on every save (e.g. when another
+    // booking saves while a different pending team is in memory).
+    const persistTeams = (adminState.teams || []).filter(t => !t._pending);
     localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
-      teams: adminState.teams,
+      teams: persistTeams,
       assignments: adminState.assignments,
     }));
   } catch (e) {}
@@ -10134,6 +10905,20 @@ async function fetchAssignmentsFromPA() {
   // edited (same pattern as the availability and worklog read paths)
   rows = rows.filter(r => r && (r.assignmentId || r.assignedDate || r.orbitLoginId));
 
+  // Sort rows newest-first by lastActive (the per-row timestamp Power
+  // Automate sees when the assignment was last written). This makes the
+  // grouping loop's "first wins" semantics actually mean "latest wins" for
+  // status/comment, which fixes the cancelled-but-still-shows-as-booked
+  // bug — when admin cancels, the new rows go into Excel with a newer
+  // lastActive, get processed first, and set the group's status to
+  // Cancelled. The old Booked rows are then merged in (for their
+  // modSnapshots data) but don't overwrite the status.
+  rows = rows.slice().sort((a, b) => {
+    const la = String(a.lastActive || '');
+    const lb = String(b.lastActive || '');
+    return lb.localeCompare(la);  // ISO timestamps sort lexicographically
+  });
+
   // Group rows back into assignments. Prefer the explicit assignmentId column
   // when present (the new schema). Fall back to a synthetic key built from
   // (date, startMin, teamId, assignedTo) when assignmentId is empty — this
@@ -10159,7 +10944,13 @@ async function fetchAssignmentsFromPA() {
       }
       g = {
         id: r.assignmentId || ('asgn_remote_' + _hashKey(groupKey)),
-        teamId: r.teamId,
+        // Normalize teamId — Excel can return numeric IDs as either number
+        // or string depending on column typing. Coerce to a stable type
+        // (number) so Map.has() lookups match local team IDs (which always
+        // come from nextTeamId() as numbers). Without this, the local-team
+        // merge below treats "1" (string from Excel) and 1 (number from
+        // localStorage) as different keys, causing duplicate cards.
+        teamId: (r.teamId == null || r.teamId === '') ? null : (Number(r.teamId) || r.teamId),
         teamName: r.team || '',
         date: dateInfo.date,
         startMin: dateInfo.startMin,
@@ -10175,12 +10966,45 @@ async function fetchAssignmentsFromPA() {
         status: r.status || 'Booked',
         comment: r.comment || '',
         savedAt: r.lastActive || new Date().toISOString(),
+        // Tag this assignment as having come from a remote fetch. Used by
+        // the local-only merge below to distinguish "pending write" from
+        // "previously synced but now deleted from Excel". Without this
+        // tag, every assignment in localStorage that didn't appear in the
+        // latest fetch was kept — even when Excel had been intentionally
+        // cleared. With it, only assignments that have never been seen
+        // remotely survive as local-only.
+        _excelSynced: true,
+        // Record the lastActive of the first (newest) row we encountered
+        // for this assignment. Only rows matching this exact lastActive
+        // contribute their orbitLoginId to modSnapshots. This drops mods
+        // from previous writes (e.g., when the team was edited from
+        // Team A → Team B, Team A's mod rows in Excel must not pollute
+        // the modSnapshots of the now-current Team B configuration).
+        // Without this filter, edit-team operations cause stale mods to
+        // accumulate, which then inflates Performance/Overview counts
+        // because the booking gets attributed to every historical mod.
+        _latestActive: r.lastActive || '',
       };
       grouped.set(groupKey, g);
+    } else {
+      // Cancelled-sticky safety net. Even if timestamps are equal (legacy
+      // data where savedAt wasn't bumped on cancel), if ANY row for this
+      // group says Cancelled, the whole group is Cancelled. Once cancelled,
+      // always cancelled — matches admin's expectation that cancellation
+      // is monotonic, and protects against future timestamp ambiguity.
+      if (r.status === 'Cancelled' && g.status !== 'Cancelled') {
+        g.status = 'Cancelled';
+        if (r.comment) g.comment = r.comment;
+      }
     }
-    // Append this mod to the assignment (deduping on orbitLoginId in case of
-    // duplicate rows, which can happen if a write was retried)
-    if (r.orbitLoginId && !g.modSnapshots.some(m => String(m.orbitLoginId).toLowerCase() === String(r.orbitLoginId).toLowerCase())) {
+    // Append this mod to the assignment, but ONLY if this row is from
+    // the same write (same lastActive) as the assignment's latest row.
+    // Rows from earlier writes — e.g., a previous team configuration that
+    // was overwritten by edit — are skipped. Also dedupes on orbitLoginId
+    // in case of a retried write within the same lastActive batch.
+    if (r.orbitLoginId
+        && (r.lastActive || '') === g._latestActive
+        && !g.modSnapshots.some(m => String(m.orbitLoginId).toLowerCase() === String(r.orbitLoginId).toLowerCase())) {
       g.modSnapshots.push({
         orbitLoginId:   r.orbitLoginId,
         firstName:      r.firstName     || '',
@@ -10191,16 +11015,21 @@ async function fetchAssignmentsFromPA() {
       });
     }
   }
+
+  // Strip the internal _latestActive tracking field — it's an implementation
+  // detail of the grouping pass, not part of the assignment shape.
+  for (const g of grouped.values()) delete g._latestActive;
   const remoteAssignments = [...grouped.values()];
 
   // Reconstruct teams by collecting unique (teamId, teamName, primaryIds[]) tuples
-  // from the assignment rows. This isn't perfect — we lose the backups slot
-  // because Excel rows only carry primary moderators — but it's enough to render
-  // teams in the UI and color-code assignments correctly across admins.
+  // from the assignment rows. This is a fallback path used when TeamLog isn't
+  // wired up yet. It loses the backups slot because assignment rows only carry
+  // primaries, but it's enough to render teams and color-code assignments.
   const teamMap = new Map();
   for (const a of remoteAssignments) {
-    if (!a.teamId) continue;
-    const tid = a.teamId;
+    if (a.teamId == null) continue;
+    // Already normalized to number above, but re-normalize defensively
+    const tid = (typeof a.teamId === 'number') ? a.teamId : (Number(a.teamId) || a.teamId);
     if (!teamMap.has(tid)) {
       teamMap.set(tid, { id: tid, name: a.teamName || ('Team ' + tid), primaryIds: [], backupIds: [] });
     }
@@ -10214,25 +11043,116 @@ async function fetchAssignmentsFromPA() {
 
   // Merge with the local cache so any pending writes (admin saved but the
   // POST hasn't completed yet) survive the round-trip. Remote wins for shared
-  // assignments; local-only IDs are preserved.
+  // assignments. For local-only IDs, we MUST distinguish two cases:
+  //   (a) pending write — admin just saved, PA hasn't returned it in a fetch
+  //       yet. Has no _excelSynced flag. Keep — losing this would silently
+  //       drop the admin's work.
+  //   (b) previously synced + later deleted from Excel. Has _excelSynced=true
+  //       from an earlier fetch where it was reconstructed. Drop — the row
+  //       is no longer in Excel, treating it as authoritative removes it.
+  // Without case (b) filtering, deleted Excel rows would re-appear forever
+  // because localStorage keeps them around. The user's "previously logged
+  // assignment appears" bug was exactly this.
   const local = loadAssignmentData();
   const remoteIds = new Set(remoteAssignments.map(a => a.id));
-  const localOnly = (local.assignments || []).filter(a => a.id && !remoteIds.has(a.id));
-  const mergedAssignments = [...remoteAssignments, ...localOnly];
+  const localOnly = (local.assignments || []).filter(a =>
+    a.id && !remoteIds.has(a.id) && !a._excelSynced
+  );
+  const droppedStale = (local.assignments || []).filter(a =>
+    a.id && !remoteIds.has(a.id) && a._excelSynced
+  ).length;
+  if (droppedStale > 0) {
+    console.log(`[Orbit] Dropped ${droppedStale} stale local assignment${droppedStale === 1 ? '' : 's'} (previously synced, no longer in Excel)`);
+  }
+  let mergedAssignments = [...remoteAssignments, ...localOnly];
+
+  // Defensive final dedup on assignment IDs. The merge above should never
+  // produce duplicates (the localOnly filter excludes IDs in remoteIds),
+  // but a belt-and-suspenders check protects the Overview booking count
+  // from any subtle bug that might creep in. Last-write-wins so the most
+  // recent shape sticks.
+  const asgnDedup = new Map();
+  for (const a of mergedAssignments) {
+    if (a.id) asgnDedup.set(a.id, a);
+  }
+  if (asgnDedup.size !== mergedAssignments.length) {
+    console.warn(`[Orbit] Deduped ${mergedAssignments.length - asgnDedup.size} duplicate assignment ID(s) during merge`);
+  }
+  mergedAssignments = [...asgnDedup.values()];
 
   // For teams: merge so locally-created teams not yet reflected in any
   // assignment row still appear. Local team data may include backups
   // which the remote can't reconstruct, so prefer local backup info when
-  // it's richer.
-  const localTeamById = new Map((local.teams || []).map(t => [t.id, migrateTeamShape(t)]));
+  // it's richer. Local team IDs are normalized via migrateTeamShape (already
+  // numbers); remote IDs were normalized above; the Map lookup is now type-
+  // consistent.
+  const localTeamById = new Map((local.teams || []).map(t => {
+    const mt = migrateTeamShape(t);
+    // Same normalization as remote, in case localStorage was written before
+    // this fix and contains stringified IDs.
+    if (mt.id != null && typeof mt.id !== 'number') {
+      const n = Number(mt.id);
+      if (!isNaN(n)) mt.id = n;
+    }
+    return [mt.id, mt];
+  }));
   let mergedTeams = remoteTeams.map(rt => {
     const lt = localTeamById.get(rt.id);
     const localBackups = lt ? getTeamBackupIds(lt) : [];
     if (localBackups.length > 0) return { ...rt, backupIds: localBackups };
     return rt;
   });
-  for (const lt of (local.teams || [])) {
-    if (!teamMap.has(lt.id)) mergedTeams.push(migrateTeamShape(lt));
+  for (const lt of localTeamById.values()) {
+    if (!teamMap.has(lt.id)) mergedTeams.push(lt);
+  }
+
+  // Final defensive dedup: even if some subtle type or merge bug still
+  // exists, the final team list must have unique IDs. Last-write-wins so
+  // locally edited backups don't lose to a stale remote shape.
+  const dedup = new Map();
+  for (const t of mergedTeams) {
+    dedup.set(t.id, t);
+  }
+  mergedTeams = [...dedup.values()];
+
+  // If the TeamLog flow is configured, fetch the authoritative team list
+  // and let it OVERRIDE the assignment-row reconstruction. TeamLog carries
+  // backups (which assignment rows can't), survives team deletions cleanly,
+  // and avoids the duplicate-ID type-coercion class of bugs entirely.
+  // When TeamLog isn't wired yet, we fall through to the reconstruction
+  // path above so existing setups keep working.
+  //
+  // CRITICAL: the override MERGES with local-only teams rather than
+  // replacing entirely. Without this, a just-created team whose TeamLog
+  // write is still in flight (PA processes async, takes seconds) would
+  // get wiped from local on refresh — the read returns the previous
+  // TeamLog rows without the new team, the override replaces mergedTeams,
+  // and the new team is lost forever. Merging keeps the local team alive
+  // until TeamLog catches up.
+  if (TEAMLOG_PA_READ_URL) {
+    try {
+      const tl = await fetchTeamsFromPA();
+      if (tl.teams && tl.teams.length > 0) {
+        const remoteIds = new Set(tl.teams.map(t => t.id));
+        // Local-only teams: in mergedTeams but not in TeamLog. These are
+        // either pending writes (TeamLog hasn't processed yet) or genuinely
+        // local-only teams from a transition period. Either way, keep them.
+        const localOnlyTeams = mergedTeams.filter(t => !remoteIds.has(t.id));
+        mergedTeams = [
+          ...tl.teams.map(t => migrateTeamShape(t)),
+          ...localOnlyTeams,
+        ];
+        // Final dedup in case any team appears in both lists
+        const dedup2 = new Map();
+        for (const t of mergedTeams) dedup2.set(t.id, t);
+        mergedTeams = [...dedup2.values()];
+        info.teamCount = mergedTeams.length;
+      } else if (tl.error) {
+        console.warn('[Orbit] TeamLog fetch errored; using assignment-row fallback for teams:', tl.error);
+      }
+    } catch (e) {
+      console.warn('[Orbit] TeamLog fetch threw; using assignment-row fallback for teams:', e);
+    }
   }
 
   // Apply the tombstone filter. Teams whose IDs are in HIDDEN_TEAMS_KEY get
@@ -10246,6 +11166,19 @@ async function fetchAssignmentsFromPA() {
     mergedTeams = mergedTeams.filter(t => !hiddenSet.has(t.id));
     if (mergedTeams.length < before) {
       console.log(`[Orbit] Tombstone filter: hid ${before - mergedTeams.length} team${before - mergedTeams.length === 1 ? '' : 's'}`);
+    }
+  }
+
+  // Preserve in-memory pending teams from the current adminState. Pending
+  // teams are NOT in localStorage (saveAssignmentData filters them out),
+  // so they wouldn't be in `local.teams`. But they ARE in adminState.teams
+  // from the current session's create flows. If we don't carry them
+  // forward, a mid-session refresh would wipe drafts the admin is
+  // actively working with.
+  if (typeof adminState !== 'undefined' && Array.isArray(adminState.teams)) {
+    const seenIds = new Set(mergedTeams.map(t => t.id));
+    for (const t of adminState.teams) {
+      if (t._pending && !seenIds.has(t.id)) mergedTeams.push(t);
     }
   }
 
@@ -10307,6 +11240,24 @@ function fmtTimeOfDay(min) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}${m === 0 ? '' : ':' + String(m).padStart(2, '0')} ${ampm}`;
 }
+
+// Human-readable duration. Examples:
+//   60   → "1 hour"
+//   480  → "8 hours"
+//   510  → "8h 30m"
+//   90   → "1h 30m"
+//   45   → "45 min"
+//   30   → "30 min"
+// Threshold: under an hour we use "N min" (no point saying "0.5 hours"
+// for short blocks). At or above 60 min, hours dominate the display.
+function fmtDurationHours(totalMin) {
+  if (!totalMin || totalMin < 0) return '0 min';
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (m === 0) return h === 1 ? '1 hour' : `${h} hours`;
+  return `${h}h ${m}m`;
+}
 function startOfWeek(d) {
   const x = new Date(d);
   x.setHours(0,0,0,0);
@@ -10349,20 +11300,143 @@ function getModeratorAvatarLetters(orbitId) {
 
 function normalizeParticipants() {
   const list = adminState.participants || [];
-  return list.map(p => ({
-    raw: p,
-    firstName:    pickField(p, 'firstName', 'first_name', 'FirstName', 'First Name'),
-    lastName:     pickField(p, 'lastName',  'last_name',  'LastName',  'Last Name'),
-    email:        pickField(p, 'email', 'Email'),
-    phone:        pickField(p, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone'),
-    scheduled:    pickField(p, 'scheduledDate', 'scheduled_date', 'ScheduledDate', 'Scheduled Date'),
-    avaDay:       pickField(p, 'avaDay', 'ava_day', 'AvaDay', 'Ava Day'),
-    avaTime:      pickField(p, 'avaTime', 'ava_time', 'AvaTime', 'Ava Time'),
-    address:      pickField(p, 'address', 'Address'),
-    state:        pickField(p, 'state', 'State'),
-    zipCode:      pickField(p, 'zipCode', 'zip_code', 'ZipCode', 'Zip Code'),
-    notes:        pickField(p, 'notes', 'Notes'),
-  }));
+
+  // Regex helpers — more precise than substring matching, no false positives.
+  // For first name: matches "first" near "name" (firstname, firstName, first_name,
+  // first name, FirstName) OR "given" near "name". Does NOT match "firstUpdated",
+  // "FirstLogin", "firstInitial", "firstAccessed".
+  const FIRST_NAME_RE = /^(first[\s_-]?name|fname|given[\s_-]?name|gname)$/i;
+  const LAST_NAME_RE  = /^(last[\s_-]?name|lname|sur[\s_-]?name|family[\s_-]?name|surname)$/i;
+  // Looser fallback patterns — only used if strict regex misses everything.
+  // These catch column names with extra prefixes/suffixes like
+  // "ParticipantFirstName", "FirstNameRaw", "p_first_name".
+  const FIRST_NAME_FUZZY_RE = /first.{0,2}name|given.{0,2}name/i;
+  const LAST_NAME_FUZZY_RE  = /last.{0,2}name|sur.{0,2}name|family.{0,2}name/i;
+
+  // Find the value of the first row key that matches a regex AND has a non-
+  // empty value. Returns the key+value so the caller can record what was
+  // detected (for the diagnostic).
+  const findByRegex = (row, re) => {
+    if (!row) return null;
+    for (const key of Object.keys(row)) {
+      if (re.test(key)) {
+        const v = row[key];
+        if (v !== null && v !== undefined && v !== '') {
+          return { key, value: v };
+        }
+      }
+    }
+    return null;
+  };
+
+  // Record what we detected on the first row, for the UI diagnostic
+  let detectedFirstKey = null;
+  let detectedLastKey = null;
+
+  const normalized = list.map((p, idx) => {
+    // Layer 1 — strict regex match against the column name itself
+    let fnHit = findByRegex(p, FIRST_NAME_RE);
+    let lnHit = findByRegex(p, LAST_NAME_RE);
+    // Layer 2 — fuzzy regex (allows extra prefixes/suffixes around "name")
+    if (!fnHit) fnHit = findByRegex(p, FIRST_NAME_FUZZY_RE);
+    if (!lnHit) lnHit = findByRegex(p, LAST_NAME_FUZZY_RE);
+    // Layer 3 — combined "Name" / "Full Name" / "Participant Name" → split
+    let fn = fnHit ? fnHit.value : '';
+    let ln = lnHit ? lnHit.value : '';
+    if (!fn && !ln) {
+      const combinedRe = /^(name|full[\s_-]?name|participant[\s_-]?name|display[\s_-]?name)$/i;
+      const combinedHit = findByRegex(p, combinedRe);
+      if (combinedHit) {
+        const parts = String(combinedHit.value).trim().split(/\s+/);
+        fn = parts[0] || '';
+        ln = parts.slice(1).join(' ') || '';
+        if (idx === 0) detectedFirstKey = `(split from "${combinedHit.key}")`;
+      }
+    }
+    // Record detection for the diagnostic — first row only
+    if (idx === 0) {
+      if (fnHit) detectedFirstKey = fnHit.key;
+      if (lnHit) detectedLastKey  = lnHit.key;
+    }
+
+    return {
+      raw: p,
+      firstName:    fn || '',
+      lastName:     ln || '',
+      email:        findField(p, /^(email|email[\s_-]?address|e[\s_-]?mail)$/i) || '',
+      phone:        findField(p, /^(phone|phone[\s_-]?number|mobile|cell)$/i) || '',
+      scheduled:    findField(p, /^(scheduled|scheduled[\s_-]?date)$/i) || '',
+      avaDay:       findField(p, /^(ava[\s_-]?day|availability[\s_-]?day)$/i) || '',
+      avaTime:      findField(p, /^(ava[\s_-]?time|availability[\s_-]?time)$/i) || '',
+      address:      findField(p, /^(address|street|street[\s_-]?address|location)$/i) || '',
+      state:        findField(p, /^state$/i) || '',
+      zipCode:      findField(p, /^(zip|zip[\s_-]?code|postal|postal[\s_-]?code)$/i) || '',
+      notes:        findField(p, /^(notes?|comments?)$/i) || '',
+    };
+  });
+
+  // Cache the detection result on adminState so the participant picker can
+  // surface a visible diagnostic when names look wrong. The user shouldn't
+  // have to open DevTools to figure out what columns Excel returned.
+  if (list.length > 0) {
+    const withBoth  = normalized.filter(p => p.firstName && p.lastName).length;
+    const onlyFirst = normalized.filter(p => p.firstName && !p.lastName).length;
+    const onlyLast  = normalized.filter(p => !p.firstName && p.lastName).length;
+    const neither   = normalized.filter(p => !p.firstName && !p.lastName).length;
+    adminState._partColDiag = {
+      total: normalized.length,
+      withBoth, onlyFirst, onlyLast, neither,
+      detectedFirstKey, detectedLastKey,
+      sampleKeys: Object.keys(list[0] || {}),
+      sampleRow: list[0],
+    };
+
+    // Console diagnostic — always logs on every normalization (cheap and
+    // matters more than spam when this is the recurring confusion).
+    console.log('[Orbit] Participant detection:',
+      `${withBoth}/${normalized.length} have both names · firstName from "${detectedFirstKey || '—'}" · lastName from "${detectedLastKey || '—'}"`);
+    if (onlyLast > withBoth) {
+      console.warn('[Orbit] ⚠ Most participants are missing a first name. Run window.dumpParticipantSample() to see raw column data.');
+    }
+  }
+
+  return normalized;
+}
+
+// Shared helper: find the first non-empty value whose key matches a regex.
+function findField(row, re) {
+  if (!row) return '';
+  for (const key of Object.keys(row)) {
+    if (re.test(key)) {
+      const v = row[key];
+      if (v !== null && v !== undefined && v !== '') return v;
+    }
+  }
+  return '';
+}
+
+// Window debug helper — paste output here if names still look wrong.
+// Prints all keys and values from the first 3 participant rows so we can
+// see exactly what Excel columns exist + their actual values.
+if (typeof window !== 'undefined') {
+  window.dumpParticipantSample = function() {
+    const list = (adminState && adminState.participants) || [];
+    if (list.length === 0) {
+      console.log('No participants loaded yet. Refresh from the nav bar first.');
+      return;
+    }
+    console.log(`Total: ${list.length} participants. First 3 rows:`);
+    list.slice(0, 3).forEach((p, i) => {
+      console.log(`\n--- Row ${i + 1} ---`);
+      Object.entries(p).forEach(([k, v]) => {
+        console.log(`  "${k}": ${JSON.stringify(v)}`);
+      });
+    });
+    if (adminState._partColDiag) {
+      console.log('\n--- Detection summary ---');
+      console.log(adminState._partColDiag);
+    }
+  };
 }
 
 /* ----------- Team CRUD ----------- */
@@ -10375,11 +11449,27 @@ function defaultTeamName() {
   return `Team ${String(n).padStart(2, '0')}`;
 }
 
+/* ----------- Assignment count helpers -----------
+ * User-facing counts (tab badge, calendar header) should reflect what
+ * the admin perceives as a "booked" session. A cancelled row is a
+ * historical/audit record — it shouldn't drive the "2 assignments"
+ * badge when the grid is visually empty. Booked + Notified both count
+ * as active; Cancelled is the only excluded status.
+ *
+ * Export logic and the local-cache banner still use the raw count
+ * (audit trail purposes), so we keep those untouched. */
+function activeAssignmentCount() {
+  if (!adminState.assignments) return 0;
+  return adminState.assignments.filter(a => a.status !== 'Cancelled').length;
+}
+
 /* ----------- Render Assignment view ----------- */
 function renderAssignment() {
-  // Sync subtab count
+  // Sync subtab count — show only active (booked + notified) assignments,
+  // not cancelled ones. Cancelled bookings remain visible in the calendar
+  // as small dots, but the badge reflects "what's actually scheduled".
   const asgnCountEl = document.getElementById('asgnCount');
-  if (asgnCountEl) asgnCountEl.textContent = adminState.assignments.length || '';
+  if (asgnCountEl) asgnCountEl.textContent = activeAssignmentCount() || '';
 
   const body = document.getElementById('subtabBody');
   if (!body) return;
@@ -10928,10 +12018,14 @@ function teamCardHTML(team) {
   const isSelected = adminState._selectedTeam === team.id;
   const primaries = (team.primaryIds || []);
   const backups = getTeamBackupIds(team);
+  const isPending = !!team._pending;
   return `
-    <div class="team-card ${isSelected ? 'selected' : ''}" data-team-id="${team.id}">
+    <div class="team-card ${isSelected ? 'selected' : ''} ${isPending ? 'pending' : ''}" data-team-id="${team.id}">
       <div class="team-card-head">
-        <div class="team-card-name">${escapeHTML(team.name)}</div>
+        <div class="team-card-name">
+          ${escapeHTML(team.name)}
+          ${isPending ? '<span class="team-card-draft-badge" title="Draft — disappears on refresh unless used in a booking">Draft</span>' : ''}
+        </div>
         <div class="team-card-actions">
           <button class="team-action-btn" data-action="edit" data-team-id="${team.id}" title="Edit team">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
@@ -11024,7 +12118,15 @@ function renderCalendarPanelHTML() {
         </div>
       </div>
       <div class="cal-summary-bar">
-        <span>${adminState.assignments.length > 0 ? adminState.assignments.length + ' assignment' + (adminState.assignments.length === 1 ? '' : 's') + ' total' : 'No assignments yet'}<span class="cal-summary-hint"> · tap any day to assign a participant</span></span>
+        <span>${(() => {
+          // Calendar summary line — same logic as the tab badge. Cancelled
+          // bookings show as small dots in their day cells but don't add
+          // to "N assignments total".
+          const n = activeAssignmentCount();
+          return n > 0
+            ? `${n} assignment${n === 1 ? '' : 's'} total`
+            : 'No assignments yet';
+        })()}<span class="cal-summary-hint"> · tap any day to assign a participant</span></span>
         ${renderTeamLegendHTML()}
       </div>
       <div class="cal-grid-scroll">
@@ -11160,19 +12262,40 @@ function renderTeamGridHTML(days) {
       const a = active[0];
       const fname = (a.participantData && a.participantData.firstName) || '';
       const lname = (a.participantData && a.participantData.lastName)  || '';
-      const displayName = (fname || lname)
-        ? [fname, lname && lname[0] ? lname[0].toUpperCase() + '.' : ''].filter(Boolean).join(' ')
-        : '—';
+      // Display preference: "First L." when both exist (compact, reads well
+      // in narrow grid cells). When only one is available, show that whole
+      // name — never reduce to a lone initial like "A." which is unreadable.
+      let displayName;
+      if (fname && lname) {
+        displayName = `${fname} ${lname[0].toUpperCase()}.`;
+      } else if (fname) {
+        displayName = fname;
+      } else if (lname) {
+        displayName = lname;
+      } else {
+        displayName = '—';
+      }
 
-      // Cell status — derive from worklog cache.
+      // Cell status — derive from worklog cache first (completed/in-progress
+      // beat booking status because the moderator has begun work), otherwise
+      // fall back to the assignment's status field which can be Booked or
+      // Notified. Cancelled assignments are filtered out earlier so they
+      // don't reach this branch.
       const wlStatus = asgnLatestStatus.get(a.id) || null;
-      let statusKind, statusLabel;
+      let statusKind, statusLabel, statusIcon = '';
       if (wlStatus === 'session_done') {
         statusKind  = 'completed';
         statusLabel = 'Completed';
       } else if (wlStatus) {
         statusKind  = 'in-progress';
         statusLabel = 'In session';
+      } else if (a.status === 'Notified') {
+        statusKind  = 'notified';
+        statusLabel = 'Notified';
+        // Small envelope icon next to the name for at-a-glance recognition.
+        // Uses the same teal as the modal's Notified badge so the visual
+        // language is consistent between the grid and the detail view.
+        statusIcon = '<span class="tg-cell-notified-icon" title="Confirmation email sent" aria-label="Confirmation email sent">✉</span>';
       } else {
         statusKind  = 'booked';
         statusLabel = 'Booked';
@@ -11204,7 +12327,7 @@ function renderTeamGridHTML(days) {
              role="button" tabindex="0"
              aria-label="${escapeHTML(fullName)} — ${statusLabel}, tap to view"
              title="${escapeHTML(fullName)} · ${statusLabel}">
-          <div class="tg-cell-name">${escapeHTML(displayName)}${conflictFlag}</div>
+          <div class="tg-cell-name">${escapeHTML(displayName)}${statusIcon}${conflictFlag}</div>
           <div class="tg-cell-status-row">
             <span class="tg-cell-dot status-${statusKind}" aria-hidden="true"></span>
             <span class="tg-cell-status-text">${statusLabel}</span>
@@ -12068,13 +13191,37 @@ function saveTeam() {
     return;
   }
   if (m.kind === 'createTeam') {
-    adminState.teams.push({
+    // The team is local-only until either (a) an assignment uses it and
+    // saves it via the assignment row, or (b) we have a TeamLog write URL
+    // that lets us commit teams independently of assignments.
+    //
+    // When TeamLog is configured: write the team immediately, don't mark
+    // as pending. Other admins see it on their next refresh.
+    //
+    // When TeamLog isn't configured yet (transition state): keep the
+    // _pending behavior so the team doesn't get orphaned as local-only.
+    const newTeam = {
       id: nextTeamId(),
       name: name,
       primaryIds: m.primaryIds,
       backupIds: m.backupIds,
       createdAt: new Date().toISOString(),
-    });
+    };
+    if (!TEAMLOG_PA_WRITE_URL) {
+      newTeam._pending = true;
+    }
+    adminState.teams.push(newTeam);
+    if (TEAMLOG_PA_WRITE_URL) {
+      writeTeamToTeamLog(newTeam, 'active').then(r => {
+        if (r.ok) {
+          toast(`Team "${newTeam.name}" synced to TeamLog ✓`);
+        } else if (r.skipped) {
+          // Quiet — covered by configuration banner
+        } else {
+          toast(`Team saved locally — TeamLog sync failed: ${r.lastError}`);
+        }
+      });
+    }
   } else {
     const t = adminState.teams.find(t => t.id === m.teamId);
     if (t) {
@@ -12084,8 +13231,24 @@ function saveTeam() {
       // Drop the legacy single-id field so memory stays clean. Old reads
       // via getTeamBackupIds() still work because they prefer the array.
       delete t.backupId;
+      // If this team was pending and the edit re-confirms it (still no
+      // assignment uses it), keep it pending. Otherwise the existing flag
+      // state is preserved.
+      if (TEAMLOG_PA_WRITE_URL) {
+        // Edit was saved — push new rows to TeamLog so other admins see
+        // the change. Old rows linger but get superseded by the newer
+        // updatedTimestamp.
+        writeTeamToTeamLog(t, 'active').then(r => {
+          if (r.ok) toast(`Team "${t.name}" updated in TeamLog ✓`);
+          else if (!r.skipped) toast(`Team edit saved locally — TeamLog sync failed: ${r.lastError}`);
+        });
+      }
     }
   }
+  // Persist ONLY non-pending teams + assignments. Pending teams live in
+  // memory for the session. They get persisted when a booking is saved
+  // that references them — at which point saveAssignment() clears the
+  // _pending flag and calls saveAssignmentData() so both commit together.
   saveAssignmentData();
   closeAsgnModal();
   renderAssignment();
@@ -12112,33 +13275,49 @@ function deleteTeam(teamId) {
     return;
   }
 
-  // Case 2 — team has bookings. A pure local delete would be undone by the
-  // next PA fetch (which rebuilds teams from Excel rows). Soft-delete via the
-  // tombstone list instead: the team is filtered out of every future merge,
-  // but the bookings stay in Excel as history.
-  //
-  // We surface this clearly in the confirm so admin understands the trade-off:
-  // they're hiding a team on THIS device; the Excel data is untouched; other
-  // browsers still see the team until they hide it too.
+  // Case 2 — team has bookings. With TeamLog configured we do a true
+  // cross-admin delete (writes status='deleted' to TeamLog so all admins
+  // stop seeing the team). Without TeamLog we fall back to the per-browser
+  // tombstone behavior, which only hides the team locally.
   const active = refs.filter(a => a.status !== 'Cancelled').length;
   const cancelled = refs.length - active;
   const detail = active > 0
     ? `${active} active booking${active === 1 ? '' : 's'}` + (cancelled > 0 ? ` (plus ${cancelled} cancelled)` : '')
     : `${cancelled} cancelled booking${cancelled === 1 ? '' : 's'}`;
-  const msg = `Hide ${teamName}?\n\n`
-    + `This team has ${detail} in Excel.\n\n`
-    + `• The team will disappear from your calendar on this browser.\n`
-    + `• The bookings stay in Excel — historical data is preserved.\n`
-    + `• Other admin browsers still see this team until they hide it too.\n\n`
-    + `Continue?`;
+  const teamObj = (adminState.teams || []).find(t => t.id === teamId);
+  const msg = TEAMLOG_PA_WRITE_URL
+    ? `Delete ${teamName}?\n\n`
+      + `This team has ${detail}.\n\n`
+      + `• The team will be marked deleted in TeamLog — every admin browser stops seeing it on next refresh.\n`
+      + `• The bookings stay in Excel — historical data is preserved.\n\n`
+      + `Continue?`
+    : `Hide ${teamName}?\n\n`
+      + `This team has ${detail} in Excel.\n\n`
+      + `• The team will disappear from your calendar on this browser only.\n`
+      + `• The bookings stay in Excel — historical data is preserved.\n`
+      + `• Other admin browsers still see this team until they hide it too.\n`
+      + `  (Wire up TeamLog to make deletions cross-admin.)\n\n`
+      + `Continue?`;
   if (!confirm(msg)) return;
 
-  addHiddenTeamId(teamId);
+  if (TEAMLOG_PA_WRITE_URL && teamObj) {
+    // True cross-admin delete via TeamLog. Writes rows with
+    // status='deleted'; the read path filters those out everywhere.
+    writeTeamToTeamLog(teamObj, 'deleted').then(r => {
+      if (r.ok) toast(`${teamName} deleted from TeamLog ✓`);
+      else if (!r.skipped) toast(`Deletion saved locally — TeamLog sync failed: ${r.lastError}`);
+    });
+  } else {
+    // Legacy fallback: per-browser tombstone.
+    addHiddenTeamId(teamId);
+  }
   adminState.teams = adminState.teams.filter(t => t.id !== teamId);
   if (adminState._selectedTeam === teamId) adminState._selectedTeam = null;
   saveAssignmentData();
   renderAssignment();
-  if (typeof toast === 'function') toast(`${teamName} hidden from this browser`);
+  if (typeof toast === 'function') {
+    toast(TEAMLOG_PA_WRITE_URL ? `${teamName} deleted` : `${teamName} hidden from this browser`);
+  }
 }
 
 /* ----------- Assignment Modal ----------- */
@@ -12314,15 +13493,30 @@ function renderAssignmentModal() {
         alert('Add at least one primary moderator.');
         return;
       }
+      // The team is held in memory as a "pending" record. We do NOT call
+      // saveAssignmentData() here — that would persist the team to
+      // localStorage before any Excel row references it, creating an orphan
+      // that's invisible to every other admin browser (because cross-admin
+      // team identity is reconstructed from assignment rows, not stored
+      // teams).
+      //
+      // The team only becomes "real" when an assignment using it is saved:
+      // at that point the assignment-save handler drops the _pending flag
+      // and commits to localStorage, AND the assignment row written to
+      // Excel carries the same teamId/teamName so other browsers will see
+      // the team on their next fetch.
+      //
+      // If the admin closes the modal without saving, closeAsgnModal()
+      // prunes this pending entry so it doesn't pollute the team list.
       const newTeam = {
         id: nextTeamId(),
         name: name,
         primaryIds: adminState.modal.inlineTeamPrimaryIds,
         backupIds: adminState.modal.inlineTeamBackupIds,
         createdAt: new Date().toISOString(),
+        _pending: true,
       };
       adminState.teams.push(newTeam);
-      saveAssignmentData();
       // Auto-select the newly created team and exit inline mode
       adminState.modal.teamId = newTeam.id;
       adminState.modal.inlineTeamCreate = false;
@@ -12330,7 +13524,7 @@ function renderAssignmentModal() {
       adminState.modal.inlineTeamPrimaryIds = [];
       adminState.modal.inlineTeamBackupIds = [];
       renderAssignmentModal();
-      toast(`Team "${newTeam.name}" created`);
+      toast(`Team "${newTeam.name}" ready — will save with the assignment`);
     });
     return;
   }
@@ -12457,7 +13651,23 @@ function renderAssignmentModal() {
         const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email');
         const stableId = id || p.email || (p.firstName + p.lastName);
         const isSelected = m.participantOrbitId === stableId;
-        const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || '—';
+        // Display strategy: show "Last, First" when both exist (sortable, easy
+        // to scan in alphabetical order). Fall back gracefully if either is
+        // missing. The first name is always rendered explicitly so the admin
+        // can confirm who they're looking at when surnames are common.
+        const fn = (p.firstName || '').trim();
+        const ln = (p.lastName  || '').trim();
+        let displayName;
+        if (fn && ln) {
+          // "Aguilar, David" — surname-leading is conventional for rosters
+          displayName = `${escapeHTML(ln)}, ${escapeHTML(fn)}`;
+        } else if (fn) {
+          displayName = escapeHTML(fn);
+        } else if (ln) {
+          displayName = escapeHTML(ln);
+        } else {
+          displayName = '—';
+        }
         // Booking status — pill rendered next to the name. Booked rows aren't
         // disabled (admin might want to re-book intentionally) but the visual
         // signal is strong enough to prevent accidental double-booking. We
@@ -12473,7 +13683,7 @@ function renderAssignmentModal() {
             <span class="part-pick-radio"></span>
             <div class="part-pick-info">
               <div class="part-pick-name">
-                <span class="part-pick-name-text">${escapeHTML(fullName)}</span>
+                <span class="part-pick-name-text">${displayName}</span>
                 ${pill}
               </div>
               <div class="part-pick-meta">
@@ -12484,8 +13694,49 @@ function renderAssignmentModal() {
         `;
       }).join('');
 
+  // Visible column-detection diagnostic. Surfaces when most participants
+  // are missing a first name, which is the recurring "only last name shows"
+  // symptom. Lists actual Excel column names so admin can see exactly what
+  // the data has — no DevTools required.
+  const diag = adminState._partColDiag;
+  let detectionBannerHTML = '';
+  if (diag && diag.total > 0 && (diag.onlyLast > diag.withBoth || diag.neither === diag.total)) {
+    const detectedFn = diag.detectedFirstKey
+      ? `<code style="background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; font-size: 11px;">${escapeHTML(diag.detectedFirstKey)}</code>`
+      : '<span style="color: var(--red); font-weight: 600;">none found</span>';
+    const detectedLn = diag.detectedLastKey
+      ? `<code style="background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; font-size: 11px;">${escapeHTML(diag.detectedLastKey)}</code>`
+      : '<span style="color: var(--red); font-weight: 600;">none found</span>';
+    // Show the first few column names so the admin can see what's actually
+    // in their Excel — if a different column has the first names, this list
+    // makes it visible.
+    const keysList = diag.sampleKeys.slice(0, 12)
+      .map(k => `<code style="background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; font-size: 11px; margin: 0 2px;">${escapeHTML(k)}</code>`)
+      .join(' ');
+    detectionBannerHTML = `
+      <div style="margin: 0 0 12px; padding: 10px 12px; background: rgba(245, 158, 11, 0.10); border: 0.5px solid rgba(245, 158, 11, 0.30); border-radius: var(--r); font-size: 12px; line-height: 1.5;">
+        <div style="display: flex; gap: 8px; align-items: flex-start;">
+          <span style="font-size: 16px; line-height: 1;">⚠</span>
+          <div style="flex: 1;">
+            <strong style="color: var(--amber-text, #b45309);">Only ${diag.onlyLast} of ${diag.total} participants have a first name detected.</strong>
+            <div style="margin-top: 6px; color: var(--text2);">
+              Detected first-name column: ${detectedFn} · Detected last-name column: ${detectedLn}
+            </div>
+            <div style="margin-top: 6px; color: var(--text2);">
+              Columns Excel returned: ${keysList}${diag.sampleKeys.length > 12 ? ' …' : ''}
+            </div>
+            <div style="margin-top: 6px; color: var(--text3); font-size: 11px;">
+              If your first-name column has a different name than what's detected above, paste that column name in chat and I'll add it. Run <code style="background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 3px;">dumpParticipantSample()</code> in DevTools console to see the full row data.
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // Filter pills — All / Booked / Available, persistent across re-renders
   const filterPillsHTML = `
+    ${detectionBannerHTML}
     <div class="part-pick-filter-pills" role="group" aria-label="Filter by booking status">
       ${[
         { k: 'all',       label: 'All' },
@@ -12566,7 +13817,7 @@ function renderAssignmentModal() {
           <span style="color: var(--text3); font-size: 14px;">→</span>
           <input type="time" id="asgnEndTime" value="${endVal}" style="flex: 1;">
         </div>
-        <div class="asgn-field-hint" id="asgnTimeHint">${fmtTimeOfDay(m.startMin)} – ${fmtTimeOfDay(m.endMin)} · ${(m.endMin - m.startMin)} min</div>
+        <div class="asgn-field-hint" id="asgnTimeHint">${fmtTimeOfDay(m.startMin)} – ${fmtTimeOfDay(m.endMin)} · ${fmtDurationHours(m.endMin - m.startMin)}${(m.endMin - m.startMin) < 480 ? ' <span style="color: var(--amber-text); font-weight: 600;">· shorter than the standard 8-hour day</span>' : ''}</div>
       </div>
 
       <div class="asgn-field">
@@ -12639,26 +13890,10 @@ function renderAssignmentModal() {
       })()}
     </div>
     <div class="asgn-modal-foot">
-      <div style="flex: 1; font-size: 12px; color: var(--text3); align-self: center;">
-        ${(() => {
-          if (!(m.teamId && m.participantOrbitId)) return 'Pick a team and a participant';
-          // If a double-booking warning is showing, surface that in the status
-          // line instead of the green "Ready" message. Re-uses the same lookup
-          // logic as the warning block above so they stay in sync.
-          const sel = allParticipants.find(p => {
-            const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email') || p.email || (p.firstName + p.lastName);
-            return id === m.participantOrbitId;
-          });
-          const hasConflict = sel && findActiveBookingsForParticipant(sel, m.editingId || null).length > 0;
-          return hasConflict
-            ? `<span style="color: var(--amber-text);">Override warning to save</span>`
-            : `<span style="color: var(--green-text);">Ready to ${isEdit ? 'update' : 'save'}</span>`;
-        })()}
-      </div>
       <button class="btn btn-ghost" id="asgnCancelBtn">Cancel</button>
       ${(() => {
         if (!(m.teamId && m.participantOrbitId)) {
-          return `<button class="btn btn-primary" id="asgnSaveBtn" disabled>${isEdit ? 'Save changes' : 'Save assignment'}</button>`;
+          return `<button class="btn btn-primary" id="asgnSaveBtn" disabled>${isEdit ? 'Save changes' : 'Save'}</button>`;
         }
         const sel = allParticipants.find(p => {
           const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email') || p.email || (p.firstName + p.lastName);
@@ -12667,11 +13902,12 @@ function renderAssignmentModal() {
         const hasConflict = sel && findActiveBookingsForParticipant(sel, m.editingId || null).length > 0;
         // When conflict exists, the save button is RELABELED to "Save anyway"
         // and styled amber so the override is visible — but it remains enabled
-        // so admin can proceed without extra clicks.
+        // so admin can proceed without extra clicks. The amber warning banner
+        // in the modal body provides the full "why" detail.
         if (hasConflict) {
           return `<button class="btn btn-primary btn-warn" id="asgnSaveBtn">Save anyway</button>`;
         }
-        return `<button class="btn btn-primary" id="asgnSaveBtn">${isEdit ? 'Save changes' : 'Save assignment'}</button>`;
+        return `<button class="btn btn-primary" id="asgnSaveBtn">${isEdit ? 'Save changes' : 'Save'}</button>`;
       })()}
     </div>
   `;
@@ -12697,7 +13933,11 @@ function renderAssignmentModal() {
     }
     adminState.modal.startMin = startMin;
     adminState.modal.endMin   = endMin;
-    timeHint.textContent = `${fmtTimeOfDay(startMin)} – ${fmtTimeOfDay(endMin)} · ${endMin - startMin} min`;
+    const dur = endMin - startMin;
+    const shortWarn = dur < 480
+      ? ' <span style="color: var(--amber-text); font-weight: 600;">· shorter than the standard 8-hour day</span>'
+      : '';
+    timeHint.innerHTML = `${fmtTimeOfDay(startMin)} – ${fmtTimeOfDay(endMin)} · ${fmtDurationHours(dur)}${shortWarn}`;
   };
   startEl.addEventListener('change', updateTime);
   endEl.addEventListener('change', updateTime);
@@ -12848,6 +14088,16 @@ async function saveAssignment() {
     };
     adminState.assignments.push(newAsgn);
   }
+
+  // If this assignment uses a freshly-created pending team, commit the team
+  // now. The pending flag was set by the inline "Create team" flow to defer
+  // localStorage write until an assignment actually references the team —
+  // which guarantees the team becomes visible to other admins via the
+  // assignment row, not as a local-only orphan.
+  const committedTeam = adminState.teams.find(t => t.id === m.teamId);
+  if (committedTeam && committedTeam._pending) {
+    delete committedTeam._pending;
+  }
   saveAssignmentData();
 
   closeAsgnModal();
@@ -12892,6 +14142,12 @@ async function saveAssignment() {
       console.warn('Partial assignment sync:', lastError);
     }
   }
+
+  // Email confirmation is NOT sent automatically. Admin must explicitly
+  // click "Send confirmation email" in the View Assignment modal — this
+  // gives them control over timing and lets them prep multiple bookings
+  // before notifying participants. The button + status flow live in
+  // openViewAssignmentModal() and notifyParticipant().
 }
 
 function openViewAssignmentModal(asgnId) {
@@ -12902,10 +14158,31 @@ function openViewAssignmentModal(asgnId) {
   const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '—';
   const status = a.status || 'Booked';
   const isCancelled = status === 'Cancelled';
+  const isNotified = status === 'Notified';
+  const hasEmail = !!(a.participantData && a.participantData.email);
 
-  const statusBadge = isCancelled
-    ? '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(239,68,68,0.12); color: var(--red); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Cancelled</span>'
-    : '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: var(--green-bg); color: var(--green-text); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Booked</span>';
+  // Status badge — three distinct states with their own color treatments.
+  // Booked  = green (active, awaiting notification)
+  // Notified = blue/teal (active, email sent)
+  // Cancelled = red
+  let statusBadge;
+  if (isCancelled) {
+    statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(239,68,68,0.12); color: var(--red); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Cancelled</span>';
+  } else if (isNotified) {
+    statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(0,180,216,0.14); color: #00838f; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">📧 Notified</span>';
+  } else {
+    statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: var(--green-bg); color: var(--green-text); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Booked</span>';
+  }
+
+  // Notification metadata — only shown when applicable
+  const notifiedMeta = isNotified && a.notifiedAt
+    ? (() => {
+        try {
+          const d = new Date(a.notifiedAt);
+          return `<div style="font-size: 12px; color: var(--text3); margin-top: 4px;">Confirmation sent ${d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} at ${d.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'})}</div>`;
+        } catch (_) { return ''; }
+      })()
+    : '';
 
   document.getElementById('asgnModalContent').innerHTML = `
     <div class="asgn-modal-head">
@@ -12914,6 +14191,7 @@ function openViewAssignmentModal(asgnId) {
           Assignment ${statusBadge}
         </div>
         <div class="asgn-modal-sub">${escapeHTML(dateLabel)} · ${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</div>
+        ${notifiedMeta}
       </div>
       <button class="icon-btn" id="asgnModalClose">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -13000,6 +14278,17 @@ function openViewAssignmentModal(asgnId) {
     <div class="asgn-modal-foot">
       ${!isCancelled ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
       <div style="flex: 1"></div>
+      ${!isCancelled && hasEmail ? `
+        <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify" id="asgnNotifyBtn"
+                title="${isNotified ? 'Send the confirmation email again' : 'Send confirmation email to participant'}">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
+            <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>${isNotified ? 'Resend email' : 'Send email'}</span>
+        </button>` : ''}
+      ${!isCancelled && !hasEmail ? `
+        <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
       ${!isCancelled ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
       <button class="btn ${isCancelled ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
     </div>
@@ -13013,6 +14302,10 @@ function openViewAssignmentModal(asgnId) {
     document.getElementById('asgnCancelAsgnBtn').addEventListener('click', () => {
       openCancelAssignmentModal(asgnId);
     });
+    const notifyBtn = document.getElementById('asgnNotifyBtn');
+    if (notifyBtn) {
+      notifyBtn.addEventListener('click', () => notifyParticipant(asgnId));
+    }
   }
   showAsgnModal();
 }
@@ -13064,15 +14357,91 @@ function openCancelAssignmentModal(asgnId) {
   }, 100);
 }
 
+// Manually trigger the booking-confirmation email and flip the assignment's
+// status to 'Notified'. Triggered from the View Assignment modal's
+// "Send confirmation email" button. Two-phase:
+//   1. Send email; if it fails, abort without status change
+//   2. On success, mark Notified, bump savedAt, persist + sync to Excel
+// The status bump is what makes Notified visible to other admins via the
+// existing Assignment Read flow (the row with the newer lastActive wins
+// on next refresh, exactly the same way Cancelled does).
+async function notifyParticipant(asgnId) {
+  const idx = adminState.assignments.findIndex(x => x.id === asgnId);
+  if (idx === -1) return;
+  const a = adminState.assignments[idx];
+  if (!a.participantData || !a.participantData.email) {
+    toast('No email on file for this participant');
+    return;
+  }
+  if (!EMAIL_PA_SEND_URL) {
+    toast('Email flow not configured');
+    return;
+  }
+  // Optimistic UI: disable the button so admin can't double-click while
+  // the network round-trip is in flight. If the modal closed mid-send the
+  // button won't be in the DOM — that's fine, just skip the visual.
+  const btn = document.getElementById('asgnNotifyBtn');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+  }
+
+  const result = await sendBookingEmail(a);
+  if (!result.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+    if (result.skipped) toast('Email flow not configured');
+    else if (result.error === 'Participant has no email on file') toast('No email on file');
+    else toast(`Email send failed: ${result.error}`);
+    return;
+  }
+
+  // Email sent — flip to Notified, bump timestamps so the new row wins
+  // on next read-back.
+  const nowNotify = new Date().toISOString();
+  adminState.assignments[idx] = {
+    ...a,
+    status: 'Notified',
+    notifiedAt: nowNotify,
+    savedAt: nowNotify,
+    updatedAt: nowNotify,
+  };
+  saveAssignmentData();
+  openViewAssignmentModal(asgnId);
+  toast(`📧 Email sent to ${result.to}`);
+  renderAssignment();
+
+  // Push the updated row to Excel so other admins see Notified on refresh.
+  // Fire-and-forget; local state is already correct.
+  if (ASSIGNMENT_PA_WRITE_URL) {
+    const rowsToWrite = buildAssignmentExcelRow(adminState.assignments[idx]);
+    for (const row of rowsToWrite) {
+      fetch(ASSIGNMENT_PA_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(row),
+      }).catch(() => {});
+    }
+  }
+}
+
 async function cancelAssignment(asgnId, comment) {
   const idx = adminState.assignments.findIndex(x => x.id === asgnId);
   if (idx === -1) return;
+  const now = new Date().toISOString();
   adminState.assignments[idx] = {
     ...adminState.assignments[idx],
     status: 'Cancelled',
     comment: comment || '',
-    cancelledAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    cancelledAt: now,
+    updatedAt: now,
+    // CRITICAL: bump savedAt too. buildAssignmentExcelRow uses savedAt as
+    // the `lastActive` column. Without bumping it, the cancellation row in
+    // Excel ends up with the SAME lastActive timestamp as the original
+    // booking row — and the read-back's "latest wins" tiebreaker can't
+    // distinguish them. With this bump, the cancelled row is unambiguously
+    // newer than the booked row in Excel.
+    savedAt: now,
   };
   saveAssignmentData();
   closeAsgnModal();
