@@ -2259,6 +2259,126 @@ nav {
   }
 }
 
+/* ===================================================================
+   In-app confirm / alert modal — replaces native browser dialogs
+   ===================================================================
+   z-index 700-701 sits ABOVE asgn-modal (600-601) so confirms fired
+   from inside long-running flows (like the Team Delete guard) stack
+   cleanly on top without losing the underlying context. */
+.app-confirm-overlay {
+  position: fixed; inset: 0; z-index: 700;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.20s ease;
+}
+.app-confirm-overlay.open { opacity: 1; pointer-events: all; }
+
+.app-confirm-modal {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -46%) scale(0.95);
+  width: min(420px, 92vw);
+  max-height: 80vh;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 28px 70px rgba(0,0,0,0.32);
+  z-index: 701;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.20s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  padding: 26px 26px 20px;
+  text-align: center;
+}
+.app-confirm-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+/* Icon — a centered circular badge above the title that color-codes
+   intent. Subtle on default variant, more saturated on danger/warning. */
+.app-confirm-icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px;
+  flex-shrink: 0;
+}
+.app-confirm-modal.variant-default .app-confirm-icon {
+  background: rgba(0,180,216,0.10);
+  color: var(--accent-ink);
+}
+.app-confirm-modal.variant-danger .app-confirm-icon {
+  background: rgba(239,68,68,0.12);
+  color: var(--red);
+}
+.app-confirm-modal.variant-warning .app-confirm-icon {
+  background: rgba(251,191,36,0.14);
+  color: rgb(217,119,6);
+}
+.app-confirm-title {
+  font-size: 17px; font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+.app-confirm-message {
+  font-size: 14px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  line-height: 1.5;
+  margin-bottom: 22px;
+  /* Preserve line breaks in plain-text messages so callers using \n in
+     the message string get readable multi-paragraph output without
+     having to switch to html: true. */
+  white-space: pre-wrap;
+  /* Cap height so very long messages scroll inside the modal rather
+     than pushing the buttons off-screen. */
+  max-height: 50vh;
+  overflow-y: auto;
+  text-align: left;
+}
+/* When the message has multiple paragraphs (set via html: true with
+   <p> tags), restore the standard paragraph spacing. */
+.app-confirm-message p { margin: 0 0 10px 0; }
+.app-confirm-message p:last-child { margin-bottom: 0; }
+.app-confirm-message strong { color: var(--text); font-weight: 600; }
+.app-confirm-message code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.app-confirm-foot {
+  display: flex;
+  gap: 8px;
+  flex-direction: row-reverse;  /* primary (OK) on the right */
+  /* Reverse direction matches macOS / iOS convention: confirm button
+     ends up on the right side, cancel on the left. Tab order naturally
+     moves Cancel → OK left-to-right because we placed Cancel first in
+     the DOM but flex-direction reversed visual order. */
+}
+.app-confirm-foot .btn {
+  flex: 1;
+  /* Equal-width buttons read as paired choices rather than emphasizing
+     one over the other — admin makes the decision based on label, not
+     visual weight. The variant-danger color treatment on the OK button
+     provides the only emphasis cue. */
+  white-space: nowrap;
+  justify-content: center;
+}
+@media (max-width: 480px) {
+  .app-confirm-modal {
+    padding: 22px 20px 16px;
+    width: min(380px, 92vw);
+    border-radius: 18px;
+  }
+  .app-confirm-title { font-size: 16px; }
+  .app-confirm-message { font-size: 13.5px; margin-bottom: 18px; }
+}
+
 .asgn-field { margin-bottom: 14px; }
 .asgn-field-label {
   display: block;
@@ -3258,6 +3378,19 @@ nav {
   color: rgb(22,163,74);
   display: inline-flex; align-items: center;
 }
+/* Unassigned — amber pill. Distinct from Cancelled (red, didn't happen) and
+   Completed (green, success). Amber communicates "needs attention" — admin
+   should pick a new team for this slot before the date arrives. */
+.cal-list-status-pill.unassigned {
+  background: rgba(251,191,36,0.14);
+  color: rgb(217,119,6);
+  display: inline-flex; align-items: center;
+}
+/* Row treatment for Unassigned list items — softer name color signals
+   "this isn't an active booking right now". Less aggressive than the
+   Cancelled strikethrough since the slot can still be revived. */
+.cal-list-item.unassigned .cal-list-name { color: var(--text2); }
+.cal-list-item.unassigned .cal-list-team-pill { opacity: 0.7; }
 .cal-list-name {
   font-size: 15px; font-weight: 600;
   color: var(--text);
@@ -8348,13 +8481,24 @@ function computeOverviewMetrics() {
   // denominator so "K of N done" reads as "K of all participants done".
   const totalParticipants = allParts.length;
 
-  // Total bookings — filtered assignment count (excluding cancelled)
-  const totalBookings = filteredAsgns.filter(a => a.status !== 'Cancelled').length;
+  // Total bookings — filtered assignment count, excluding terminal "not
+  // a real booking" rows (Cancelled and Unassigned). Completed sessions
+  // DO count here — they actually happened, so they're part of the
+  // dashboard's "bookings" tally. The Cancelled/Unassigned exclusion is
+  // what prevents the count from double-reporting when admin uses the
+  // Unassign workflow during team deletion: those rows still exist in
+  // Excel for audit, but they represent "this slot is currently
+  // team-orphaned", not "we have a booking here". Without this exclusion,
+  // deleting a team via the Unassign path would inflate booking counts
+  // (the old team's rows AND any later re-assignment to a new team
+  // would both count).
+  const totalBookings = filteredAsgns.filter(a => !isTerminalStatus(a.status)).length;
 
   // ----- Bookings by day (chart 1)
   const dayBuckets = new Map();   // 'YYYY-MM-DD' -> count
   filteredAsgns.forEach(a => {
-    if (a.status === 'Cancelled') return;
+    // Same exclusion as totalBookings — terminal rows don't bucket.
+    if (isTerminalStatus(a.status)) return;
     if (!a.date) return;
     dayBuckets.set(a.date, (dayBuckets.get(a.date) || 0) + 1);
   });
@@ -11064,16 +11208,39 @@ async function fetchAssignmentsFromPA() {
       // group says Cancelled, the whole group is Cancelled. Once cancelled,
       // always cancelled — matches admin's expectation that cancellation
       // is monotonic, and protects against future timestamp ambiguity.
+      //
+      // Precedence (highest priority wins regardless of timestamp ties):
+      //   Cancelled > Unassigned > Completed > Notified > Booked
+      //
+      // Why this order:
+      //   - Cancelled is the strongest "this didn't happen" signal and is
+      //     applied first.
+      //   - Unassigned is a weaker "team removed" terminal state — if
+      //     admin first unassigned then later cancelled, the cancellation
+      //     wins because it's a stronger statement about the booking's
+      //     fate.
+      //   - Completed represents successful work that happened — beats
+      //     forward-looking statuses (Notified, Booked) since rewinding
+      //     completion is destructive.
+      //   - Notified > Booked is the normal forward flow.
       if (r.status === 'Cancelled' && g.status !== 'Cancelled') {
         g.status = 'Cancelled';
         if (r.comment) g.comment = r.comment;
       }
+      // Unassigned-sticky safety net. Same defense-in-depth as Cancelled
+      // but lower priority. Once a team is removed from an assignment,
+      // we don't want a stale Booked row in Excel (from a previous team
+      // write) to silently un-unassign it on next read-back.
+      if (r.status === 'Unassigned' && g.status !== 'Cancelled' && g.status !== 'Unassigned') {
+        g.status = 'Unassigned';
+      }
       // Completed-sticky safety net — same defense-in-depth logic as
-      // Cancelled. Order of precedence: Cancelled > Completed > Notified >
-      // Booked. If any row says Completed and the group isn't already
-      // Cancelled, the group is Completed (the work happened — no later
-      // edit should silently rewind that fact, even if timestamps tie).
-      if (r.status === 'Completed' && g.status !== 'Cancelled' && g.status !== 'Completed') {
+      // Cancelled. Order of precedence: Cancelled > Unassigned >
+      // Completed > Notified > Booked. If any row says Completed and the
+      // group isn't already Cancelled or Unassigned, the group is
+      // Completed (the work happened — no later edit should silently
+      // rewind that fact, even if timestamps tie).
+      if (r.status === 'Completed' && g.status !== 'Cancelled' && g.status !== 'Unassigned' && g.status !== 'Completed') {
         g.status = 'Completed';
       }
       // Recover completion metadata even when reconstruction came from
@@ -11120,9 +11287,22 @@ async function fetchAssignmentsFromPA() {
   // from the assignment rows. This is a fallback path used when TeamLog isn't
   // wired up yet. It loses the backups slot because assignment rows only carry
   // primaries, but it's enough to render teams and color-code assignments.
+  //
+  // IMPORTANT: skip rows with status === 'Unassigned'. Those rows used to
+  // belong to a team that has since been removed from the assignment — the
+  // teamId column still points at the dead team for audit purposes, but
+  // rebuilding a team from that pointer would create a "phantom team" that
+  // re-appears on the calendar after admin thought they deleted it. By
+  // skipping Unassigned rows here, the only assignments that contribute
+  // to team reconstruction are ones still actively (or historically)
+  // owned by a team.
+  // We also skip Cancelled — those represent "didn't happen" and the team
+  // attribution there is also historical-only, but they're a smaller risk
+  // because Cancelled doesn't fire during the team-deletion workflow.
   const teamMap = new Map();
   for (const a of remoteAssignments) {
     if (a.teamId == null) continue;
+    if (a.status === 'Unassigned') continue;
     // Already normalized to number above, but re-normalize defensively
     const tid = (typeof a.teamId === 'number') ? a.teamId : (Number(a.teamId) || a.teamId);
     if (!teamMap.has(tid)) {
@@ -11182,10 +11362,11 @@ async function fetchAssignmentsFromPA() {
     // Primary: savedAt timestamp comparison.
     if (a.savedAt && r.savedAt && a.savedAt > r.savedAt) return true;
     // Secondary: belt against clock skew. If local is in a terminal state
-    // (Completed/Cancelled) and remote shows a NON-terminal state, the
-    // local must be newer in event-time even if wall-clock says otherwise.
-    // Booked → Completed and Booked → Cancelled are both monotonic.
-    const terminal = s => s === 'Completed' || s === 'Cancelled';
+    // (Completed/Cancelled/Unassigned) and remote shows a NON-terminal
+    // state, the local must be newer in event-time even if wall-clock
+    // says otherwise. Booked → Completed, Booked → Cancelled, and
+    // Booked → Unassigned are all monotonic.
+    const terminal = s => s === 'Completed' || s === 'Cancelled' || s === 'Unassigned';
     if (terminal(a.status) && !terminal(r.status)) return true;
     return false;
   });
@@ -11645,8 +11826,56 @@ function defaultTeamName() {
 function activeAssignmentCount() {
   if (!adminState.assignments) return 0;
   return adminState.assignments.filter(a =>
-    a.status !== 'Cancelled' && a.status !== 'Completed'
+    a.status !== 'Cancelled' && a.status !== 'Completed' && a.status !== 'Unassigned'
   ).length;
+}
+
+/* ----------- Assignment-status category helpers -----------
+ * Single-source-of-truth predicates for the four lifecycle buckets. Used
+ * everywhere we need to ask "does this row count as a real booking right
+ * now?" or "can this assignment be modified?". Without these helpers,
+ * status checks drifted across the codebase — some places excluded
+ * Cancelled but not Unassigned, others vice-versa, and the Overview
+ * dashboard ended up double-counting orphaned rows.
+ *
+ * Status taxonomy:
+ *   Booked      — initial state, admin saved an assignment with a team
+ *   Notified    — confirmation email sent to participant
+ *   Completed   — moderator's wrap-up checklist confirmed (terminal-success)
+ *   Cancelled   — admin actively cancelled, didn't happen (terminal)
+ *   Unassigned  — team was removed from this assignment (terminal-orphan)
+ *
+ * Two of those statuses are TERMINAL — Cancelled and Unassigned. They
+ * represent "this is no longer a real booking" rather than "still owed
+ * but not yet done". Completed is technically terminal too, but it's a
+ * successful outcome — it still counts as a real booking that happened,
+ * just not one that still needs work.
+ *
+ * Three rules drive almost every status check in the app:
+ *   1. isTerminalStatus  — "does NOT count as a booking in counts/charts"
+ *   2. blocksTeamDeletion — "would lose data if the team disappeared"
+ *   3. isImmutable        — "cannot be edited anymore (Cancelled, Unassigned,
+ *                           Completed all forbid further mutation)"
+ *
+ * Completed blocks team deletion FALSE: the historical successful work
+ * happened with this team; removing the team after the fact would lose
+ * the attribution. Cancelled and Unassigned block deletion FALSE: they're
+ * already not active. Only Booked and Notified block deletion. */
+function isTerminalStatus(s) {
+  return s === 'Cancelled' || s === 'Unassigned';
+}
+function blocksTeamDeletion(s) {
+  // Returns true when an assignment in this status would be "broken" if
+  // its team disappeared. Booked + Notified are forward-looking commitments
+  // that need the team to fulfill them — admin must cancel or unassign
+  // them before the team can be safely deleted.
+  return s !== 'Cancelled' && s !== 'Unassigned' && s !== 'Completed';
+}
+function isImmutableAssignmentStatus(s) {
+  // Edit/cancel/unassign buttons are hidden when this returns true.
+  // The assignment has reached a terminal state — modifying it would
+  // corrupt the historical record.
+  return s === 'Cancelled' || s === 'Unassigned' || s === 'Completed';
 }
 
 /* ----------- Render Assignment view ----------- */
@@ -12423,14 +12652,26 @@ function renderTeamGridHTML(days) {
       const dateStr = ymd(d);
       const isToday = dateStr === today;
       const all = adminState.assignments.filter(a => a.teamId === team.id && a.date === dateStr);
-      const active = all.filter(a => a.status !== 'Cancelled');
+      // Active = not in a terminal "this slot is vacated" state. Both
+      // Cancelled and Unassigned are excluded — neither should render
+      // as a team-attached booking in the team's grid row. Cancelled
+      // means the session won't happen; Unassigned means the team has
+      // been removed from the booking (the participant data is still in
+      // Excel but the team-row attribution is severed). Completed stays
+      // visible (rendered with green check icon below).
+      const active = all.filter(a => !isTerminalStatus(a.status));
 
       if (active.length === 0) {
-        // Empty cell. Note if there's a *cancelled* assignment for context.
+        // Empty cell. Note if there's a cancelled OR unassigned record
+        // for context — both leave the slot "empty for this team" but
+        // mean different things historically.
         const cancelled = all.find(a => a.status === 'Cancelled');
+        const unassigned = all.find(a => a.status === 'Unassigned');
         const tip = cancelled
           ? 'Previously cancelled — tap to schedule again'
-          : `Tap to assign someone on ${d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'})}`;
+          : (unassigned
+              ? 'Previously unassigned from this team — tap to schedule'
+              : `Tap to assign someone on ${d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'})}`);
         cellsHTML += `
           <div class="tg-cell empty ${isToday ? 'today' : ''} ${cancelled ? 'has-cancelled' : ''}"
                data-team-id="${team.id}" data-date="${dateStr}"
@@ -12637,8 +12878,14 @@ function renderListItemHTML(a) {
   const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '—';
   const isCancelled = a.status === 'Cancelled';
   const isCompleted = a.status === 'Completed';
+  const isUnassigned = a.status === 'Unassigned';
   const addr = a.participantData && a.participantData.address ? [a.participantData.address, a.participantData.state, a.participantData.zipCode].filter(Boolean).join(', ') : '';
-  const teamLabel = team ? team.name : 'No team';
+  // Team label: show the previous-team name for Unassigned rows so admin
+  // can see "this used to be Team 3" rather than just "No team". Falls
+  // back to "No team" when neither a current nor previous team is known.
+  const teamLabel = team
+    ? team.name
+    : (isUnassigned && a.previousTeamName ? `${a.previousTeamName} (unassigned)` : 'No team');
   // Live worklog status
   const latestStatusList = (typeof getLatestStatusForAssignment === 'function') ? getLatestStatusForAssignment(a.id) : null;
   const wlLabelList = latestStatusList ? WORKLOG_STATUS_LABELS[latestStatusList.status] : null;
@@ -12647,7 +12894,7 @@ function renderListItemHTML(a) {
      latestStatusList.status === 'arrived' ? 'wl-arrived' : 'wl-insession');
 
   return `
-    <div class="cal-list-item ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''}" data-asgn-id="${a.id}">
+    <div class="cal-list-item ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''} ${isUnassigned ? 'unassigned' : ''}" data-asgn-id="${a.id}">
       <div class="cal-list-time">
         <div class="cal-list-time-start">${escapeHTML(fmtTimeOfDay(a.startMin))}</div>
         <div class="cal-list-time-dur">${(a.endMin - a.startMin)} min</div>
@@ -12658,7 +12905,8 @@ function renderListItemHTML(a) {
           <span class="cal-list-team-pill" style="background: ${color.soft}; color: ${color.bg === 'transparent' ? 'var(--text3)' : color.bg}; border-color: ${color.border};">${escapeHTML(teamLabel)}</span>
           ${isCancelled ? '<span class="cal-list-status-pill cancelled">Cancelled</span>' : ''}
           ${isCompleted ? '<span class="cal-list-status-pill completed"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:3px;"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Completed</span>' : ''}
-          ${wlLabelList && !isCancelled && !isCompleted ? `<span class="cal-list-status-pill ${wlPillClass}">${escapeHTML(wlLabelList)}</span>` : ''}
+          ${isUnassigned ? '<span class="cal-list-status-pill unassigned"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:3px;"><path d="M3 5h10M3 8h7M3 11h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Unassigned</span>' : ''}
+          ${wlLabelList && !isCancelled && !isCompleted && !isUnassigned ? `<span class="cal-list-status-pill ${wlPillClass}">${escapeHTML(wlLabelList)}</span>` : ''}
         </div>
         <div class="cal-list-name">${escapeHTML(partName)}</div>
         ${addr ? `<div class="cal-list-addr">${escapeHTML(addr)}</div>` : ''}
@@ -12753,7 +13001,15 @@ function layoutAssignmentChips(asgns) {
 
 function assignmentChipHTML(a, pos) {
   const team = adminState.teams.find(t => t.id === a.teamId);
-  const teamLabel = team ? team.name.replace(/Team\s*/i, '') : '?';
+  // For Unassigned rows, show the historical team name (we stored it in
+  // previousTeamName during the unassign workflow) so admin can tell
+  // "this used to be Team 3". For active rows without a team object, fall
+  // back to "?".
+  const teamLabel = team
+    ? team.name.replace(/Team\s*/i, '')
+    : (a.status === 'Unassigned' && a.previousTeamName
+        ? a.previousTeamName.replace(/Team\s*/i, '') + '*'  // asterisk hints "previously"
+        : '?');
   const partName = a.participantData
     ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ')
     : '—';
@@ -12763,7 +13019,14 @@ function assignmentChipHTML(a, pos) {
   // color so they don't fade into the background, plus a green check
   // icon to signal "done" at a glance.
   const isCompleted = a.status === 'Completed';
-  const isUnassigned = !team;
+  // Status-Unassigned: admin explicitly removed the team from this
+  // assignment. Visually treated like the no-team case below, but with
+  // a distinct dashed border to signal "this slot needs a new team"
+  // rather than "we never assigned a team to begin with".
+  const isUnassignedStatus = a.status === 'Unassigned';
+  // Legacy "no-team" path: ad-hoc bookings created without a team
+  // assignment (different from Unassigned which is a deliberate removal).
+  const isNoTeam = !team && !isUnassignedStatus;
   const color = getTeamColor(a.teamId);
   const durationMin = a.endMin - a.startMin;
   const isShort = durationMin <= 30;
@@ -12781,16 +13044,22 @@ function assignmentChipHTML(a, pos) {
     // Same vivid team color, but with a green-tinted border to call out
     // the "done" state without competing with the team's identity color.
     style += `--asgn-bg: ${color.bg}; --asgn-fg: ${color.ink}; --asgn-border: rgba(34,197,94,0.55);`;
-  } else if (isUnassigned) {
+  } else if (isUnassignedStatus) {
+    // Muted grey with amber border — distinct from cancelled (red-tinted)
+    // and from never-assigned (plain grey). Amber suggests "needs
+    // attention / pick a new team" without being alarming.
+    style += `--asgn-bg: var(--bg4); --asgn-fg: var(--text2); --asgn-border: rgba(251,191,36,0.55);`;
+  } else if (isNoTeam) {
     style += `--asgn-bg: var(--bg3); --asgn-fg: var(--text2); --asgn-border: var(--border-strong);`;
   } else {
     style += `--asgn-bg: ${color.bg}; --asgn-fg: ${color.ink}; --asgn-border: ${color.bg};`;
   }
 
-  const titleText = (team ? team.name + ' · ' : 'No team · ') + partName + ' · ' +
+  const titleText = (team ? team.name + ' · ' : (isUnassignedStatus && a.previousTeamName ? a.previousTeamName + ' (unassigned) · ' : 'No team · ')) + partName + ' · ' +
     fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin) +
     (isCancelled ? ' · CANCELLED' : '') +
-    (isCompleted ? ' · COMPLETED' : '');
+    (isCompleted ? ' · COMPLETED' : '') +
+    (isUnassignedStatus ? ' · UNASSIGNED' : '');
 
   // Live worklog status (if any)
   const latestStatus = (typeof getLatestStatusForAssignment === 'function') ? getLatestStatusForAssignment(a.id) : null;
@@ -12800,20 +13069,20 @@ function assignmentChipHTML(a, pos) {
      latestStatus.status === 'arrived' ? 'wl-arrived' : 'wl-insession');
 
   return `
-    <div class="cal-asgn ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''} ${isUnassigned ? 'unassigned' : ''} ${positioned ? 'positioned' : ''} ${isShort ? 'short' : ''}"
+    <div class="cal-asgn ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''} ${isUnassignedStatus ? 'unassigned-status' : ''} ${isNoTeam ? 'no-team' : ''} ${positioned ? 'positioned' : ''} ${isShort ? 'short' : ''}"
          data-asgn-id="${a.id}"
          style="${style}"
          title="${escapeHTML(titleText)}${wlLabel ? ' · ' + wlLabel : ''}">
       <div class="cal-asgn-inner">
-        <span class="cal-asgn-team">${escapeHTML(isUnassigned ? '—' : teamLabel)}</span>
-        <span class="cal-asgn-name">${escapeHTML(partName)}${isCompleted ? ' <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:-1px;margin-left:3px;flex-shrink:0;"><path d="M3 8l3 3 7-7" stroke="rgb(34,197,94)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
+        <span class="cal-asgn-team">${escapeHTML(isNoTeam ? '—' : teamLabel)}</span>
+        <span class="cal-asgn-name">${escapeHTML(partName)}${isCompleted ? ' <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:-1px;margin-left:3px;flex-shrink:0;"><path d="M3 8l3 3 7-7" stroke="rgb(34,197,94)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}${isUnassignedStatus ? ' <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:-1px;margin-left:3px;flex-shrink:0;"><path d="M3 5h10M3 8h7M3 11h10" stroke="rgb(217,119,6)" stroke-width="1.8" stroke-linecap="round"/></svg>' : ''}</span>
         ${!isShort && pos && pos.heightPx > 60 ? `<span class="cal-asgn-time">${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</span>` : ''}
-        ${wlLabel && !isCancelled && !isCompleted ? `<span class="cal-asgn-wl ${wlBadgeClass}">${escapeHTML(wlLabel)}</span>` : ''}
+        ${wlLabel && !isCancelled && !isCompleted && !isUnassignedStatus ? `<span class="cal-asgn-wl ${wlBadgeClass}">${escapeHTML(wlLabel)}</span>` : ''}
         ${(() => {
           // Availability conflict indicator. Shows when one or more of the
           // assigned mods has reported NOT available for this date — a small
           // amber dot so admin can spot the conflict at a glance.
-          if (isCancelled || isUnassigned) return '';
+          if (isCancelled || isNoTeam || isUnassignedStatus) return '';
           if (typeof getModAvailabilityForDate !== 'function') return '';
           const ids = (a.modSnapshots || []).map(s => s.orbitLoginId).filter(Boolean);
           if (ids.length === 0) return '';
@@ -12894,7 +13163,11 @@ function buildParticipantStatusMap() {
     if (status === 'booked' || prev !== 'booked') mp.set(k, status);
   };
   for (const a of (adminState.assignments || [])) {
-    if (!a || a.status === 'Cancelled') continue;
+    // Skip terminal "not a real booking" rows — neither Cancelled nor
+    // Unassigned participants should be marked as "booked" in the
+    // participant picker, since neither row represents an active
+    // session they're committed to.
+    if (!a || isTerminalStatus(a.status)) continue;
     const status = completedAsgnIds.has(a.id) ? 'completed' : 'booked';
     if (a.participantOrbitId) {
       promote(idKey, String(a.participantOrbitId).toLowerCase(), status);
@@ -12950,7 +13223,10 @@ function findActiveBookingsForParticipant(participant, excludeAsgnId) {
   const out = [];
   for (const a of (adminState.assignments || [])) {
     if (!a) continue;
-    if (a.status === 'Cancelled') continue;
+    // Terminal "not a real booking" rows don't count as conflicts.
+    // Cancelled: session won't happen. Unassigned: no team owns it
+    // right now — it's a vacated shell, not a competing booking.
+    if (isTerminalStatus(a.status)) continue;
     if (excludeAsgnId && a.id === excludeAsgnId) continue;
     if (completedIds.has(a.id)) continue;  // a finished session is not a conflict for new work
     let match = false;
@@ -13400,11 +13676,19 @@ function saveTeam() {
   const m = adminState.modal;
   const name = (m.name || '').trim();
   if (!name) {
-    alert('Team name is required.');
+    appAlert({
+      title: 'Team name required',
+      message: 'Please give the team a name before saving.',
+      variant: 'warning',
+    });
     return;
   }
   if (m.primaryIds.length === 0) {
-    alert('Add at least one primary moderator.');
+    appAlert({
+      title: 'Pick at least one moderator',
+      message: 'A team needs at least one primary moderator. Add one from the picker on the right.',
+      variant: 'warning',
+    });
     return;
   }
   if (m.kind === 'createTeam') {
@@ -13472,60 +13756,97 @@ function saveTeam() {
 }
 
 function deleteTeam(teamId) {
-  // Count active assignments referencing this team. Cancelled bookings still
-  // count as "historical" — they exist in Excel. We only treat the team as
-  // empty if NOTHING in Excel ties to it.
+  // Find all assignments referencing this team. We classify them into
+  // three buckets to drive the deletion-guard UX:
+  //   - blocking: Booked or Notified — admin MUST resolve these (cancel
+  //     or unassign) before the team can be deleted. Deleting a team
+  //     with forward-looking commitments would leave participants
+  //     scheduled with no team to run their session, which is silently
+  //     destructive — the participants would never know.
+  //   - safe-historical: Cancelled / Unassigned / Completed — these are
+  //     terminal states. The team can be deleted around them and the
+  //     historical rows remain in Excel for audit purposes. They don't
+  //     block deletion because nothing about them requires the team to
+  //     keep existing.
+  //   - by total: shown in the confirm dialog for context.
   const refs = (adminState.assignments || []).filter(a => a.teamId === teamId);
   const team = (adminState.teams || []).find(t => t.id === teamId);
   const teamName = team ? team.name : `Team #${teamId}`;
+  const blocking = refs.filter(a => blocksTeamDeletion(a.status));
+  const completed = refs.filter(a => a.status === 'Completed');
+  const cancelled = refs.filter(a => a.status === 'Cancelled');
+  const unassigned = refs.filter(a => a.status === 'Unassigned');
 
-  // Case 1 — empty team. No Excel rows reference it, so a hard delete sticks.
-  // localStorage gets the trimmed list, future PA reads can't resurrect it,
-  // job done.
-  if (refs.length === 0) {
-    if (!confirm(`Delete ${teamName}? This team has no bookings.`)) return;
-    adminState.teams = adminState.teams.filter(t => t.id !== teamId);
-    if (adminState._selectedTeam === teamId) adminState._selectedTeam = null;
-    saveAssignmentData();
-    renderAssignment();
-    if (typeof toast === 'function') toast(`${teamName} deleted`);
+  // CASE A — team has blocking (Booked / Notified) assignments. Block the
+  // delete. Open the guard modal so admin can resolve them in bulk before
+  // deletion. They get two options:
+  //   1. Cancel all — fast path when the bookings genuinely aren't
+  //      happening. Sessions disappear from active counts; participants
+  //      conceptually need to be re-contacted.
+  //   2. Unassign team — when the bookings WILL happen but with a
+  //      different team. Assignments stay on the calendar as "Unassigned"
+  //      shells that admin can later edit to pick a new team.
+  if (blocking.length > 0) {
+    openTeamDeleteGuardModal(teamId, { blocking, completed, cancelled, unassigned });
     return;
   }
 
-  // Case 2 — team has bookings. With TeamLog configured we do a true
-  // cross-admin delete (writes status='deleted' to TeamLog so all admins
-  // stop seeing the team). Without TeamLog we fall back to the per-browser
-  // tombstone behavior, which only hides the team locally.
-  const active = refs.filter(a => a.status !== 'Cancelled').length;
-  const cancelled = refs.length - active;
-  const detail = active > 0
-    ? `${active} active booking${active === 1 ? '' : 's'}` + (cancelled > 0 ? ` (plus ${cancelled} cancelled)` : '')
-    : `${cancelled} cancelled booking${cancelled === 1 ? '' : 's'}`;
-  const teamObj = (adminState.teams || []).find(t => t.id === teamId);
-  const msg = TEAMLOG_PA_WRITE_URL
-    ? `Delete ${teamName}?\n\n`
-      + `This team has ${detail}.\n\n`
-      + `• The team will be marked deleted in TeamLog — every admin browser stops seeing it on next refresh.\n`
-      + `• The bookings stay in Excel — historical data is preserved.\n\n`
-      + `Continue?`
-    : `Hide ${teamName}?\n\n`
-      + `This team has ${detail} in Excel.\n\n`
-      + `• The team will disappear from your calendar on this browser only.\n`
-      + `• The bookings stay in Excel — historical data is preserved.\n`
-      + `• Other admin browsers still see this team until they hide it too.\n`
-      + `  (Wire up TeamLog to make deletions cross-admin.)\n\n`
-      + `Continue?`;
-  if (!confirm(msg)) return;
+  // CASE B — team has no blocking refs but DOES have historical rows.
+  // Confirm the deletion (the historical rows stay in Excel).
+  if (refs.length > 0) {
+    const histDetail = [
+      completed.length  ? `${completed.length} completed`   : '',
+      cancelled.length  ? `${cancelled.length} cancelled`   : '',
+      unassigned.length ? `${unassigned.length} unassigned` : '',
+    ].filter(Boolean).join(', ');
+    // We use html: true to render the bullet list with proper spacing.
+    // Without HTML, the bullets are rendered as raw "• " characters
+    // which read fine but don't look as polished as <ul>/<li>.
+    const messageHtml = TEAMLOG_PA_WRITE_URL
+      ? `<p>This team has historical bookings: <strong>${escapeHTML(histDetail)}</strong>.</p>`
+        + `<ul style="margin: 6px 0 0 18px; padding: 0; color: var(--text2); font-size: 13.5px;">`
+        +   `<li>The team will be marked deleted in TeamLog — every admin browser stops seeing it on next refresh.</li>`
+        +   `<li>The historical bookings stay in Excel — audit trail preserved.</li>`
+        + `</ul>`
+      : `<p>This team has historical bookings: <strong>${escapeHTML(histDetail)}</strong>.</p>`
+        + `<ul style="margin: 6px 0 0 18px; padding: 0; color: var(--text2); font-size: 13.5px;">`
+        +   `<li>The team will disappear from your calendar on this browser only.</li>`
+        +   `<li>The historical bookings stay in Excel — audit trail preserved.</li>`
+        +   `<li>Other admin browsers still see this team until they hide it too.</li>`
+        + `</ul>`;
+    appConfirm({
+      title:        TEAMLOG_PA_WRITE_URL ? `Delete ${teamName}?` : `Hide ${teamName}?`,
+      message:      messageHtml,
+      html:         true,
+      confirmLabel: TEAMLOG_PA_WRITE_URL ? 'Delete' : 'Hide',
+      cancelLabel:  'Cancel',
+      variant:      'danger',
+    }).then(ok => { if (ok) finalizeTeamDeletion(teamId, team); });
+    return;
+  }
 
+  // CASE C — empty team. No Excel rows reference it at all. Hard delete sticks.
+  appConfirm({
+    title:        `Delete ${teamName}?`,
+    message:      'This team has no bookings.',
+    confirmLabel: 'Delete',
+    cancelLabel:  'Cancel',
+    variant:      'danger',
+  }).then(ok => { if (ok) finalizeTeamDeletion(teamId, team); });
+}
+
+/* Shared deletion finalizer — used by both the no-blocking-refs path and
+ * the guard modal's "I've resolved the blockers, now delete the team"
+ * confirmation. Does the TeamLog write (or local tombstone fallback),
+ * removes the team from adminState.teams, persists, and re-renders. */
+function finalizeTeamDeletion(teamId, teamObj) {
+  const teamName = teamObj ? teamObj.name : `Team #${teamId}`;
   if (TEAMLOG_PA_WRITE_URL && teamObj) {
-    // True cross-admin delete via TeamLog. Writes rows with
-    // status='deleted'; the read path filters those out everywhere.
     writeTeamToTeamLog(teamObj, 'deleted').then(r => {
       if (r.ok) toast(`${teamName} deleted from TeamLog ✓`);
       else if (!r.skipped) toast(`Deletion saved locally — TeamLog sync failed: ${r.lastError}`);
     });
   } else {
-    // Legacy fallback: per-browser tombstone.
     addHiddenTeamId(teamId);
   }
   adminState.teams = adminState.teams.filter(t => t.id !== teamId);
@@ -13535,6 +13856,150 @@ function deleteTeam(teamId) {
   if (typeof toast === 'function') {
     toast(TEAMLOG_PA_WRITE_URL ? `${teamName} deleted` : `${teamName} hidden from this browser`);
   }
+}
+
+/* Team-deletion guard modal. Shows when admin tries to delete a team that
+ * has active (Booked / Notified) assignments. Lists the blockers, offers
+ * two bulk-resolve paths, and only re-attempts deletion after the blockers
+ * are gone. Uses the existing asgn-modal infrastructure for visual
+ * consistency with the rest of the assignment workflows. */
+function openTeamDeleteGuardModal(teamId, buckets) {
+  const team = (adminState.teams || []).find(t => t.id === teamId);
+  const teamName = team ? team.name : `Team #${teamId}`;
+  const { blocking, completed, cancelled, unassigned } = buckets;
+
+  // Build the blocker list (up to ~8 visible, with "and N more" overflow
+  // so the modal doesn't blow past the viewport on busy teams).
+  const VISIBLE_BLOCKERS = 8;
+  const visible = blocking.slice(0, VISIBLE_BLOCKERS);
+  const overflow = blocking.length - visible.length;
+  const blockersListHTML = visible.map(a => {
+    const partName = a.participantData
+      ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ')
+      : '—';
+    const dateLabel = a.date
+      ? parseYMD(a.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      : '—';
+    const timeLabel = (a.startMin != null && a.endMin != null)
+      ? fmtTimeOfDay(a.startMin) + '–' + fmtTimeOfDay(a.endMin)
+      : '';
+    const badge = a.status === 'Notified'
+      ? '<span style="display:inline-block; padding: 1px 7px; border-radius: 99px; background: rgba(0,180,216,0.14); color: #00838f; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Notified</span>'
+      : '<span style="display:inline-block; padding: 1px 7px; border-radius: 99px; background: var(--green-bg); color: var(--green-text); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Booked</span>';
+    return `
+      <li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 0.5px solid var(--border); font-size: 13px;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(partName)}</div>
+          <div style="font-size: 11.5px; color: var(--text3); margin-top: 1px;">${escapeHTML(dateLabel)}${timeLabel ? ' · ' + escapeHTML(timeLabel) : ''}</div>
+        </div>
+        ${badge}
+      </li>`;
+  }).join('');
+
+  // Footnote on historical rows — keeps admin oriented if they wonder
+  // "what happens to my cancelled bookings?".
+  const histLines = [];
+  if (completed.length)  histLines.push(`${completed.length} completed`);
+  if (cancelled.length)  histLines.push(`${cancelled.length} cancelled`);
+  if (unassigned.length) histLines.push(`${unassigned.length} previously unassigned`);
+  const histNote = histLines.length
+    ? `<div style="font-size: 12px; color: var(--text3); margin-top: 12px;">This team also has historical rows (${histLines.join(', ')}) which don't block deletion and will stay in Excel as an audit trail.</div>`
+    : '';
+
+  document.getElementById('asgnModalContent').innerHTML = `
+    <div class="asgn-modal-head">
+      <div>
+        <div class="asgn-modal-title">Can't delete ${escapeHTML(teamName)} yet</div>
+        <div class="asgn-modal-sub">This team has ${blocking.length} active booking${blocking.length === 1 ? '' : 's'}. Resolve them first.</div>
+      </div>
+      <button class="icon-btn" id="asgnModalClose">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="asgn-modal-body">
+      <div style="padding: 12px 14px; background: rgba(251,191,36,0.08); border: 0.5px solid rgba(251,191,36,0.30); border-radius: var(--r); margin-bottom: 14px; font-size: 13.5px; color: var(--text); line-height: 1.5;">
+        A team with active bookings can't be deleted without losing the connection between participants and their sessions. Choose how to resolve these bookings:
+        <ul style="margin: 8px 0 0 0; padding-left: 18px; font-size: 13px; color: var(--text2);">
+          <li><strong style="color: var(--text);">Cancel all</strong> — sessions won't happen. Bookings disappear from active counts.</li>
+          <li><strong style="color: var(--text);">Unassign team</strong> — sessions WILL happen with a different team. Bookings stay on the calendar as Unassigned shells you can edit later.</li>
+        </ul>
+      </div>
+      <div style="font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">Active bookings (${blocking.length})</div>
+      <ul style="list-style: none; padding: 0; margin: 0 0 4px 0; border: 0.5px solid var(--border); border-radius: var(--r); overflow: hidden;">
+        ${blockersListHTML}
+      </ul>
+      ${overflow > 0 ? `<div style="font-size: 12px; color: var(--text3); padding: 8px 10px; text-align: center;">…and ${overflow} more</div>` : ''}
+      ${histNote}
+    </div>
+    <div class="asgn-modal-foot">
+      <button class="btn btn-ghost" id="guardCancelBtn">Close</button>
+      <div style="flex: 1"></div>
+      <button class="btn btn-ghost" id="guardCancelAllBtn" title="Mark all ${blocking.length} active bookings Cancelled, then delete the team">Cancel all & delete</button>
+      <button class="btn btn-primary" id="guardUnassignAllBtn" title="Remove the team from all ${blocking.length} active bookings, then delete the team">Unassign team & delete</button>
+    </div>
+  `;
+  document.getElementById('asgnModalClose').addEventListener('click', closeAsgnModal);
+  document.getElementById('guardCancelBtn').addEventListener('click', closeAsgnModal);
+
+  // Cancel-all-then-delete: marks all blocking assignments Cancelled,
+  // waits for the writes, then finalizes the team deletion.
+  document.getElementById('guardCancelAllBtn').addEventListener('click', async () => {
+    const proceed = await appConfirm({
+      title:        `Cancel ${blocking.length} booking${blocking.length === 1 ? '' : 's'}?`,
+      message:      `All ${blocking.length} active booking${blocking.length === 1 ? '' : 's'} for ${teamName} will be marked Cancelled, then the team will be deleted. The bookings won't happen. This action writes to Excel.`,
+      confirmLabel: 'Cancel & delete',
+      cancelLabel:  'Back',
+      variant:      'danger',
+    });
+    if (!proceed) return;
+    const btn = document.getElementById('guardCancelAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = `Cancelling ${blocking.length}…`; }
+    const reason = `Team ${teamName} deleted`;
+    for (const a of blocking) {
+      try {
+        await cancelAssignment(a.id, reason);
+      } catch (e) {
+        console.warn('[guardCancelAll] cancel failed for', a.id, e);
+      }
+    }
+    // Refresh the team reference (status changes may have already
+    // re-rendered, dropping the team from the DOM).
+    const t = (adminState.teams || []).find(x => x.id === teamId);
+    finalizeTeamDeletion(teamId, t);
+    closeAsgnModal();
+  });
+
+  // Unassign-all-then-delete: marks all blocking assignments Unassigned,
+  // waits for the writes, then finalizes the team deletion. This is the
+  // safer / lower-impact option — participant data and slot reservations
+  // remain on the calendar; admin re-assigns to a new team later.
+  document.getElementById('guardUnassignAllBtn').addEventListener('click', async () => {
+    const proceed = await appConfirm({
+      title:        `Unassign ${teamName}?`,
+      message:      `${teamName} will be removed from all ${blocking.length} active booking${blocking.length === 1 ? '' : 's'}, then the team will be deleted. Bookings stay on the calendar as Unassigned — you can edit them later to pick a new team.`,
+      confirmLabel: 'Unassign & delete',
+      cancelLabel:  'Back',
+      variant:      'warning',
+    });
+    if (!proceed) return;
+    const btn = document.getElementById('guardUnassignAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = `Unassigning ${blocking.length}…`; }
+    const reason = `Team ${teamName} deleted`;
+    for (const a of blocking) {
+      try {
+        await unassignTeamFromAssignment(a.id, { reason, unassignedBy: 'Admin' });
+      } catch (e) {
+        console.warn('[guardUnassignAll] unassign failed for', a.id, e);
+      }
+    }
+    const t = (adminState.teams || []).find(x => x.id === teamId);
+    finalizeTeamDeletion(teamId, t);
+    closeAsgnModal();
+  });
+
+  showAsgnModal();
 }
 
 /* ----------- Assignment Modal ----------- */
@@ -13707,7 +14172,11 @@ function renderAssignmentModal() {
     document.getElementById('inlineTeamCreateBtn').addEventListener('click', () => {
       const name = (adminState.modal.inlineTeamName || '').trim() || defaultTeamName();
       if (adminState.modal.inlineTeamPrimaryIds.length === 0) {
-        alert('Add at least one primary moderator.');
+        appAlert({
+          title:   'Pick at least one moderator',
+          message: 'A new team needs at least one primary moderator selected before it can be created.',
+          variant: 'warning',
+        });
         return;
       }
       // The team is held in memory as a "pending" record. We do NOT call
@@ -14281,8 +14750,26 @@ async function saveAssignment() {
       participantData: participantData,
       modSnapshots: modSnapshots,
       // Preserve status/comment if the assignment was already cancelled,
-      // but mark as Booked again if it's being re-edited.
-      status: existing.status === 'Cancelled' ? 'Booked' : (existing.status || 'Booked'),
+      // but revive to Booked when admin edits a Cancelled or Unassigned
+      // row. Both are terminal "not a real booking right now" states
+      // that the edit action implicitly reverses: editing a Cancelled
+      // row says "actually, this IS happening", editing an Unassigned
+      // row says "I picked a new team, this slot is owned again". In
+      // both cases Booked is the right next state — the Notified
+      // confirmation email won't have been sent for either, so we
+      // start from the beginning of the active flow. Completed stays
+      // sticky (editing a completed session shouldn't un-complete it
+      // — that's prevented at the UI level by hiding the Edit button,
+      // but the data layer enforces it too as defense-in-depth).
+      status: (existing.status === 'Cancelled' || existing.status === 'Unassigned') ? 'Booked' : (existing.status || 'Booked'),
+      // Clear the unassignment metadata when the row is being revived
+      // so a future read-back doesn't render stale "previously
+      // assigned to Team X" text on a now-active booking.
+      unassignedAt: (existing.status === 'Unassigned') ? '' : existing.unassignedAt,
+      unassignedBy: (existing.status === 'Unassigned') ? '' : existing.unassignedBy,
+      unassignedReason: (existing.status === 'Unassigned') ? '' : existing.unassignedReason,
+      previousTeamId: (existing.status === 'Unassigned') ? null : existing.previousTeamId,
+      previousTeamName: (existing.status === 'Unassigned') ? '' : existing.previousTeamName,
       comment: existing.comment || '',
       savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -14377,18 +14864,22 @@ function openViewAssignmentModal(asgnId) {
   const isCancelled = status === 'Cancelled';
   const isNotified = status === 'Notified';
   const isCompleted = status === 'Completed';
+  const isUnassigned = status === 'Unassigned';
   const hasEmail = !!(a.participantData && a.participantData.email);
 
-  // Status badge — four distinct states with their own color treatments.
-  // Booked    = green (active, awaiting notification)
-  // Notified  = blue/teal (active, email sent)
-  // Completed = green check (work done — successful conclusion)
-  // Cancelled = red (work didn't happen)
+  // Status badge — five distinct states with their own color treatments.
+  // Booked     = green (active, awaiting notification)
+  // Notified   = blue/teal (active, email sent)
+  // Completed  = green check (work done — successful conclusion)
+  // Cancelled  = red (work didn't happen)
+  // Unassigned = amber (team removed — slot needs a new team)
   let statusBadge;
   if (isCancelled) {
     statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(239,68,68,0.12); color: var(--red); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Cancelled</span>';
   } else if (isCompleted) {
     statusBadge = '<span style="display:inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; background: rgba(34,197,94,0.14); color: rgb(22,163,74); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Completed</span>';
+  } else if (isUnassigned) {
+    statusBadge = '<span style="display:inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; background: rgba(251,191,36,0.14); color: rgb(217,119,6); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 5h10M3 8h7M3 11h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Unassigned</span>';
   } else if (isNotified) {
     statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(0,180,216,0.14); color: #00838f; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">📧 Notified</span>';
   } else {
@@ -14414,6 +14905,27 @@ function openViewAssignmentModal(asgnId) {
         } catch (_) { return ''; }
       })()
     : '';
+  // Unassignment metadata — shown when team was removed. Surface the
+  // previous team so admin knows what the slot used to look like.
+  const unassignedMeta = isUnassigned
+    ? (() => {
+        try {
+          const lines = [];
+          if (a.previousTeamName) {
+            lines.push(`Previously assigned to <strong style="color: var(--text2);">${escapeHTML(a.previousTeamName)}</strong>`);
+          }
+          if (a.unassignedAt) {
+            const d = new Date(a.unassignedAt);
+            const byLabel = a.unassignedBy ? ` by ${escapeHTML(a.unassignedBy)}` : '';
+            lines.push(`Unassigned ${d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} at ${d.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'})}${byLabel}`);
+          }
+          if (a.unassignedReason) {
+            lines.push(`Reason: ${escapeHTML(a.unassignedReason)}`);
+          }
+          return lines.length ? `<div style="font-size: 12px; color: var(--text3); margin-top: 4px; line-height: 1.5;">${lines.join('<br>')}</div>` : '';
+        } catch (_) { return ''; }
+      })()
+    : '';
 
   document.getElementById('asgnModalContent').innerHTML = `
     <div class="asgn-modal-head">
@@ -14424,6 +14936,7 @@ function openViewAssignmentModal(asgnId) {
         <div class="asgn-modal-sub">${escapeHTML(dateLabel)} · ${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</div>
         ${notifiedMeta}
         ${completedMeta}
+        ${unassignedMeta}
       </div>
       <button class="icon-btn" id="asgnModalClose">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -14508,9 +15021,9 @@ function openViewAssignmentModal(asgnId) {
       </div>
     </div>
     <div class="asgn-modal-foot">
-      ${(!isCancelled && !isCompleted) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
+      ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
       <div style="flex: 1"></div>
-      ${(!isCancelled && !isCompleted && hasEmail) ? `
+      ${(!isImmutableAssignmentStatus(status) && hasEmail) ? `
         <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify" id="asgnNotifyBtn"
                 title="${isNotified ? 'Send the confirmation email again' : 'Send confirmation email to participant'}">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
@@ -14519,15 +15032,16 @@ function openViewAssignmentModal(asgnId) {
           </svg>
           <span>${isNotified ? 'Resend email' : 'Send email'}</span>
         </button>` : ''}
-      ${(!isCancelled && !isCompleted && !hasEmail) ? `
+      ${(!isImmutableAssignmentStatus(status) && !hasEmail) ? `
         <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
-      ${(!isCancelled && !isCompleted) ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
-      <button class="btn ${(isCancelled || isCompleted) ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
+      ${isUnassigned ? `<button class="btn btn-primary" id="asgnReassignBtn" title="Pick a new team for this slot — status returns to Booked">Reassign team</button>` : ''}
+      ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
+      <button class="btn ${isImmutableAssignmentStatus(status) ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
     </div>
   `;
   document.getElementById('asgnModalClose').addEventListener('click', closeAsgnModal);
   document.getElementById('asgnCloseBtn').addEventListener('click', closeAsgnModal);
-  if (!isCancelled && !isCompleted) {
+  if (!isImmutableAssignmentStatus(status)) {
     document.getElementById('asgnEditBtn').addEventListener('click', () => {
       openEditAssignmentModal(asgnId);
     });
@@ -14537,6 +15051,20 @@ function openViewAssignmentModal(asgnId) {
     const notifyBtn = document.getElementById('asgnNotifyBtn');
     if (notifyBtn) {
       notifyBtn.addEventListener('click', () => notifyParticipant(asgnId));
+    }
+  }
+  // Reassign-team button only appears for Unassigned status. It opens the
+  // edit modal pre-populated with the existing slot, allowing admin to
+  // pick a new team. The edit-save path will flip status back to Booked
+  // because openEditAssignmentModal initializes m.status from the
+  // existing record, and saveAssignment treats Unassigned the same way
+  // it treats Cancelled in the "is the row being revived?" check below
+  // (see the existing.status === 'Cancelled' ? 'Booked' branch in
+  // saveAssignment — we extend it for Unassigned too).
+  if (isUnassigned) {
+    const reassignBtn = document.getElementById('asgnReassignBtn');
+    if (reassignBtn) {
+      reassignBtn.addEventListener('click', () => openEditAssignmentModal(asgnId));
     }
   }
   showAsgnModal();
@@ -14788,6 +15316,108 @@ async function cancelAssignment(asgnId, comment) {
   }
 }
 
+/* ---------- Unassign team from assignment ----------
+ * Removes the team from an assignment while preserving the participant /
+ * date / time data as a historical record. This is the workflow we offer
+ * admins who try to delete a team that still has active bookings — rather
+ * than forcing them to outright cancel those bookings (which says "this
+ * session won't happen"), they can unassign the team (which says "this
+ * session needs a NEW team to be assigned later").
+ *
+ * Why this is a separate status from Cancelled:
+ *   - Cancelled: the booking is gone. The participant is no longer
+ *     scheduled. Data point lost.
+ *   - Unassigned: the booking shell remains. The participant is still on
+ *     the roster for this slot. Admin can later edit the row and pick a
+ *     new team to fulfill it. Data point preserved.
+ *
+ * Why Unassigned doesn't count in Overview / charts / badge:
+ *   - It's not a "real booking" right now — no team owns it. If we
+ *     counted it as active, the dashboard would over-report capacity.
+ *   - When admin later edits the row and picks a new team, status goes
+ *     back to Booked and the count includes it again.
+ *
+ * Why Unassigned rows don't resurrect deleted teams in read-back:
+ *   - The assignment-row team reconstruction loop now skips Unassigned
+ *     rows when building the teamMap. Without that skip, deleting a team
+ *     would leave Unassigned orphan rows that still pointed at the dead
+ *     teamId, and the next refresh would rebuild a "phantom team" from
+ *     them. With the skip, Unassigned rows contribute nothing to team
+ *     resurrection — the team can be safely deleted without leaving
+ *     ghost references in the calendar.
+ *
+ * Idempotent: refuses to act if status is already Unassigned, Cancelled,
+ * or Completed. Cancelled wins over Unassigned (cancellation is a stronger
+ * statement — the session didn't happen at all). Completed wins because
+ * the work was done by a specific team and we shouldn't retroactively
+ * erase that attribution. */
+async function unassignTeamFromAssignment(asgnId, opts) {
+  opts = opts || {};
+  const idx = adminState.assignments.findIndex(x => x.id === asgnId);
+  if (idx === -1) {
+    console.warn('[unassignTeam] Assignment not in local state:', asgnId);
+    return { ok: false, reason: 'not_found' };
+  }
+  const cur = adminState.assignments[idx];
+  if (cur.status === 'Unassigned') return { ok: true, reason: 'already_unassigned' };
+  // Don't override terminal states. Cancelled and Completed are stronger
+  // statements than "team was removed"; we leave them alone.
+  if (cur.status === 'Cancelled') return { ok: false, reason: 'already_cancelled' };
+  if (cur.status === 'Completed') return { ok: false, reason: 'already_completed' };
+
+  const now = new Date().toISOString();
+  // Preserve the original teamId / teamName in metadata fields so an
+  // auditor can later trace "which team had this slot before it was
+  // unassigned?" We don't clear teamId because the Excel column itself
+  // is the historical record; the status column is what tells the read-
+  // back loop "this isn't an active booking, don't count it".
+  adminState.assignments[idx] = {
+    ...cur,
+    status: 'Unassigned',
+    unassignedAt: now,
+    unassignedBy: opts.unassignedBy || '',
+    unassignedReason: opts.reason || '',
+    // Preserve the previous teamId so admin can see "this used to be Team
+    // 3" in the modal subtitle. The grid no longer renders this cell as a
+    // team-attached booking (the active filter excludes Unassigned).
+    previousTeamId: cur.teamId,
+    previousTeamName: cur.teamName || '',
+    updatedAt: now,
+    // CRITICAL: bump savedAt so this row's lastActive in Excel is newer
+    // than the previous Booked/Notified row. Without this, read-back's
+    // newest-first sort can't pick this row as the current state.
+    savedAt: now,
+  };
+  saveAssignmentData();
+
+  if (typeof renderAssignment === 'function' && document.getElementById('asgnCount')) {
+    renderAssignment();
+  }
+
+  // POST the unassigned row to PA Excel. Same pattern as cancelAssignment.
+  if (typeof ASSIGNMENT_PA_WRITE_URL !== 'undefined' && ASSIGNMENT_PA_WRITE_URL) {
+    const rows = buildAssignmentExcelRow(adminState.assignments[idx]);
+    let succeeded = 0, failed = 0, lastError = null;
+    for (const row of rows) {
+      try {
+        const res = await fetch(ASSIGNMENT_PA_WRITE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(row),
+        });
+        if (res.ok || res.status === 202) succeeded++;
+        else { failed++; lastError = `HTTP ${res.status}`; }
+      } catch (e) { failed++; lastError = e.message || String(e); }
+    }
+    if (failed > 0) {
+      console.warn('[unassignTeam] Excel sync partial failure:', lastError, '— saved locally, will retry on next render');
+      return { ok: false, succeeded, failed, lastError };
+    }
+    return { ok: true, succeeded, failed: 0 };
+  }
+  return { ok: true, succeeded: 0, failed: 0, lastError: 'no_write_url' };
+}
+
 
 // Quick popover that appears when admin clicks a cell that already has assignment(s).
 // Lets them pick an existing one to view OR add a new one alongside it.
@@ -14806,12 +15436,18 @@ function showCellPicker(cell, dateStr, slotMin, existingAsgns) {
     const color = getTeamColor(a.teamId);
     const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '—';
     const isCancelled = a.status === 'Cancelled';
+    const isUnassigned = a.status === 'Unassigned';
+    const isCompleted = a.status === 'Completed';
+    const statusSuffix = isCancelled  ? ' · <span style="color: var(--red);">Cancelled</span>'
+                       : isUnassigned ? ' · <span style="color: rgb(217,119,6);">Unassigned</span>'
+                       : isCompleted  ? ' · <span style="color: rgb(22,163,74);">Completed</span>'
+                       : '';
     return `
       <div class="cell-picker-item" data-asgn-id="${a.id}">
         <span class="cell-picker-color" style="background: ${color.bg};"></span>
         <div class="cell-picker-info">
           <div class="cell-picker-name ${isCancelled ? 'cancelled' : ''}">${escapeHTML(partName)}</div>
-          <div class="cell-picker-meta">${escapeHTML((team ? team.name : 'No team') + ' · ' + fmtTimeOfDay(a.startMin) + '–' + fmtTimeOfDay(a.endMin))}${isCancelled ? ' · <span style="color: var(--red);">Cancelled</span>' : ''}</div>
+          <div class="cell-picker-meta">${escapeHTML((team ? team.name : (isUnassigned && a.previousTeamName ? a.previousTeamName : 'No team')) + ' · ' + fmtTimeOfDay(a.startMin) + '–' + fmtTimeOfDay(a.endMin))}${statusSuffix}</div>
         </div>
       </div>`;
   }).join('');
@@ -14892,6 +15528,193 @@ function closeAsgnModal() {
   adminState.modal = null;
 }
 
+/* ===================================================================
+ *  Native in-app confirm / alert modals
+ * ===================================================================
+ *
+ * Replaces the browser's native confirm() and alert() dialogs with a
+ * polished, design-matched modal that uses the app's own typography,
+ * colors, and rounded shape. The native dialogs were jarring — system
+ * fonts, OS chrome, no respect for dark mode — and broke the visual
+ * continuity of the assignment-management flows.
+ *
+ * Why a SEPARATE modal stack from asgn-modal:
+ *   The Team Delete guard modal is itself an asgn-modal. Confirms fired
+ *   from inside it (e.g., "Cancel all bookings, are you sure?") would
+ *   either have to:
+ *     (a) reuse asgn-modal and overwrite the guard content → losing the
+ *         user's context when they hit Cancel on the inner confirm;
+ *     (b) live on their own z-index layer and stack on top of asgn-modal.
+ *   We do (b). The confirm modal mounts to <body> on first use, lives
+ *   at z-index 700 (asgn-modal is 600-601), and stacks cleanly.
+ *
+ * Public API — both return a Promise:
+ *
+ *   appConfirm({
+ *     title:    'Delete team?',
+ *     message:  'This action can't be undone.',  // string OR HTML string
+ *     html:     false,                            // true = render message as HTML
+ *     confirmLabel: 'Delete',
+ *     cancelLabel:  'Cancel',
+ *     variant:  'danger',  // 'default' | 'danger' | 'warning'
+ *   }).then(confirmed => { if (confirmed) ... })
+ *
+ *   appAlert({
+ *     title:   'Validation error',
+ *     message: 'Team name is required.',
+ *     okLabel: 'OK',
+ *     variant: 'warning',
+ *   }).then(() => { ... })
+ *
+ * Dismissal: Escape key cancels (resolves false). Clicking the overlay
+ * also cancels. Cancel button cancels. Confirm button confirms (resolves
+ * true). Re-entrancy is safe — if another confirm is opened while one
+ * is already open, the new one replaces the old (old resolves false). */
+let _appConfirmState = null;  // { resolve } — set while a confirm is open
+
+function _ensureAppConfirmDom() {
+  if (document.getElementById('appConfirmOverlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'appConfirmOverlay';
+  overlay.className = 'app-confirm-overlay';
+  const modal = document.createElement('div');
+  modal.id = 'appConfirmModal';
+  modal.className = 'app-confirm-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.innerHTML = `
+    <div class="app-confirm-icon" id="appConfirmIcon" aria-hidden="true"></div>
+    <div class="app-confirm-title" id="appConfirmTitle"></div>
+    <div class="app-confirm-message" id="appConfirmMessage"></div>
+    <div class="app-confirm-foot">
+      <button class="btn btn-ghost" id="appConfirmCancelBtn"></button>
+      <button class="btn" id="appConfirmOkBtn"></button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+  // Wire dismissal — overlay click and Escape key both cancel.
+  overlay.addEventListener('click', () => _resolveAppConfirm(false));
+  // Single keyboard listener for the whole app — only acts when the
+  // modal is open. Cheaper than wiring/unwiring on every open/close.
+  document.addEventListener('keydown', (e) => {
+    if (!_appConfirmState) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      _resolveAppConfirm(false);
+    } else if (e.key === 'Enter') {
+      // Enter confirms — same affordance as the browser-native dialog.
+      // We don't apply this to alerts because there's only one button
+      // anyway (the OK handler resolves and dismisses).
+      e.preventDefault();
+      _resolveAppConfirm(true);
+    }
+  });
+}
+
+function _resolveAppConfirm(value) {
+  if (!_appConfirmState) return;
+  const { resolve } = _appConfirmState;
+  _appConfirmState = null;
+  const overlay = document.getElementById('appConfirmOverlay');
+  const modal   = document.getElementById('appConfirmModal');
+  if (overlay) overlay.classList.remove('open');
+  if (modal)   modal.classList.remove('open');
+  // Restore focus to whatever had it before the modal opened so screen
+  // readers and keyboard navigation return to a sensible spot.
+  if (_appConfirmState && _appConfirmState._prevFocus) {
+    try { _appConfirmState._prevFocus.focus(); } catch (_) {}
+  }
+  resolve(value);
+}
+
+function appConfirm(opts) {
+  return new Promise((resolve) => {
+    _ensureAppConfirmDom();
+    // If another confirm is open, cancel it first. Last-one-wins keeps
+    // the API simple and prevents stacking dialogs that confuse the user.
+    if (_appConfirmState) {
+      const prev = _appConfirmState;
+      _appConfirmState = null;
+      try { prev.resolve(false); } catch (_) {}
+    }
+    const o = opts || {};
+    const title       = o.title || 'Are you sure?';
+    const message     = o.message || '';
+    const isHtml      = !!o.html;
+    const confirmText = o.confirmLabel || 'Continue';
+    const cancelText  = o.cancelLabel  || 'Cancel';
+    const variant     = o.variant      || 'default';
+
+    const titleEl   = document.getElementById('appConfirmTitle');
+    const messageEl = document.getElementById('appConfirmMessage');
+    const iconEl    = document.getElementById('appConfirmIcon');
+    const okBtn     = document.getElementById('appConfirmOkBtn');
+    const cancelBtn = document.getElementById('appConfirmCancelBtn');
+    const modal     = document.getElementById('appConfirmModal');
+    const overlay   = document.getElementById('appConfirmOverlay');
+
+    titleEl.textContent = title;
+    if (isHtml) messageEl.innerHTML = message;
+    else messageEl.textContent = message;
+    // Toggle message visibility — an empty message leaves a weird gap.
+    messageEl.style.display = message ? '' : 'none';
+
+    // Variant-specific styling. The icon and OK-button color shift with
+    // intent so admin can tell at a glance: red ring = destructive,
+    // amber ring = warning, neutral ring = informational.
+    modal.classList.remove('variant-default', 'variant-danger', 'variant-warning');
+    modal.classList.add(`variant-${variant}`);
+    iconEl.innerHTML = (variant === 'danger')
+      ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 17h.01M3.5 19l7.4-13a1.3 1.3 0 0 1 2.2 0l7.4 13a1.3 1.3 0 0 1-1.1 2H4.6a1.3 1.3 0 0 1-1.1-2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : (variant === 'warning')
+      ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 17h.01M3.5 19l7.4-13a1.3 1.3 0 0 1 2.2 0l7.4 13a1.3 1.3 0 0 1-1.1 2H4.6a1.3 1.3 0 0 1-1.1-2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+
+    okBtn.textContent     = confirmText;
+    cancelBtn.textContent = cancelText;
+    // OK button class — danger variant gets the red destructive look,
+    // others get the standard primary teal.
+    okBtn.className = 'btn ' + (variant === 'danger' ? 'btn-danger' : 'btn-primary');
+    // Hide cancel button entirely for alert-style (single-button) usage.
+    // Caller signals this by passing cancelLabel: '' explicitly.
+    cancelBtn.style.display = (cancelText === '' || cancelText === null) ? 'none' : '';
+
+    // Re-wire handlers each call. The listeners reference the closure's
+    // resolve via _appConfirmState, so the cleanest approach is to clone
+    // the buttons (drops all listeners) and re-attach fresh ones.
+    const newOk = okBtn.cloneNode(true);
+    const newCancel = cancelBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOk, okBtn);
+    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+    newOk.addEventListener('click', () => _resolveAppConfirm(true));
+    newCancel.addEventListener('click', () => _resolveAppConfirm(false));
+
+    _appConfirmState = { resolve, _prevFocus: document.activeElement };
+    overlay.classList.add('open');
+    modal.classList.add('open');
+    // Auto-focus the primary action button so Enter confirms and
+    // keyboard users have an immediate target. We focus the OK button
+    // even for destructive variants — admin will have read the title
+    // and message before pressing Enter (this matches macOS / iOS
+    // confirmation-dialog convention).
+    setTimeout(() => { try { newOk.focus(); } catch (_) {} }, 50);
+  });
+}
+
+function appAlert(opts) {
+  // Alert is just a confirm with no cancel button and a single OK.
+  const o = opts || {};
+  return appConfirm({
+    title:        o.title || 'Notice',
+    message:      o.message || '',
+    html:         !!o.html,
+    confirmLabel: o.okLabel || 'OK',
+    cancelLabel:  '',  // hides the cancel button
+    variant:      o.variant || 'default',
+  });
+}
+
 /* ----------- Excel export (matches the spec'd headers) ----------- */
 function buildAssignmentExcelRow(a) {
   // Headers per spec:
@@ -14908,7 +15731,54 @@ function buildAssignmentExcelRow(a) {
   // and the reader has graceful degradation paths.
   const team = adminState.teams.find(t => t.id === a.teamId);
   const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '';
-  return (a.modSnapshots || []).map(mod => ({
+  // For Unassigned rows, the previous team's name is more meaningful than
+  // the (potentially deleted) current team — surface it in the team
+  // column so the Excel record clearly says "Team Foo (unassigned)". The
+  // status column carries the machine-readable signal; the team column
+  // becomes a human-readable audit hint.
+  const teamLabel = a.status === 'Unassigned' && a.previousTeamName
+    ? `${a.previousTeamName} (unassigned)`
+    : ((team && team.name) || a.teamName || '');
+  // Comment column carries human-readable context that doesn't fit
+  // anywhere else. For Cancelled rows it's the cancellation reason;
+  // for Unassigned rows it's the unassignment reason. Without this
+  // merge, the unassignedReason field would never make it to Excel.
+  const commentForExcel = a.status === 'Unassigned' && a.unassignedReason
+    ? a.unassignedReason
+    : (a.comment || '');
+  const mods = a.modSnapshots || [];
+  // Edge case: terminal-status row (Unassigned / Cancelled) with an
+  // empty modSnapshots array would emit ZERO Excel rows from the loop
+  // below, which means the status change never gets persisted to Excel
+  // — local-only ghost state that vanishes on next read. Fall back to
+  // a single "marker" row carrying the assignment-level fields so the
+  // read-back can still reconstruct status. Only kicks in when there
+  // are genuinely no mods to record; normal multi-mod writes are
+  // unaffected. Without this, an admin unassigning a team whose mods
+  // had already been wiped from the local snapshot would silently
+  // lose the unassignment write.
+  if (mods.length === 0 && (a.status === 'Unassigned' || a.status === 'Cancelled')) {
+    return [{
+      assignmentId:       a.id              || '',
+      orbitLoginId:       '',
+      firstName:          '',
+      lastName:           '',
+      phoneNumber:        '',
+      centificEmail:      '',
+      personalEmail:      '',
+      lastActive:         a.savedAt         || '',
+      team:               teamLabel,
+      assignedDate:       a.date + ' ' + fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin),
+      assignedTo:         partName,
+      participantOrbitId: a.participantOrbitId || '',
+      address:            (a.participantData && a.participantData.address) || '',
+      phonenumber:        (a.participantData && a.participantData.phone) || '',
+      teamId:             a.teamId,
+      status:             a.status          || 'Booked',
+      comment:            commentForExcel,
+    }];
+  }
+  return mods.map(mod => ({
     assignmentId:       a.id              || '',
     orbitLoginId:       mod.orbitLoginId  || '',
     firstName:          mod.firstName     || '',
@@ -14917,7 +15787,7 @@ function buildAssignmentExcelRow(a) {
     centificEmail:      mod.centificEmail || '',
     personalEmail:      mod.personalEmail || '',
     lastActive:         a.savedAt         || '',
-    team:               (team && team.name) || a.teamName || '',
+    team:               teamLabel,
     assignedDate:       a.date + ' ' + fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin),
     assignedTo:         partName,
     participantOrbitId: a.participantOrbitId || '',
@@ -14925,7 +15795,7 @@ function buildAssignmentExcelRow(a) {
     phonenumber:        (a.participantData && a.participantData.phone) || '',
     teamId:             a.teamId,
     status:             a.status          || 'Booked',
-    comment:            a.comment         || '',
+    comment:            commentForExcel,
   }));
 }
 
@@ -15489,20 +16359,26 @@ function getOperatorAssignment() {
   if (mine.length === 0) return null;
   const todayStr = ymd(new Date());
   // Skip assignments the operator has ALREADY completed — those should not
-  // be the "current" assignment for entry-bar purposes.
+  // be the "current" assignment for entry-bar purposes. Also skip
+  // terminal-status rows (Cancelled / Unassigned): a cancelled session
+  // shouldn't be the mod's "current" anything, and an Unassigned row
+  // means admin removed the team — the mod is no longer responsible
+  // until/unless a new team gets assigned.
   const isCompleted = (asgn) => {
     if (typeof getMyLatestStatusForAssignment !== 'function') return false;
     const my = getMyLatestStatusForAssignment(asgn.id);
     return my && my.status === 'session_done';
   };
-  const upcoming = mine.filter(a => a.date >= todayStr && !isCompleted(a)).sort((a, b) =>
+  const upcoming = mine.filter(a => a.date >= todayStr && !isCompleted(a) && !isTerminalStatus(a.status)).sort((a, b) =>
     (a.date + '_' + String(a.startMin).padStart(4, '0'))
       .localeCompare(b.date + '_' + String(b.startMin).padStart(4, '0'))
   );
   if (upcoming.length > 0) return upcoming[0];
   // Fallback: include completed today's sessions (so the entry bar still has
-  // SOMETHING to show until a fresh assignment exists)
-  const allTodayPlus = mine.filter(a => a.date >= todayStr).sort((a, b) =>
+  // SOMETHING to show until a fresh assignment exists). Still skip
+  // terminal-status rows — they're not valid "current" assignments
+  // even as a fallback.
+  const allTodayPlus = mine.filter(a => a.date >= todayStr && !isTerminalStatus(a.status)).sort((a, b) =>
     (a.date + '_' + String(a.startMin).padStart(4, '0'))
       .localeCompare(b.date + '_' + String(b.startMin).padStart(4, '0'))
   );
@@ -16078,9 +16954,13 @@ function openWrapUpModal(asgn) {
 
 // ---------- Post-session decision modal ----------
 function openSessionCompleteModal(asgn) {
-  // Determine if there are more assignments queued for this operator
+  // Determine if there are more assignments queued for this operator.
+  // Terminal-status rows (Cancelled / Unassigned) are excluded — neither
+  // represents a real upcoming session the mod owes. Unassigned means
+  // admin removed this team from the slot; admin needs to pick a new
+  // team before any mod is on the hook for it again.
   const remaining = (typeof getOperatorAssignments === 'function')
-    ? getOperatorAssignments().filter(a => a.id !== asgn.id && a.status !== 'Cancelled')
+    ? getOperatorAssignments().filter(a => a.id !== asgn.id && !isTerminalStatus(a.status))
     : [];
   const todayStr = ymd(new Date());
   const upcomingToday = remaining.filter(a => a.date === todayStr);
@@ -16212,7 +17092,7 @@ function switchToNextAssignment(completedAsgn) {
   // Find the next assignment in the queue (excluding the just-completed one)
   const all = (typeof getOperatorAssignments === 'function') ? getOperatorAssignments() : [];
   const todayStr = ymd(new Date());
-  const next = all.find(a => a.id !== completedAsgn.id && a.status !== 'Cancelled' && a.date >= todayStr);
+  const next = all.find(a => a.id !== completedAsgn.id && !isTerminalStatus(a.status) && a.date >= todayStr);
   if (!next) {
     toast('No more queued assignments');
     return;
@@ -16464,7 +17344,7 @@ function renderModCalScheduleHTML() {
   for (let i = 0; i < 7; i++) {
     const d = addDays(weekStart, i);
     const ds = ymdLocal(d);
-    const sessionsForDay = all.filter(a => a.date === ds && a.status !== 'Cancelled')
+    const sessionsForDay = all.filter(a => a.date === ds && !isTerminalStatus(a.status))
       .sort((a, b) => (a.startMin || 0) - (b.startMin || 0));
     days.push({ date: d, ds, sessions: sessionsForDay, isToday: ds === todayStr });
   }
@@ -17368,19 +18248,25 @@ function init() {
   document.getElementById('menuOverlay').addEventListener('click', closeMenu);
   document.getElementById('themeRow').addEventListener('click', toggleTheme);
   document.getElementById('exportRow').addEventListener('click', () => { closeMenu(); exportExcel(); });
-  document.getElementById('resetRow').addEventListener('click', () => {
-    if (confirm('Reset all session data? This cannot be undone.\n\nNote: this only resets THIS session — your assigned schedule and identity remain.')) {
-      // Use the canonical reset helper. It preserves username + theme + modProfile,
-      // and importantly it WON'T silently leave the operator without an identity
-      // (the bug that made the schedule appear empty after reset).
-      resetOperatorSessionState({ preserveEquipment: false });
-      currentStationKey = null;
-      // Force-reload assignment cache so the My Session sidebar re-pulls cleanly
-      adminState._asgnLoaded = false;
-      closeMenu();
-      renderApp();
-      toast('Session reset');
-    }
+  document.getElementById('resetRow').addEventListener('click', async () => {
+    const ok = await appConfirm({
+      title:        'Reset session data?',
+      message:      'This clears the current session\'s state. This cannot be undone.\n\nYour assigned schedule and identity stay intact — only the current session\'s working data is wiped.',
+      confirmLabel: 'Reset session',
+      cancelLabel:  'Cancel',
+      variant:      'danger',
+    });
+    if (!ok) return;
+    // Use the canonical reset helper. It preserves username + theme + modProfile,
+    // and importantly it WON'T silently leave the operator without an identity
+    // (the bug that made the schedule appear empty after reset).
+    resetOperatorSessionState({ preserveEquipment: false });
+    currentStationKey = null;
+    // Force-reload assignment cache so the My Session sidebar re-pulls cleanly
+    adminState._asgnLoaded = false;
+    closeMenu();
+    renderApp();
+    toast('Session reset');
   });
   // Refresh button — re-read assignment cache + pull latest worklog
   const navRefreshBtn = document.getElementById('navRefreshBtn');
@@ -17405,15 +18291,21 @@ function init() {
     });
   }
 
-  document.getElementById('logoutRow').addEventListener('click', () => {
-    if (confirm('Sign out? Your progress is saved locally and will be restored next time you sign in with the same username.')) {
-      closeMenu();
-      document.getElementById('app').style.display = 'none';
-      document.getElementById('adminApp').classList.remove('active');
-      document.getElementById('loginScreen').style.display = 'flex';
-      document.getElementById('loginUsername').value = '';
-      document.getElementById('loginUsername').focus();
-    }
+  document.getElementById('logoutRow').addEventListener('click', async () => {
+    const ok = await appConfirm({
+      title:        'Sign out?',
+      message:      'Your progress is saved locally and will be restored next time you sign in with the same username.',
+      confirmLabel: 'Sign out',
+      cancelLabel:  'Stay signed in',
+      variant:      'default',
+    });
+    if (!ok) return;
+    closeMenu();
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('adminApp').classList.remove('active');
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('loginUsername').value = '';
+    document.getElementById('loginUsername').focus();
   });
 
   // Sidebar mobile
