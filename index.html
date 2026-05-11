@@ -10509,9 +10509,46 @@ async function fetchTeamsFromPA() {
         // ignore the mods on it.
         continue;
       }
-      // Add this mod to the appropriate role bucket, deduping
+      // Add this mod to the appropriate role bucket, but ONLY if this row
+      // is part of the team's CURRENT membership snapshot.
+      //
+      // ROOT CAUSE for the previously-observed "edit team membership
+      // doesn't persist, old members re-appear on refresh" bug:
+      // writeTeamToTeamLog emits one row per member every time the team
+      // is saved, all stamped with the same updatedTimestamp. So a single
+      // edit produces N rows that ALL share T2 (the edit's timestamp).
+      // The previous read-back logic added members from EVERY row to
+      // primaryIds/backupIds with only an orbitId-based dedup. That meant
+      // older T1 rows (containing removed members like Bob) silently
+      // smuggled their members back into the rebuilt team, undoing the
+      // edit on every refresh.
+      //
+      // Correct rule: an edit replaces the membership snapshot. The
+      // newest-timestamp set of rows is the source of truth. Older rows
+      // are historical and contribute nothing to current membership.
+      //
+      // We compare against _latestTs (locked-in when the group was
+      // created from its newest row). Rows with the same timestamp are
+      // siblings of the snapshot — they all came from the same write
+      // and together describe the current membership. Rows with an
+      // older timestamp are from a previous edit and get ignored for
+      // membership purposes (their orbitIds remain available to the
+      // dedup map but never get appended).
+      //
+      // Defensive fallback — if _latestTs is empty (legacy data where
+      // updatedTimestamp wasn't written), we keep the legacy additive
+      // behavior so old teams don't suddenly become memberless. Once
+      // the team is re-saved through the new code path, _latestTs gets
+      // populated and the strict-snapshot rule takes over.
       const orbitId = String(r.orbitLoginId || '').trim();
       if (!orbitId) continue;  // marker row for empty team
+      const rowTs = String(r.updatedTimestamp || '');
+      if (g._latestTs && rowTs && rowTs !== g._latestTs) {
+        // Older write — historical, not part of current membership.
+        // Skip silently. Status/name already locked-in from the newest
+        // row; we don't need anything from this row.
+        continue;
+      }
       const dedupKey = orbitId.toLowerCase() + '|' + (r.role || 'primary');
       if (g._seenMods.has(dedupKey)) continue;
       g._seenMods.add(dedupKey);
@@ -11299,15 +11336,41 @@ async function fetchAssignmentsFromPA() {
   // We also skip Cancelled — those represent "didn't happen" and the team
   // attribution there is also historical-only, but they're a smaller risk
   // because Cancelled doesn't fire during the team-deletion workflow.
+  // Reconstruct teams from assignment rows. This is a FALLBACK path used
+  // when TeamLog isn't wired up. Important caveat: an assignment row
+  // captures the team's modSnapshots at the moment the booking was saved.
+  // If the team's mod roster has changed since then (admin edited the
+  // team), older bookings still carry the OLD snapshot. To prevent that
+  // historical data from re-introducing members admin removed, we look
+  // at each team's NEWEST assignment row's modSnapshots and use ONLY
+  // that as the team's reconstructed roster.
+  //
+  // Tradeoff: this loses members that might appear on older bookings
+  // but not the newest one. That's the right call — admin's most
+  // recent action is the source of truth for current team membership.
+  // If they wanted the old members back, they'd add them in the team
+  // editor, which would create a fresh assignment row reflecting that.
   const teamMap = new Map();
+  // First pass — pick each team's newest non-Unassigned assignment row.
+  // savedAt is bumped on every status change, so it's the right field
+  // to compare. Falls back to updatedAt and then date+startMin if
+  // savedAt is missing (legacy rows).
+  const newestByTeam = new Map();  // teamId -> assignment row
   for (const a of remoteAssignments) {
     if (a.teamId == null) continue;
     if (a.status === 'Unassigned') continue;
-    // Already normalized to number above, but re-normalize defensively
     const tid = (typeof a.teamId === 'number') ? a.teamId : (Number(a.teamId) || a.teamId);
-    if (!teamMap.has(tid)) {
-      teamMap.set(tid, { id: tid, name: a.teamName || ('Team ' + tid), primaryIds: [], backupIds: [] });
+    const aKey = a.savedAt || a.updatedAt || `${a.date}_${String(a.startMin || 0).padStart(4, '0')}`;
+    const cur = newestByTeam.get(tid);
+    if (!cur) {
+      newestByTeam.set(tid, { row: a, key: aKey });
+    } else if (aKey > cur.key) {
+      newestByTeam.set(tid, { row: a, key: aKey });
     }
+  }
+  // Second pass — build teams using only the newest row's modSnapshots.
+  for (const [tid, { row: a }] of newestByTeam) {
+    teamMap.set(tid, { id: tid, name: a.teamName || ('Team ' + tid), primaryIds: [], backupIds: [] });
     const t = teamMap.get(tid);
     for (const mod of (a.modSnapshots || [])) {
       const id = mod.orbitLoginId;
