@@ -9891,6 +9891,71 @@ function participantRowHTML(p, visibleCols) {
 
 const ASGN_STORAGE_KEY = 'centific_orbit_assignment_v1';
 
+// Team tombstone list — IDs of teams the admin has chosen to hide. Stored
+// separately from the main payload because it represents user intent ("I
+// don't want to see this team") that survives even when the team gets
+// rebuilt from Excel rows on the next fetch. Without this list, deleting
+// a team that has bookings is impossible — the next read reconstructs the
+// team from the Excel rows that still reference it.
+//
+// Lifecycle:
+//   - deleteTeam() adds an ID here when the team has existing assignments
+//     (otherwise it just hard-deletes — no need for a tombstone if nothing
+//     can resurrect it).
+//   - fetchAssignmentsFromPA() filters out any team whose ID is in this set
+//     before exposing the merged team list to the UI.
+//   - The list is per-device. Other admins (or this browser in incognito)
+//     will still see the team until they delete it too. This is consistent
+//     with the current cross-admin model where teams live as a side-effect
+//     of assignment rows.
+const HIDDEN_TEAMS_KEY = 'centific_orbit_hidden_teams_v1';
+
+function loadHiddenTeamIds() {
+  try {
+    const raw = localStorage.getItem(HIDDEN_TEAMS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+function saveHiddenTeamIds(ids) {
+  try { localStorage.setItem(HIDDEN_TEAMS_KEY, JSON.stringify(ids || [])); } catch (e) {}
+}
+function addHiddenTeamId(teamId) {
+  const ids = loadHiddenTeamIds();
+  if (!ids.includes(teamId)) {
+    ids.push(teamId);
+    saveHiddenTeamIds(ids);
+  }
+}
+
+// Safety-net recovery helpers exposed on window for console use. If admin
+// hides a team by accident, they can list/unhide via DevTools without my
+// involvement. Once you're in the console:
+//   listHiddenTeams()       → see what's hidden
+//   unhideTeam(42)          → restore team with ID 42
+//   unhideAllTeams()        → wipe the tombstone list entirely
+// After running any of these, refresh the page (or click the nav Refresh
+// icon) to repopulate the team list from Excel.
+if (typeof window !== 'undefined') {
+  window.listHiddenTeams = function() {
+    const ids = loadHiddenTeamIds();
+    if (ids.length === 0) { console.log('No hidden teams.'); return ids; }
+    console.log(`${ids.length} hidden team ID${ids.length === 1 ? '' : 's'}:`, ids);
+    return ids;
+  };
+  window.unhideTeam = function(teamId) {
+    const ids = loadHiddenTeamIds().filter(id => id !== teamId);
+    saveHiddenTeamIds(ids);
+    console.log(`Unhid team ID ${teamId}. Refresh to repopulate from Excel.`);
+    return ids;
+  };
+  window.unhideAllTeams = function() {
+    saveHiddenTeamIds([]);
+    console.log('All hidden teams restored. Refresh to repopulate from Excel.');
+  };
+}
+
 // Team color system — deterministic palette assignment based on team ID.
 // Each team always gets the same color. Cycles through 10 distinct hues.
 // "No team" / unassigned = a separate neutral palette entry.
@@ -10160,7 +10225,7 @@ async function fetchAssignmentsFromPA() {
   // which the remote can't reconstruct, so prefer local backup info when
   // it's richer.
   const localTeamById = new Map((local.teams || []).map(t => [t.id, migrateTeamShape(t)]));
-  const mergedTeams = remoteTeams.map(rt => {
+  let mergedTeams = remoteTeams.map(rt => {
     const lt = localTeamById.get(rt.id);
     const localBackups = lt ? getTeamBackupIds(lt) : [];
     if (localBackups.length > 0) return { ...rt, backupIds: localBackups };
@@ -10168,6 +10233,20 @@ async function fetchAssignmentsFromPA() {
   });
   for (const lt of (local.teams || [])) {
     if (!teamMap.has(lt.id)) mergedTeams.push(migrateTeamShape(lt));
+  }
+
+  // Apply the tombstone filter. Teams whose IDs are in HIDDEN_TEAMS_KEY get
+  // dropped from the merged list even though they exist in Excel — admin
+  // explicitly hid them. The Excel rows referencing these team IDs continue
+  // to live (as orphaned-by-team-but-still-historical bookings), and any
+  // other browser will still see those teams until they're hidden there too.
+  const hiddenSet = new Set(loadHiddenTeamIds());
+  if (hiddenSet.size > 0) {
+    const before = mergedTeams.length;
+    mergedTeams = mergedTeams.filter(t => !hiddenSet.has(t.id));
+    if (mergedTeams.length < before) {
+      console.log(`[Orbit] Tombstone filter: hid ${before - mergedTeams.length} team${before - mergedTeams.length === 1 ? '' : 's'}`);
+    }
   }
 
   info.assignmentCount = mergedAssignments.length;
@@ -11945,10 +12024,13 @@ function renderTeamModal() {
   });
   if (isEdit) {
     document.getElementById('teamDeleteBtn').addEventListener('click', () => {
-      if (confirm('Delete this team? Existing assignments referencing it will keep the team name in their history.')) {
-        deleteTeam(m.teamId);
-        closeAsgnModal();
-      }
+      // deleteTeam() shows its own context-aware confirm dialog (different
+      // wording for empty teams vs teams with bookings). We close the modal
+      // *first* so the confirm appears over the team list, not the team-edit
+      // modal — clearer UX and avoids stale state if user cancels.
+      const teamId = m.teamId;
+      closeAsgnModal();
+      deleteTeam(teamId);
     });
   }
   document.getElementById('teamSaveBtn').addEventListener('click', saveTeam);
@@ -12010,11 +12092,53 @@ function saveTeam() {
 }
 
 function deleteTeam(teamId) {
-  if (!confirm('Delete this team?')) return;
+  // Count active assignments referencing this team. Cancelled bookings still
+  // count as "historical" — they exist in Excel. We only treat the team as
+  // empty if NOTHING in Excel ties to it.
+  const refs = (adminState.assignments || []).filter(a => a.teamId === teamId);
+  const team = (adminState.teams || []).find(t => t.id === teamId);
+  const teamName = team ? team.name : `Team #${teamId}`;
+
+  // Case 1 — empty team. No Excel rows reference it, so a hard delete sticks.
+  // localStorage gets the trimmed list, future PA reads can't resurrect it,
+  // job done.
+  if (refs.length === 0) {
+    if (!confirm(`Delete ${teamName}? This team has no bookings.`)) return;
+    adminState.teams = adminState.teams.filter(t => t.id !== teamId);
+    if (adminState._selectedTeam === teamId) adminState._selectedTeam = null;
+    saveAssignmentData();
+    renderAssignment();
+    if (typeof toast === 'function') toast(`${teamName} deleted`);
+    return;
+  }
+
+  // Case 2 — team has bookings. A pure local delete would be undone by the
+  // next PA fetch (which rebuilds teams from Excel rows). Soft-delete via the
+  // tombstone list instead: the team is filtered out of every future merge,
+  // but the bookings stay in Excel as history.
+  //
+  // We surface this clearly in the confirm so admin understands the trade-off:
+  // they're hiding a team on THIS device; the Excel data is untouched; other
+  // browsers still see the team until they hide it too.
+  const active = refs.filter(a => a.status !== 'Cancelled').length;
+  const cancelled = refs.length - active;
+  const detail = active > 0
+    ? `${active} active booking${active === 1 ? '' : 's'}` + (cancelled > 0 ? ` (plus ${cancelled} cancelled)` : '')
+    : `${cancelled} cancelled booking${cancelled === 1 ? '' : 's'}`;
+  const msg = `Hide ${teamName}?\n\n`
+    + `This team has ${detail} in Excel.\n\n`
+    + `• The team will disappear from your calendar on this browser.\n`
+    + `• The bookings stay in Excel — historical data is preserved.\n`
+    + `• Other admin browsers still see this team until they hide it too.\n\n`
+    + `Continue?`;
+  if (!confirm(msg)) return;
+
+  addHiddenTeamId(teamId);
   adminState.teams = adminState.teams.filter(t => t.id !== teamId);
   if (adminState._selectedTeam === teamId) adminState._selectedTeam = null;
   saveAssignmentData();
   renderAssignment();
+  if (typeof toast === 'function') toast(`${teamName} hidden from this browser`);
 }
 
 /* ----------- Assignment Modal ----------- */
