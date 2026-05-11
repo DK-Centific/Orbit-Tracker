@@ -3250,6 +3250,14 @@ nav {
   background: rgba(239,68,68,0.12);
   color: var(--red);
 }
+/* Completed sessions — solid green pill, calls out the "done" state without
+   the strikethrough/dimming we apply to Cancelled. Completed sessions are
+   real successful work and should read positively, not be visually penalized. */
+.cal-list-status-pill.completed {
+  background: rgba(34,197,94,0.14);
+  color: rgb(22,163,74);
+  display: inline-flex; align-items: center;
+}
 .cal-list-name {
   font-size: 15px; font-weight: 600;
   color: var(--text);
@@ -10996,6 +11004,29 @@ async function fetchAssignmentsFromPA() {
         g.status = 'Cancelled';
         if (r.comment) g.comment = r.comment;
       }
+      // Completed-sticky safety net — same defense-in-depth logic as
+      // Cancelled. Order of precedence: Cancelled > Completed > Notified >
+      // Booked. If any row says Completed and the group isn't already
+      // Cancelled, the group is Completed (the work happened — no later
+      // edit should silently rewind that fact, even if timestamps tie).
+      if (r.status === 'Completed' && g.status !== 'Cancelled' && g.status !== 'Completed') {
+        g.status = 'Completed';
+      }
+      // Recover completion metadata even when reconstruction came from
+      // a different admin's writes. Excel doesn't have dedicated
+      // completedAt/completedBy columns — we derive them from the
+      // Completed row's lastActive (= time the row was written) and
+      // the moderator name fields on the row (= whoever's session it
+      // was). Use the EARLIEST Completed-row timestamp; if a row was
+      // re-written, the first-completion time is the truth.
+      if (r.status === 'Completed' && r.lastActive) {
+        if (!g.completedAt || r.lastActive < g.completedAt) {
+          g.completedAt = r.lastActive;
+        }
+        if (!g.completedBy && (r.firstName || r.lastName)) {
+          g.completedBy = [r.firstName, r.lastName].filter(Boolean).join(' ');
+        }
+      }
     }
     // Append this mod to the assignment, but ONLY if this row is from
     // the same write (same lastActive) as the assignment's latest row.
@@ -11451,16 +11482,27 @@ function defaultTeamName() {
 
 /* ----------- Assignment count helpers -----------
  * User-facing counts (tab badge, calendar header) should reflect what
- * the admin perceives as a "booked" session. A cancelled row is a
- * historical/audit record — it shouldn't drive the "2 assignments"
- * badge when the grid is visually empty. Booked + Notified both count
- * as active; Cancelled is the only excluded status.
+ * the admin perceives as a "booked" session needing attention.
+ *
+ * EXCLUDED from the count:
+ *   - Cancelled — didn't happen, no work to do
+ *   - Completed — already done, no work to do
+ *
+ * INCLUDED:
+ *   - Booked, Notified — active upcoming sessions the team still owes
+ *
+ * Completed sessions remain VISIBLE in the calendar grid (rendered with a
+ * green check icon), but they don't inflate the "Assignment 5" badge —
+ * that badge tells the admin "5 sessions still need to happen", which is
+ * what matters operationally.
  *
  * Export logic and the local-cache banner still use the raw count
  * (audit trail purposes), so we keep those untouched. */
 function activeAssignmentCount() {
   if (!adminState.assignments) return 0;
-  return adminState.assignments.filter(a => a.status !== 'Cancelled').length;
+  return adminState.assignments.filter(a =>
+    a.status !== 'Cancelled' && a.status !== 'Completed'
+  ).length;
 }
 
 /* ----------- Render Assignment view ----------- */
@@ -12432,6 +12474,7 @@ function renderListItemHTML(a) {
   const color = getTeamColor(a.teamId);
   const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '—';
   const isCancelled = a.status === 'Cancelled';
+  const isCompleted = a.status === 'Completed';
   const addr = a.participantData && a.participantData.address ? [a.participantData.address, a.participantData.state, a.participantData.zipCode].filter(Boolean).join(', ') : '';
   const teamLabel = team ? team.name : 'No team';
   // Live worklog status
@@ -12442,7 +12485,7 @@ function renderListItemHTML(a) {
      latestStatusList.status === 'arrived' ? 'wl-arrived' : 'wl-insession');
 
   return `
-    <div class="cal-list-item ${isCancelled ? 'cancelled' : ''}" data-asgn-id="${a.id}">
+    <div class="cal-list-item ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''}" data-asgn-id="${a.id}">
       <div class="cal-list-time">
         <div class="cal-list-time-start">${escapeHTML(fmtTimeOfDay(a.startMin))}</div>
         <div class="cal-list-time-dur">${(a.endMin - a.startMin)} min</div>
@@ -12452,7 +12495,8 @@ function renderListItemHTML(a) {
         <div class="cal-list-team-row">
           <span class="cal-list-team-pill" style="background: ${color.soft}; color: ${color.bg === 'transparent' ? 'var(--text3)' : color.bg}; border-color: ${color.border};">${escapeHTML(teamLabel)}</span>
           ${isCancelled ? '<span class="cal-list-status-pill cancelled">Cancelled</span>' : ''}
-          ${wlLabelList && !isCancelled ? `<span class="cal-list-status-pill ${wlPillClass}">${escapeHTML(wlLabelList)}</span>` : ''}
+          ${isCompleted ? '<span class="cal-list-status-pill completed"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:3px;"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Completed</span>' : ''}
+          ${wlLabelList && !isCancelled && !isCompleted ? `<span class="cal-list-status-pill ${wlPillClass}">${escapeHTML(wlLabelList)}</span>` : ''}
         </div>
         <div class="cal-list-name">${escapeHTML(partName)}</div>
         ${addr ? `<div class="cal-list-addr">${escapeHTML(addr)}</div>` : ''}
@@ -12552,6 +12596,11 @@ function assignmentChipHTML(a, pos) {
     ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ')
     : '—';
   const isCancelled = a.status === 'Cancelled';
+  // Completed sessions stay visible in the calendar (unlike Cancelled
+  // which gets filtered out elsewhere). We render them with full team
+  // color so they don't fade into the background, plus a green check
+  // icon to signal "done" at a glance.
+  const isCompleted = a.status === 'Completed';
   const isUnassigned = !team;
   const color = getTeamColor(a.teamId);
   const durationMin = a.endMin - a.startMin;
@@ -12566,6 +12615,10 @@ function assignmentChipHTML(a, pos) {
   // Color styling
   if (isCancelled) {
     style += `--asgn-bg: var(--bg4); --asgn-fg: var(--text3); --asgn-border: rgba(239,68,68,0.30);`;
+  } else if (isCompleted) {
+    // Same vivid team color, but with a green-tinted border to call out
+    // the "done" state without competing with the team's identity color.
+    style += `--asgn-bg: ${color.bg}; --asgn-fg: ${color.ink}; --asgn-border: rgba(34,197,94,0.55);`;
   } else if (isUnassigned) {
     style += `--asgn-bg: var(--bg3); --asgn-fg: var(--text2); --asgn-border: var(--border-strong);`;
   } else {
@@ -12573,7 +12626,9 @@ function assignmentChipHTML(a, pos) {
   }
 
   const titleText = (team ? team.name + ' · ' : 'No team · ') + partName + ' · ' +
-    fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin) + (isCancelled ? ' · CANCELLED' : '');
+    fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin) +
+    (isCancelled ? ' · CANCELLED' : '') +
+    (isCompleted ? ' · COMPLETED' : '');
 
   // Live worklog status (if any)
   const latestStatus = (typeof getLatestStatusForAssignment === 'function') ? getLatestStatusForAssignment(a.id) : null;
@@ -12583,13 +12638,13 @@ function assignmentChipHTML(a, pos) {
      latestStatus.status === 'arrived' ? 'wl-arrived' : 'wl-insession');
 
   return `
-    <div class="cal-asgn ${isCancelled ? 'cancelled' : ''} ${isUnassigned ? 'unassigned' : ''} ${positioned ? 'positioned' : ''} ${isShort ? 'short' : ''}"
+    <div class="cal-asgn ${isCancelled ? 'cancelled' : ''} ${isCompleted ? 'completed' : ''} ${isUnassigned ? 'unassigned' : ''} ${positioned ? 'positioned' : ''} ${isShort ? 'short' : ''}"
          data-asgn-id="${a.id}"
          style="${style}"
          title="${escapeHTML(titleText)}${wlLabel ? ' · ' + wlLabel : ''}">
       <div class="cal-asgn-inner">
         <span class="cal-asgn-team">${escapeHTML(isUnassigned ? '—' : teamLabel)}</span>
-        <span class="cal-asgn-name">${escapeHTML(partName)}</span>
+        <span class="cal-asgn-name">${escapeHTML(partName)}${isCompleted ? ' <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:-1px;margin-left:3px;flex-shrink:0;"><path d="M3 8l3 3 7-7" stroke="rgb(34,197,94)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
         ${!isShort && pos && pos.heightPx > 60 ? `<span class="cal-asgn-time">${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</span>` : ''}
         ${wlLabel && !isCancelled ? `<span class="cal-asgn-wl ${wlBadgeClass}">${escapeHTML(wlLabel)}</span>` : ''}
         ${(() => {
@@ -14159,15 +14214,19 @@ function openViewAssignmentModal(asgnId) {
   const status = a.status || 'Booked';
   const isCancelled = status === 'Cancelled';
   const isNotified = status === 'Notified';
+  const isCompleted = status === 'Completed';
   const hasEmail = !!(a.participantData && a.participantData.email);
 
-  // Status badge — three distinct states with their own color treatments.
-  // Booked  = green (active, awaiting notification)
-  // Notified = blue/teal (active, email sent)
-  // Cancelled = red
+  // Status badge — four distinct states with their own color treatments.
+  // Booked    = green (active, awaiting notification)
+  // Notified  = blue/teal (active, email sent)
+  // Completed = green check (work done — successful conclusion)
+  // Cancelled = red (work didn't happen)
   let statusBadge;
   if (isCancelled) {
     statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(239,68,68,0.12); color: var(--red); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Cancelled</span>';
+  } else if (isCompleted) {
+    statusBadge = '<span style="display:inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; background: rgba(34,197,94,0.14); color: rgb(22,163,74); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Completed</span>';
   } else if (isNotified) {
     statusBadge = '<span style="display:inline-block; padding: 3px 10px; border-radius: 99px; background: rgba(0,180,216,0.14); color: #00838f; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">📧 Notified</span>';
   } else {
@@ -14183,6 +14242,16 @@ function openViewAssignmentModal(asgnId) {
         } catch (_) { return ''; }
       })()
     : '';
+  // Completion metadata — shown when the session has been marked done
+  const completedMeta = isCompleted && a.completedAt
+    ? (() => {
+        try {
+          const d = new Date(a.completedAt);
+          const byLabel = a.completedBy ? ` by ${escapeHTML(a.completedBy)}` : '';
+          return `<div style="font-size: 12px; color: var(--text3); margin-top: 4px;">Completed ${d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} at ${d.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'})}${byLabel}</div>`;
+        } catch (_) { return ''; }
+      })()
+    : '';
 
   document.getElementById('asgnModalContent').innerHTML = `
     <div class="asgn-modal-head">
@@ -14192,6 +14261,7 @@ function openViewAssignmentModal(asgnId) {
         </div>
         <div class="asgn-modal-sub">${escapeHTML(dateLabel)} · ${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</div>
         ${notifiedMeta}
+        ${completedMeta}
       </div>
       <button class="icon-btn" id="asgnModalClose">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -14276,9 +14346,9 @@ function openViewAssignmentModal(asgnId) {
       </div>
     </div>
     <div class="asgn-modal-foot">
-      ${!isCancelled ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
+      ${(!isCancelled && !isCompleted) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
       <div style="flex: 1"></div>
-      ${!isCancelled && hasEmail ? `
+      ${(!isCancelled && !isCompleted && hasEmail) ? `
         <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify" id="asgnNotifyBtn"
                 title="${isNotified ? 'Send the confirmation email again' : 'Send confirmation email to participant'}">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
@@ -14287,15 +14357,15 @@ function openViewAssignmentModal(asgnId) {
           </svg>
           <span>${isNotified ? 'Resend email' : 'Send email'}</span>
         </button>` : ''}
-      ${!isCancelled && !hasEmail ? `
+      ${(!isCancelled && !isCompleted && !hasEmail) ? `
         <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
-      ${!isCancelled ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
-      <button class="btn ${isCancelled ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
+      ${(!isCancelled && !isCompleted) ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
+      <button class="btn ${(isCancelled || isCompleted) ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
     </div>
   `;
   document.getElementById('asgnModalClose').addEventListener('click', closeAsgnModal);
   document.getElementById('asgnCloseBtn').addEventListener('click', closeAsgnModal);
-  if (!isCancelled) {
+  if (!isCancelled && !isCompleted) {
     document.getElementById('asgnEditBtn').addEventListener('click', () => {
       openEditAssignmentModal(asgnId);
     });
@@ -14421,6 +14491,91 @@ async function notifyParticipant(asgnId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(row),
       }).catch(() => {});
+    }
+  }
+}
+
+/* ---------- Complete assignment (moderator-driven) ----------
+ * Called automatically when the moderator finishes the wrap-up checklist
+ * (via pushWorklogStatus → 'session_done'). Mirrors cancelAssignment in
+ * shape so the read-back's "latest wins" pattern keeps working: we write
+ * a NEW Excel row with status='Completed' and a bumped lastActive
+ * timestamp, then the next cross-admin read reconstructs the assignment
+ * with status=Completed (the latest row wins).
+ *
+ * Idempotent: if status is already Completed or Cancelled, no-op. We
+ * never transition Cancelled → Completed (data integrity — cancelled
+ * sessions didn't happen, completing them retroactively makes no sense).
+ *
+ * Data flow:
+ *   1. mod taps "Confirm & Complete Session" in wrap-up modal
+ *   2. pushWorklogStatus(asgn, 'session_done', ...) writes a WorkLog row
+ *   3. THIS function fires next, writing a new Assignment row
+ *   4. Both tables stay in sync: WorkLog records the action, Assignment
+ *      records the current state.
+ *
+ * Read-back at the admin app re-fetches Assignment Excel and sees the
+ * new Completed row with a newer lastActive than the original Booked/
+ * Notified row → status becomes Completed in the calendar view. */
+async function completeAssignment(asgnId, opts) {
+  opts = opts || {};
+  const idx = adminState.assignments.findIndex(x => x.id === asgnId);
+  if (idx === -1) {
+    // Assignment isn't in our local cache — happens when moderator's local
+    // state doesn't include this assignment record (rare, but defensive).
+    // The WorkLog row already captured the completion, so this is just a
+    // best-effort sync. Log and move on.
+    console.warn('[completeAssignment] Assignment not in local state:', asgnId);
+    return;
+  }
+  const cur = adminState.assignments[idx];
+  // Skip if already Completed (idempotent — moderator might trigger multiple
+  // session_done events if they re-tap the wrap-up confirmation).
+  if (cur.status === 'Completed') return;
+  // Don't override a Cancelled status. Cancelled sessions didn't happen, so
+  // marking them complete after the fact is invalid.
+  if (cur.status === 'Cancelled') return;
+
+  const now = new Date().toISOString();
+  adminState.assignments[idx] = {
+    ...cur,
+    status: 'Completed',
+    completedAt: now,
+    completedBy: opts.completedBy || '',
+    updatedAt: now,
+    // CRITICAL: bump savedAt so this row's lastActive in Excel is newer
+    // than the previous Booked/Notified row. Without this, read-back's
+    // newest-first sort can't pick this row as the current state.
+    savedAt: now,
+  };
+  saveAssignmentData();
+
+  // Re-render the admin Assignment tab if it's currently open. (No-op if
+  // we're in the mod app where renderAssignment isn't defined.)
+  if (typeof renderAssignment === 'function' && document.getElementById('asgnCount')) {
+    renderAssignment();
+  }
+
+  // POST the completion row to PA Excel. Same pattern as cancelAssignment —
+  // we write one row per moderator (modSnapshots), all carrying the new
+  // status. PA appends them as new rows; the read flow's newest-first sort
+  // surfaces these as the current state for the assignment.
+  if (typeof ASSIGNMENT_PA_WRITE_URL !== 'undefined' && ASSIGNMENT_PA_WRITE_URL) {
+    const rows = buildAssignmentExcelRow(adminState.assignments[idx]);
+    let succeeded = 0, failed = 0, lastError = null;
+    for (const row of rows) {
+      try {
+        const res = await fetch(ASSIGNMENT_PA_WRITE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(row),
+        });
+        if (res.ok || res.status === 202) succeeded++;
+        else { failed++; lastError = `HTTP ${res.status}`; }
+      } catch (e) { failed++; lastError = e.message || String(e); }
+    }
+    if (failed > 0) {
+      console.warn('[completeAssignment] Excel sync partial failure:', lastError, '— saved locally, will retry on next render');
     }
   }
 }
@@ -14989,6 +15144,20 @@ function pushWorklogStatus(asgn, status, opts) {
   // Queue for PA sync
   enqueueWorklogSync(event);
   flushSyncQueue();
+
+  // ---- Cross-table sync: WorkLog → Assignment ----
+  // When the moderator completes the wrap-up checklist (status='session_done'),
+  // the WorkLog row captures the *event*, but the Assignment table's `status`
+  // column still says 'Booked' or 'Notified'. This dual-write keeps both
+  // tables truthful: WorkLog logs WHEN the work happened, Assignment shows
+  // the CURRENT state of the booking. The admin calendar reads from
+  // Assignment, so without this sync, completed sessions would still appear
+  // as "Booked" or "Notified" in the admin's calendar view.
+  if (status === 'session_done' && typeof completeAssignment === 'function') {
+    completeAssignment(asgn.id, {
+      completedBy: event.moderatorName || '',
+    });
+  }
 
   // Trigger UI re-render
   renderMySessionSection();
