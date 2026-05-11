@@ -10026,6 +10026,14 @@ const ASGN_STORAGE_KEY = 'centific_orbit_assignment_v1';
 //     of assignment rows.
 const HIDDEN_TEAMS_KEY = 'centific_orbit_hidden_teams_v1';
 
+// High-water mark for team IDs ever seen in TeamLog (active or deleted).
+// nextTeamId() reads this to avoid recycling the IDs of previously-deleted
+// teams — without it, deleting team 1 then creating a new team gives the
+// new team id=1 too, which collides with the deleted team's lingering
+// TeamLog rows and creates ambiguity in the read-back. With this guard,
+// the new team always gets a strictly larger id than anything ever used.
+const TEAM_ID_HIGH_WATER_KEY = 'centific_orbit_team_id_max_v1';
+
 function loadHiddenTeamIds() {
   try {
     const raw = localStorage.getItem(HIDDEN_TEAMS_KEY);
@@ -10296,6 +10304,11 @@ async function fetchTeamsFromPA() {
     });
 
     const groups = new Map();
+    // Track the highest teamId ever seen — feeds back into nextTeamId() so
+    // re-created teams don't collide with the IDs of previously-deleted ones.
+    // We capture this BEFORE filtering out deleted groups so deleted teams
+    // also push the high-water mark up.
+    let maxSeenId = 0;
     for (const r of rows) {
       // Normalize teamId to number (same fix as for assignment rows)
       let tid = r.teamId;
@@ -10303,7 +10316,9 @@ async function fetchTeamsFromPA() {
         const n = Number(tid);
         if (!isNaN(n)) tid = n;
       }
+      if (typeof tid === 'number' && tid > maxSeenId) maxSeenId = tid;
       let g = groups.get(tid);
+      const isFirstRowForGroup = !g;
       if (!g) {
         g = {
           id: tid,
@@ -10314,15 +10329,40 @@ async function fetchTeamsFromPA() {
           primaryIds: [],
           backupIds: [],
           _seenMods: new Set(),  // dedup across stale rows
+          // Lock-in the timestamp of the latest (first-seen, since sorted
+          // newest-first) row. Subsequent rows for this group are STRICTLY
+          // older and must not be allowed to mutate status / name. Without
+          // this guard, the previous code's `if (r.status === 'deleted')`
+          // override silently clobbered a newer Active state with an older
+          // Deleted state — the exact bug behind "delete team → recreate
+          // with same id → team disappears on next fetch". See ticket below.
+          _latestTs: r.updatedTimestamp || '',
         };
         groups.set(tid, g);
       }
-      // Skip if this team is already known to be deleted from a newer row
+      // If group is already known deleted from its newest row, the team is
+      // gone — skip everything else for it. Subsequent rows can't resurrect
+      // a team that's been deleted; resurrection happens by writing a NEW
+      // active row (which would then be the newest and would set status to
+      // active when we encountered it first in this loop).
       if (g.status === 'deleted') continue;
-      // If this row says deleted and we haven't recorded a deletion yet,
-      // mark it. Subsequent rows for this team are then skipped.
-      if (r.status === 'deleted') {
-        g.status = 'deleted';
+      // CRITICAL — only the newest row (the one that created the group)
+      // can determine status. We removed the legacy override:
+      //   if (r.status === 'deleted') { g.status = 'deleted'; continue; }
+      // …because it ran on EVERY row, including stale ones older than the
+      // group's newest. When a team was deleted then re-created with the
+      // same id, the older deletion row would override the newer Active
+      // row's status, making the recreated team vanish on every refresh.
+      // The first-seen row (which IS the newest, given the newest-first
+      // sort above) is now the only authority for status.
+      //
+      // For older rows that aren't the newest, we just process their mods
+      // for backfill (in case the latest row didn't enumerate all members,
+      // which shouldn't happen but defends against partial writes). Dedup
+      // logic below keeps the mod list correct.
+      if (!isFirstRowForGroup && r.status === 'deleted') {
+        // Older deletion row for a currently-active group — pure noise,
+        // ignore the mods on it.
         continue;
       }
       // Add this mod to the appropriate role bucket, deduping
@@ -10337,16 +10377,40 @@ async function fetchTeamsFromPA() {
         if (!g.primaryIds.includes(orbitId)) g.primaryIds.push(orbitId);
       }
     }
-    // Strip internal dedup set; filter out deleted teams
-    const teams = [...groups.values()]
+    // Persist the historical-max as a high-water mark so nextTeamId() doesn't
+    // re-issue an ID that's tied to a deleted team's TeamLog rows. Without
+    // this, deleting team 1 then creating "new" team 1 produces an Excel
+    // collision where both old-deleted and new-active rows share teamId=1.
+    if (maxSeenId > 0) {
+      try {
+        const prev = parseInt(localStorage.getItem(TEAM_ID_HIGH_WATER_KEY) || '0', 10) || 0;
+        if (maxSeenId > prev) localStorage.setItem(TEAM_ID_HIGH_WATER_KEY, String(maxSeenId));
+      } catch (_) { /* localStorage may be unavailable; high-water is best-effort */ }
+    }
+    // Strip internal dedup set; split into active teams and a deletedIds
+    // set. The merge in fetchAssignmentsFromPA uses deletedIds to filter
+    // tombstoned IDs out of the assignment-row reconstruction fallback;
+    // without this, deleted teams keep reappearing because old assignment
+    // rows still reference them, the reconstruction rebuilds the team from
+    // those rows, and the TeamLog override (which only knows "what's
+    // active") fails to suppress it. With deletedIds, TeamLog deletions
+    // become authoritatively cross-admin: any teamId TeamLog marks deleted
+    // disappears from every admin's view regardless of which historical
+    // path tries to revive it.
+    const allGroups = [...groups.values()];
+    const teams = allGroups
       .filter(g => g.status !== 'deleted')
       .map(g => {
         delete g._seenMods;
+        delete g._latestTs;
         delete g.status;  // not part of the runtime team shape
         return g;
       });
-    console.log(`[Orbit] TeamLog sync: ${rows.length} rows → ${teams.length} teams`);
-    return { teams, configured: true };
+    const deletedIds = new Set(
+      allGroups.filter(g => g.status === 'deleted').map(g => g.id)
+    );
+    console.log(`[Orbit] TeamLog sync: ${rows.length} rows → ${teams.length} active teams, ${deletedIds.size} tombstoned (max id seen: ${maxSeenId})`);
+    return { teams, deletedIds, configured: true };
   } catch (e) {
     console.warn('[Orbit] TeamLog read error:', e.message);
     return { teams: null, configured: true, error: e.message };
@@ -11074,7 +11138,21 @@ async function fetchAssignmentsFromPA() {
 
   // Merge with the local cache so any pending writes (admin saved but the
   // POST hasn't completed yet) survive the round-trip. Remote wins for shared
-  // assignments. For local-only IDs, we MUST distinguish two cases:
+  // assignments BY DEFAULT, but with one critical exception: if the local
+  // copy has a newer savedAt than what the remote returned for the same id,
+  // local wins. This protects against the read-after-write race where:
+  //
+  //   1. Local writes a new state (e.g., moderator marks a session
+  //      Completed) → savedAt bumped to "now", row POSTed to Excel.
+  //   2. Polling fetch fires before Excel has propagated the new row.
+  //   3. Remote returns the OLD (Booked) state with the original savedAt.
+  //   4. Without the savedAt comparison: remote-wins overwrites local
+  //      Completed with stale Booked. The "Completed disappeared" bug.
+  //   5. With the comparison: local Completed (newer savedAt) wins. On the
+  //      next fetch when Excel has caught up, remote returns Completed too,
+  //      with savedAt >= local — remote takes over cleanly, no flap.
+  //
+  // For local-only IDs (no remote match), we MUST distinguish two cases:
   //   (a) pending write — admin just saved, PA hasn't returned it in a fetch
   //       yet. Has no _excelSynced flag. Keep — losing this would silently
   //       drop the admin's work.
@@ -11086,16 +11164,43 @@ async function fetchAssignmentsFromPA() {
   // assignment appears" bug was exactly this.
   const local = loadAssignmentData();
   const remoteIds = new Set(remoteAssignments.map(a => a.id));
+  const remoteById = new Map(remoteAssignments.map(a => [a.id, a]));
   const localOnly = (local.assignments || []).filter(a =>
     a.id && !remoteIds.has(a.id) && !a._excelSynced
   );
+  // Local copies of SHARED IDs (in both local and remote) — keep only when
+  // local.savedAt > remote.savedAt. This is the race-condition protection
+  // described above. Once the remote catches up, this filter returns
+  // nothing for that id and the remote's authoritative version takes over.
+  // We also extra-conservatively keep terminal-state local copies (Completed
+  // or Cancelled) when the remote shows a non-terminal state — a defensive
+  // belt for clock skew where savedAt comparisons could be off by seconds.
+  const localNewer = (local.assignments || []).filter(a => {
+    if (!a.id || !remoteIds.has(a.id)) return false;
+    const r = remoteById.get(a.id);
+    if (!r) return false;
+    // Primary: savedAt timestamp comparison.
+    if (a.savedAt && r.savedAt && a.savedAt > r.savedAt) return true;
+    // Secondary: belt against clock skew. If local is in a terminal state
+    // (Completed/Cancelled) and remote shows a NON-terminal state, the
+    // local must be newer in event-time even if wall-clock says otherwise.
+    // Booked → Completed and Booked → Cancelled are both monotonic.
+    const terminal = s => s === 'Completed' || s === 'Cancelled';
+    if (terminal(a.status) && !terminal(r.status)) return true;
+    return false;
+  });
   const droppedStale = (local.assignments || []).filter(a =>
     a.id && !remoteIds.has(a.id) && a._excelSynced
   ).length;
   if (droppedStale > 0) {
     console.log(`[Orbit] Dropped ${droppedStale} stale local assignment${droppedStale === 1 ? '' : 's'} (previously synced, no longer in Excel)`);
   }
-  let mergedAssignments = [...remoteAssignments, ...localOnly];
+  if (localNewer.length > 0) {
+    console.log(`[Orbit] Kept ${localNewer.length} local assignment${localNewer.length === 1 ? '' : 's'} as newer than remote (race-condition protection)`);
+  }
+  // Order matters for the dedup pass below — localNewer comes AFTER
+  // remoteAssignments so its Map.set() call wins for shared ids.
+  let mergedAssignments = [...remoteAssignments, ...localOnly, ...localNewer];
 
   // Defensive final dedup on assignment IDs. The merge above should never
   // produce duplicates (the localOnly filter excludes IDs in remoteIds),
@@ -11165,6 +11270,18 @@ async function fetchAssignmentsFromPA() {
       const tl = await fetchTeamsFromPA();
       if (tl.teams && tl.teams.length > 0) {
         const remoteIds = new Set(tl.teams.map(t => t.id));
+        // Apply TeamLog tombstones FIRST — any team id TeamLog marks
+        // deleted gets purged from mergedTeams regardless of whether the
+        // assignment-row reconstruction tried to revive it. Without this
+        // step, deleted teams resurrect themselves from old assignment
+        // rows on every refresh.
+        if (tl.deletedIds && tl.deletedIds.size > 0) {
+          const before = mergedTeams.length;
+          mergedTeams = mergedTeams.filter(t => !tl.deletedIds.has(t.id));
+          if (mergedTeams.length < before) {
+            console.log(`[Orbit] TeamLog tombstones purged ${before - mergedTeams.length} resurrected team${before - mergedTeams.length === 1 ? '' : 's'} from assignment-row fallback`);
+          }
+        }
         // Local-only teams: in mergedTeams but not in TeamLog. These are
         // either pending writes (TeamLog hasn't processed yet) or genuinely
         // local-only teams from a transition period. Either way, keep them.
@@ -11180,6 +11297,15 @@ async function fetchAssignmentsFromPA() {
         info.teamCount = mergedTeams.length;
       } else if (tl.error) {
         console.warn('[Orbit] TeamLog fetch errored; using assignment-row fallback for teams:', tl.error);
+      } else if (tl.deletedIds && tl.deletedIds.size > 0) {
+        // Edge case: TeamLog has only deleted teams (every team was
+        // removed). Still apply the tombstones so the assignment-row
+        // fallback doesn't revive any of them.
+        const before = mergedTeams.length;
+        mergedTeams = mergedTeams.filter(t => !tl.deletedIds.has(t.id));
+        if (mergedTeams.length < before) {
+          console.log(`[Orbit] TeamLog tombstones purged ${before - mergedTeams.length} team${before - mergedTeams.length === 1 ? '' : 's'} (TeamLog had only deletions)`);
+        }
       }
     } catch (e) {
       console.warn('[Orbit] TeamLog fetch threw; using assignment-row fallback for teams:', e);
@@ -11472,8 +11598,26 @@ if (typeof window !== 'undefined') {
 
 /* ----------- Team CRUD ----------- */
 function nextTeamId() {
-  const ids = adminState.teams.map(t => t.id || 0);
-  return (ids.length ? Math.max(...ids) : 0) + 1;
+  // Start with the highest id among currently-visible teams. This handles
+  // the normal case where no teams have been deleted.
+  const visibleIds = adminState.teams.map(t => t.id || 0);
+  let maxId = visibleIds.length ? Math.max(...visibleIds) : 0;
+  // Also consult the historical high-water mark from TeamLog. The bug case
+  // it prevents: admin deletes team 1, then creates a "new" team. Without
+  // this lookup, nextTeamId returns max([])+1 = 1, colliding with the
+  // deleted team's TeamLog rows. With it, the new team gets id > anything
+  // ever used. The high-water mark is updated by fetchTeamsFromPA on every
+  // TeamLog read, so it stays current across sessions and admins.
+  try {
+    const stored = parseInt(localStorage.getItem(TEAM_ID_HIGH_WATER_KEY) || '0', 10);
+    if (Number.isFinite(stored) && stored > maxId) maxId = stored;
+  } catch (_) { /* localStorage unavailable — degrade to visible-only */ }
+  const next = maxId + 1;
+  // Bump the high-water mark immediately so back-to-back creations (before
+  // the next TeamLog read confirms our write) don't accidentally produce
+  // duplicate IDs.
+  try { localStorage.setItem(TEAM_ID_HIGH_WATER_KEY, String(next)); } catch (_) {}
+  return next;
 }
 function defaultTeamName() {
   const n = adminState.teams.length + 1;
@@ -12318,14 +12462,32 @@ function renderTeamGridHTML(days) {
         displayName = '—';
       }
 
-      // Cell status — derive from worklog cache first (completed/in-progress
-      // beat booking status because the moderator has begun work), otherwise
-      // fall back to the assignment's status field which can be Booked or
-      // Notified. Cancelled assignments are filtered out earlier so they
-      // don't reach this branch.
+      // Cell status priority — assignment.status is the source of truth
+      // (Excel-authoritative, syncs across devices); worklog cache is a
+      // same-device performance enhancement that shows finer-grained
+      // intermediate states ("In session"). The order matters:
+      //
+      //   1. assignment.status === 'Completed' — terminal state. Always
+      //      wins over worklog because once the team marks the session
+      //      done in Excel, that's the truth even if the current viewer's
+      //      worklog cache (which is device-local — WORKLOG_PA_READ_URL
+      //      is empty by design) doesn't have the session_done event.
+      //      WITHOUT this branch, cross-device admins see Completed
+      //      assignments appear as "Booked" because their worklog cache
+      //      is empty — which is exactly the "Completed disappeared" bug.
+      //
+      //   2. worklog session_done — second priority, kicks in same-device
+      //      between the moment the mod hits "Confirm & Complete Session"
+      //      and the moment the Excel write propagates back.
+      //
+      //   3. worklog any-other status — "In session" intermediate label.
+      //
+      //   4. assignment.status === 'Notified' / default Booked.
+      //
+      // Cancelled assignments are filtered out before reaching this branch.
       const wlStatus = asgnLatestStatus.get(a.id) || null;
       let statusKind, statusLabel, statusIcon = '';
-      if (wlStatus === 'session_done') {
+      if (a.status === 'Completed' || wlStatus === 'session_done') {
         statusKind  = 'completed';
         statusLabel = 'Completed';
       } else if (wlStatus) {
@@ -12646,7 +12808,7 @@ function assignmentChipHTML(a, pos) {
         <span class="cal-asgn-team">${escapeHTML(isUnassigned ? '—' : teamLabel)}</span>
         <span class="cal-asgn-name">${escapeHTML(partName)}${isCompleted ? ' <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:-1px;margin-left:3px;flex-shrink:0;"><path d="M3 8l3 3 7-7" stroke="rgb(34,197,94)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
         ${!isShort && pos && pos.heightPx > 60 ? `<span class="cal-asgn-time">${escapeHTML(fmtTimeOfDay(a.startMin) + ' – ' + fmtTimeOfDay(a.endMin))}</span>` : ''}
-        ${wlLabel && !isCancelled ? `<span class="cal-asgn-wl ${wlBadgeClass}">${escapeHTML(wlLabel)}</span>` : ''}
+        ${wlLabel && !isCancelled && !isCompleted ? `<span class="cal-asgn-wl ${wlBadgeClass}">${escapeHTML(wlLabel)}</span>` : ''}
         ${(() => {
           // Availability conflict indicator. Shows when one or more of the
           // assigned mods has reported NOT available for this date — a small
