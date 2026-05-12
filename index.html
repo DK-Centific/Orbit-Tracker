@@ -393,14 +393,54 @@ nav {
 .entry-field input,
 .entry-field .field-readonly {
   font-size: 15px; font-weight: 500;
-  background: transparent; border: none;
   color: var(--text);
-  padding: 0;
-  width: 100%;
   letter-spacing: -0.01em;
 }
-.entry-field input::placeholder { color: var(--text3); font-weight: 400; }
-.entry-field .field-readonly { color: var(--text2); }
+.entry-field .field-readonly {
+  /* Read-only display fields (Username, Session Date) — no background,
+     no border, plain text. The slightly dimmer color signals "this is
+     informational, not editable". Padding matches the input below so
+     the two field types occupy identical vertical space and the entry
+     bar's row stays evenly aligned. */
+  background: transparent; border: 0.5px solid transparent;
+  border-radius: 8px;
+  padding: 7px 10px;
+  width: 100%;
+  color: var(--text2);
+}
+/* Editable inputs (Participant ID, Participant Name) — give them a
+   visible text-input affordance so moderators recognize they can type.
+   Without this, the field rendered identically to the read-only divs
+   beside it (transparent background, no border) and moderators didn't
+   realize the field accepted input. Subtle bottom border + hover/focus
+   feedback makes the editability obvious without making it noisy. */
+.entry-field input {
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  width: 100%;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  /* iOS Safari: removes the default inner shadow on inputs */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.entry-field input:hover:not(:focus) {
+  border-color: var(--border-strong);
+  background: var(--bg4);
+}
+.entry-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card-bg);
+  /* Focus ring uses the app's accent teal at low opacity — matches the
+     focus treatment on the admin app's form inputs for consistency. */
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15);
+}
+.entry-field input::placeholder {
+  color: var(--text3);
+  font-weight: 400;
+}
 .entry-divider {
   width: 0.5px; height: 36px;
   background: var(--border);
@@ -2452,6 +2492,50 @@ nav {
   color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   letter-spacing: -0.005em;
+  flex: 1; min-width: 0;
+}
+/* Hour-range pill next to mod name in the inline team-create modal.
+   Default state = green text (matches the availability dot color) so
+   admin can scan a column of mods and instantly see who's working
+   what shift on this date. .is-limited tints it amber to call out
+   mods whose available hours don't cover the assignment window —
+   they're available but partially, which is a soft warning, not a
+   hard block (the conflict check above is what enforces the rule). */
+.mod-picker-hours {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: rgb(22,163,74);
+  background: rgba(34,197,94,0.10);
+  padding: 2px 7px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  font-family: var(--font-num, inherit);
+}
+.mod-picker-hours.is-limited {
+  color: rgb(217,119,6);
+  background: rgba(251,191,36,0.14);
+}
+/* Either / on-call mod — purple-blue treatment to differentiate from
+   the green Morning and amber "limited" states. Communicates "flexible
+   bonus" rather than "fixed shift" or "partial coverage". */
+.mod-picker-hours.is-either {
+  color: rgb(124,58,237);
+  background: rgba(139,92,246,0.14);
+}
+.mod-picker-item.has-hours-warning {
+  /* Soft amber tint on the picker row when the mod's hours don't fully
+     cover the assignment window. Doesn't disable selection — admin can
+     still pick them, but the visual signal makes the partial-coverage
+     state obvious before they hit the save-time conflict block. */
+  background: rgba(251,191,36,0.04);
+}
+.mod-picker-item.has-either {
+  /* Subtle violet tint on the row for Either mods, mirrors the pill
+     color so admin can scan a column and immediately spot the on-call
+     options. Lighter than the warning tint so it doesn't read as
+     "attention needed". */
+  background: rgba(139,92,246,0.03);
 }
 
 /* Participant list inside assignment modal */
@@ -5601,6 +5685,124 @@ nav {
   gap: 8px;
   margin-bottom: 18px;
 }
+/* Wraps each day button + its (conditional) time-picker row in one grid
+   cell so the row stays under its day. Without the wrapper, the time row
+   would land in a separate grid cell and break the column alignment. */
+.mc-avail-day-wrap {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.mc-avail-day-wrap > .mc-avail-day {
+  width: 100%;
+}
+/* Time-range picker — appears under each day that's toggled ON.
+   Two compact hour selects connected by a "to" label. We use the
+   native <select> for accessibility and platform-native dropdown UX,
+   but restyle the chrome to match the rest of the app. */
+.mc-avail-time-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+}
+.mc-avail-time {
+  flex: 1; min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 4px 4px 4px 6px;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  /* Browser-default dropdown arrow doesn't always render in the tight
+     space we have, so the user might see a small chevron clipped — but
+     it's clear enough from context that this is a picker. */
+}
+.mc-avail-time:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.18);
+}
+.mc-avail-time-sep {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* Shift preset pills above the day grid. Two buttons (Morning, Evening)
+   that bulk-set hours on all currently-available days, or all days if
+   none are toggled yet. */
+.mc-avail-shifts {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 14px;
+  flex-wrap: wrap;
+}
+.mc-avail-shift-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text2);
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+  flex: 0 0 auto;
+  font-family: inherit;
+}
+.mc-avail-shift-pill:hover {
+  background: var(--bg4);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.mc-avail-shift-pill:active { transform: scale(0.97); }
+.mc-avail-shift-pill svg {
+  flex-shrink: 0;
+  color: var(--accent-ink);
+}
+/* Active state — the pill matching the currently-active preset gets
+   a filled treatment so the moderator can see which shift they're on
+   without scanning the day grid. */
+.mc-avail-shift-pill.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.mc-avail-shift-pill.is-active svg { color: var(--accent-ink); }
+[data-theme="dark"] .mc-avail-shift-pill.is-active {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: var(--accent);
+}
+/* Either pill — violet theme, distinct from the accent teal used for
+   Morning/Evening. Reads as "special / flexible" without competing
+   with the accent color elsewhere in the app. */
+.mc-avail-shift-pill.is-either svg { color: rgb(124,58,237); }
+.mc-avail-shift-pill.is-either.is-active {
+  background: rgba(139,92,246,0.16);
+  border-color: rgb(139,92,246);
+  color: rgb(109,40,217);
+}
+.mc-avail-shift-pill.is-either.is-active svg { color: rgb(109,40,217); }
+[data-theme="dark"] .mc-avail-shift-pill.is-either.is-active {
+  background: rgba(139,92,246,0.24);
+  color: rgb(196,181,253);
+}
+[data-theme="dark"] .mc-avail-shift-pill.is-either.is-active svg { color: rgb(196,181,253); }
+@media (max-width: 480px) {
+  /* On narrow screens, time pickers wrap under the day cell. The grid
+     becomes 4 wider columns so the time-row fits without overflow. */
+  .mc-avail-time { font-size: 10.5px; padding: 3px 3px 3px 5px; }
+  .mc-avail-time-sep { font-size: 9px; }
+  .mc-avail-shift-pill { padding: 6px 12px; font-size: 12px; }
+}
 .mc-avail-day {
   display: flex; flex-direction: column;
   align-items: center; gap: 4px;
@@ -5626,6 +5828,37 @@ nav {
   background: rgba(0, 240, 255, 0.18);
   border-color: var(--accent);
 }
+/* Per-shift day-cell tinting. Morning uses the default accent treatment
+   (teal). Evening tints orange-amber to suggest the late-day hours.
+   Either uses violet to match the pill — instantly recognizable as the
+   "flexible" shift across the whole UI. */
+.mc-avail-day.is-on.shift-evening {
+  background: rgba(251,191,36,0.14);
+  border-color: rgb(217,119,6);
+}
+.mc-avail-day.is-on.shift-evening .mc-avail-day-name,
+.mc-avail-day.is-on.shift-evening .mc-avail-day-num,
+.mc-avail-day.is-on.shift-evening .mc-avail-day-tag { color: rgb(180, 83, 9); }
+[data-theme="dark"] .mc-avail-day.is-on.shift-evening {
+  background: rgba(251,191,36,0.20);
+}
+[data-theme="dark"] .mc-avail-day.is-on.shift-evening .mc-avail-day-name,
+[data-theme="dark"] .mc-avail-day.is-on.shift-evening .mc-avail-day-num,
+[data-theme="dark"] .mc-avail-day.is-on.shift-evening .mc-avail-day-tag { color: rgb(252, 211, 77); }
+
+.mc-avail-day.is-on.shift-either {
+  background: rgba(139,92,246,0.14);
+  border-color: rgb(124,58,237);
+}
+.mc-avail-day.is-on.shift-either .mc-avail-day-name,
+.mc-avail-day.is-on.shift-either .mc-avail-day-num,
+.mc-avail-day.is-on.shift-either .mc-avail-day-tag { color: rgb(109,40,217); }
+[data-theme="dark"] .mc-avail-day.is-on.shift-either {
+  background: rgba(139,92,246,0.22);
+}
+[data-theme="dark"] .mc-avail-day.is-on.shift-either .mc-avail-day-name,
+[data-theme="dark"] .mc-avail-day.is-on.shift-either .mc-avail-day-num,
+[data-theme="dark"] .mc-avail-day.is-on.shift-either .mc-avail-day-tag { color: rgb(196,181,253); }
 .mc-avail-day-name {
   font-size: 10.5px;
   font-weight: 700;
@@ -6368,7 +6601,7 @@ nav {
       </svg>
     </button>
     <div class="login-meta" style="justify-content: center">
-      <span>v1.0</span>
+      <span id="loginVersionLabel"></span>
     </div>
   </div>
 </div>
@@ -6593,8 +6826,8 @@ nav {
     </div>
 
     <div style="padding: 24px 14px 0; border-top: 0.5px solid var(--border); margin-top: 18px;">
-      <div style="font-size: 12px; color: var(--text3); letter-spacing: 0.04em;">
-        Centific Data Collection — Project Orbit · v1.0
+      <div style="font-size: 12px; color: var(--text3); letter-spacing: 0.04em;" id="sidebarVersionLabel">
+        Centific Data Collection — Project Orbit
       </div>
     </div>
   </div>
@@ -6633,7 +6866,16 @@ nav {
    ===================================================================== */
 
 const LS_KEY = 'centific_orbit_progress_v1';
-const APP_VERSION = '1.0';
+// Version scheme: MAJOR.MINOR.MMDDYY
+//   MAJOR.MINOR — bumped ONLY when explicitly requested.
+//   MMDDYY      — the build date in US calendar format. Updated on
+//                 every code change as a build-stamp; lets the team see
+//                 at a glance whether their browser is running today's
+//                 build or a stale cached copy. Bumping just the date
+//                 part is the default for every patch; bumping MAJOR
+//                 or MINOR is a deliberate "this is a feature release"
+//                 signal that only happens on request.
+const APP_VERSION = '1.2.051226';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -6838,7 +7080,19 @@ function loadState() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.version === APP_VERSION) {
+    // Version compatibility: match on MAJOR.MINOR only — the trailing
+    // MMDDYY build-date changes on every code change but doesn't affect
+    // state shape. Without this relaxation, every build would discard
+    // existing users' saved progress, which would be deeply user-hostile.
+    // We only invalidate when the explicit MAJOR.MINOR has been bumped,
+    // signalling an incompatible state shape.
+    const isCompatibleVersion = (v) => {
+      if (!v) return false;
+      const stored = String(v).split('.').slice(0, 2).join('.');
+      const current = APP_VERSION.split('.').slice(0, 2).join('.');
+      return stored === current;
+    };
+    if (parsed && isCompatibleVersion(parsed.version)) {
       return migrateState(parsed);
     }
   } catch (e) { console.warn('Load failed', e); }
@@ -7282,7 +7536,7 @@ function entryBarHTML() {
       <div class="entry-divider"></div>
       <div class="entry-field">
         <label>Participant ID</label>
-        <input id="ent_pid" type="text" placeholder="Data N/A" value="${escapeHTML(state.participantId)}" autocapitalize="characters" autocorrect="off">
+        <input id="ent_pid" type="text" placeholder="Place the PID here." value="${escapeHTML(state.participantId)}" autocapitalize="characters" autocorrect="off">
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field">
@@ -14148,18 +14402,52 @@ function renderAssignmentModal() {
         isSelected = m.inlineTeamBackupIds.includes(id);
         isDisabled = m.inlineTeamPrimaryIds.includes(id);
       }
-      // Phase 2: availability dot for the date being scheduled
+      // Phase 2 enhanced: availability dot + hour range for the date being scheduled.
+      // The dot shows the gross status (yes/no/unsubmitted); when available,
+      // we also surface the actual hour range the mod can work, so admin can
+      // tell at a glance whether the team will be a valid pick for the
+      // assignment's time window. Without this, admin had to either
+      // memorize each mod's hours or trial-and-error the team selection.
       const availStatus = (typeof getModAvailabilityForDate === 'function' && m.date)
         ? getModAvailabilityForDate(id, m.date) : 'unsubmitted';
-      const availTitle = availStatus === 'yes' ? 'Available on this date'
-                       : availStatus === 'no'  ? 'Reported NOT available on this date'
-                       : 'Has not submitted availability for this week';
+      const availHours = (typeof getModAvailabilityHoursForDate === 'function' && m.date && availStatus === 'yes')
+        ? getModAvailabilityHoursForDate(id, m.date) : null;
+      const isEither = !!(availHours && availHours.available && availHours.shiftTag === 'Either');
+      // Either-tagged mods get a special label rather than just hours.
+      // "Either · 9A–9P" is more useful than "9 AM – 9 PM" because it
+      // tells admin at a glance: this mod is flexible, they can pair
+      // with Morning OR Evening teammates without forcing a shift
+      // choice. The hours-conflict logic treats Either mods as having
+      // the expanded 9–21 window automatically.
+      const hoursLabel = !availHours || !availHours.available
+        ? ''
+        : isEither
+          ? 'Either · 9A – 9P'
+          : `${fmtHourCompact(availHours.startHour)} – ${fmtHourCompact(availHours.endHour)}`;
+      // Cross-check the mod's window against the assignment time window if
+      // the modal has one. Mods whose window doesn't contain the booking
+      // get a subtle "limited" badge so admin knows they're available but
+      // not for the WHOLE booking — useful when teams are being built
+      // for a specific date+time.
+      let hoursWarning = '';
+      if (availHours && availHours.available && m.startMin != null && m.endMin != null) {
+        if (m.startMin < availHours.startMin || m.endMin > availHours.endMin) {
+          hoursWarning = ' ⚠';
+        }
+      }
+      const availTitle = availStatus === 'yes'
+        ? (isEither
+            ? `Either / on-call — can be staffed Morning (9 AM–5 PM) or Evening (1 PM–9 PM)${hoursWarning ? ', but does not cover the assignment window' : ''}`
+            : hoursLabel ? `Available ${hoursLabel}${hoursWarning ? ' — does not cover the assignment window' : ''}` : 'Available on this date')
+        : availStatus === 'no'  ? 'Reported NOT available on this date'
+        :                          'Has not submitted availability for this week';
       return `
-        <div class="mod-picker-item ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}"
+        <div class="mod-picker-item ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''} ${hoursWarning ? 'has-hours-warning' : ''} ${isEither && !hoursWarning ? 'has-either' : ''}"
              data-mod-id="${escapeHTML(id)}" data-role="${role}"
              title="${escapeHTML(availTitle)}">
           <span class="mod-picker-avatar">${escapeHTML(avatarLetters(fn, ln))}</span>
           <span class="mod-picker-name" title="${escapeHTML(fullName)}">${escapeHTML(fullName)}</span>
+          ${hoursLabel ? `<span class="mod-picker-hours ${hoursWarning ? 'is-limited' : ''} ${isEither && !hoursWarning ? 'is-either' : ''}">${escapeHTML(hoursLabel)}${hoursWarning}</span>` : ''}
           <span class="team-mod-chip-avail-dot ${availStatus}" aria-label="${escapeHTML(availTitle)}"></span>
         </div>
       `;
@@ -14357,36 +14645,79 @@ function renderAssignmentModal() {
   const pageEnd = Math.min(pageStart + PARTICIPANT_PAGE_SIZE, totalMatching);
   const pagedOptions = participantOptions.slice(pageStart, pageEnd);
 
-  const teamSelect = `
-    <div style="display: flex; gap: 8px; align-items: stretch;">
-      ${adminState.teams.length === 0
-        ? `<div style="flex:1; padding: 10px 12px; font-size: 14px; color: var(--text3); border: 0.5px dashed var(--border-strong); border-radius: var(--r); background: var(--bg3); letter-spacing: -0.005em;">No teams yet — create one to start.</div>`
-        : `<select id="asgnTeamSelect" style="flex: 1;">
-            ${adminState.teams.map(t => `<option value="${t.id}" ${m.teamId === t.id ? 'selected' : ''}>${escapeHTML(t.name)} · ${(t.primaryIds || []).map(id => escapeHTML(getModeratorDisplayName(id))).join(' & ') || '(no mods)'}</option>`).join('')}
-          </select>`
-      }
-      <button class="btn btn-ghost" id="asgnNewTeamBtn" style="flex-shrink: 0; white-space: nowrap;" title="Create a new team">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-        </svg>
-        New team
-      </button>
-    </div>
-    ${(() => {
-      // Phase 4: availability summary for the picked team on the chosen date
-      if (!m.teamId) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
-      const team = adminState.teams.find(t => t.id === m.teamId);
-      if (!team || !m.date) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
-      const av = (typeof getTeamAvailabilityForDate === 'function')
-        ? getTeamAvailabilityForDate(team, m.date) : null;
-      if (!av || av.total === 0) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
-      let cls = 'partial', label = '';
-      if (av.yes === av.total) { cls = 'all-yes'; label = `✓ All ${av.total} mods available on ${escapeHTML(m.date)}`; }
-      else if (av.yes === 0)   { cls = (av.no === 0 ? 'no-date' : 'none-yes'); label = av.unsub === av.total ? `⚠ No availability submitted yet` : `✗ No mods available on ${escapeHTML(m.date)}`; }
-      else                     { cls = 'partial'; label = `⚠ ${av.yes} of ${av.total} available · ${av.no} unavailable${av.unsub > 0 ? ', ' + av.unsub + ' unsubmitted' : ''}`; }
-      return `<div class="team-avail-summary ${cls}" style="margin-top: 10px;">${label}</div>`;
-    })()}
-  `;
+  const teamSelect = (() => {
+    if (adminState.teams.length === 0) {
+      return `
+        <div style="display: flex; gap: 8px; align-items: stretch;">
+          <div style="flex:1; padding: 10px 12px; font-size: 14px; color: var(--text3); border: 0.5px dashed var(--border-strong); border-radius: var(--r); background: var(--bg3); letter-spacing: -0.005em;">No teams yet — create one to start.</div>
+          <button class="btn btn-ghost" id="asgnNewTeamBtn" style="flex-shrink: 0; white-space: nowrap;" title="Create a new team">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            New team
+          </button>
+        </div>
+        <div class="asgn-field-hint">Pick an existing team or create one inline.</div>
+      `;
+    }
+    // Classify every team for this assignment's date + window. Teams
+    // with hour conflicts are still SHOWN in the dropdown so admin
+    // understands why they're filtered — but they're disabled and
+    // labeled with the reason. This avoids the "where did Team Foo
+    // go?" mystery that hard-filtering would create.
+    //
+    // Compatibility list also drives the auto-deselect step below:
+    // if the currently-selected team is no longer compatible (admin
+    // changed the date/time after picking the team), we surface a
+    // warning banner under the dropdown.
+    const teamVerdicts = adminState.teams.map(t => ({
+      team: t,
+      verdict: (m.date && m.startMin != null && m.endMin != null)
+        ? checkTeamHoursForAssignment(t, m.date, m.startMin, m.endMin)
+        : { ok: true, reason: 'ok', conflicts: [], summary: '' },
+    }));
+    const options = teamVerdicts.map(({ team: t, verdict }) => {
+      const label = `${escapeHTML(t.name)} · ${(t.primaryIds || []).map(id => escapeHTML(getModeratorDisplayName(id))).join(' & ') || '(no mods)'}`;
+      const suffix = verdict.ok ? '' : ` — ${escapeHTML(verdict.summary)}`;
+      const disabled = !verdict.ok ? 'disabled' : '';
+      const selected = m.teamId === t.id ? 'selected' : '';
+      return `<option value="${t.id}" ${selected} ${disabled}>${label}${suffix}</option>`;
+    }).join('');
+    // If admin had picked a team that's now incompatible (e.g., they
+    // moved the assignment date after picking), call it out clearly so
+    // the save attempt below doesn't seem to fail "silently". Save is
+    // also blocked at submission time.
+    const selectedVerdict = teamVerdicts.find(tv => tv.team.id === m.teamId);
+    const incompatibleSelectionWarning = (selectedVerdict && !selectedVerdict.verdict.ok)
+      ? `<div class="team-avail-summary none-yes" style="margin-top: 10px;">⚠ ${escapeHTML(selectedVerdict.verdict.summary)} — pick a different team or change the time.</div>`
+      : '';
+    return `
+      <div style="display: flex; gap: 8px; align-items: stretch;">
+        <select id="asgnTeamSelect" style="flex: 1;">
+          ${options}
+        </select>
+        <button class="btn btn-ghost" id="asgnNewTeamBtn" style="flex-shrink: 0; white-space: nowrap;" title="Create a new team">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+          New team
+        </button>
+      </div>
+      ${incompatibleSelectionWarning}
+      ${(() => {
+        // Existing availability-count summary for the picked team on the chosen date
+        if (!m.teamId) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
+        const team = adminState.teams.find(t => t.id === m.teamId);
+        if (!team || !m.date) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
+        const av = (typeof getTeamAvailabilityForDate === 'function')
+          ? getTeamAvailabilityForDate(team, m.date) : null;
+        if (!av || av.total === 0) return '<div class="asgn-field-hint">Pick an existing team or create one inline.</div>';
+        let cls = 'partial', label = '';
+        if (av.yes === av.total) { cls = 'all-yes'; label = `✓ All ${av.total} mods available on ${escapeHTML(m.date)}`; }
+        else if (av.yes === 0)   { cls = (av.no === 0 ? 'no-date' : 'none-yes'); label = av.unsub === av.total ? `⚠ No availability submitted yet` : `✗ No mods available on ${escapeHTML(m.date)}`; }
+        else                     { cls = 'partial'; label = `⚠ ${av.yes} of ${av.total} available · ${av.no} unavailable${av.unsub > 0 ? ', ' + av.unsub + ' unsubmitted' : ''}`; }
+        return `<div class="team-avail-summary ${cls}" style="margin-top: 10px;">${label}</div>`;
+      })()}
+    `;
+  })();
 
   // Time picker — start/end as <input type="time">
   const startVal = `${String(Math.floor(m.startMin/60)).padStart(2,'0')}:${String(m.startMin%60).padStart(2,'0')}`;
@@ -14765,6 +15096,39 @@ async function saveAssignment() {
   const isEdit = m.kind === 'editAssignment';
 
   const team = adminState.teams.find(t => t.id === m.teamId);
+
+  // Hard guard: don't allow saving an assignment whose team is unavailable
+  // for the requested time window. The dropdown already disables conflicting
+  // options visually, but admin could still reach this path by:
+  //   - changing the date/time AFTER picking a compatible team
+  //   - editing an existing assignment whose team was compatible originally
+  //     but is no longer (mod's availability changed since the booking)
+  //   - browser keyboard nav that bypasses the disabled state
+  // We re-run the check here and reject with an explanation modal. The
+  // admin can either pick a different team (use the dropdown which now
+  // shows compatible options) or close and adjust the time.
+  if (team) {
+    const verdict = checkTeamHoursForAssignment(team, m.date, m.startMin, m.endMin);
+    if (!verdict.ok) {
+      const conflictList = verdict.conflicts.length
+        ? '<ul style="margin: 8px 0 0 18px; padding: 0; font-size: 13.5px; color: var(--text2);">'
+          + verdict.conflicts.map(c => {
+              if (c.reason === 'unavailable') {
+                return `<li><strong style="color: var(--text);">${escapeHTML(c.modName)}</strong> — not available on ${escapeHTML(m.date)}</li>`;
+              }
+              return `<li><strong style="color: var(--text);">${escapeHTML(c.modName)}</strong> — only available ${fmtTimeOfDay(c.availStart)}–${fmtTimeOfDay(c.availEnd)}</li>`;
+            }).join('')
+          + '</ul>'
+        : '';
+      await appAlert({
+        title:   `${team.name}: hours conflict`,
+        message: `Can't save — the team's primary moderators aren't all available for ${fmtTimeOfDay(m.startMin)}–${fmtTimeOfDay(m.endMin)} on ${m.date}.${conflictList}<br><br>Pick a different team from the dropdown (compatible options stay enabled), or close and adjust the assignment time.`,
+        html:    true,
+        variant: 'warning',
+      });
+      return;
+    }
+  }
 
   // Resolve participant: either from the live list, or — when editing and the
   // participant has dropped from "available" — from the original record.
@@ -17279,9 +17643,152 @@ const modCalState = {
   scheduleWeekStart: null,        // YYYY-MM-DD (Monday)
   availabilityWeekStart: null,    // YYYY-MM-DD (Monday)
   pendingDays: { mon:false, tue:false, wed:false, thu:false, fri:false, sat:false, sun:false },
+  // Per-day time ranges in 24-hour ints. Each entry is [startHour, endHour].
+  // Defaults to morning shift (9–17). Only consulted when pendingDays[k] is
+  // true. Stored as hours (no minutes) — the picker UI enforces this.
+  //
+  // Format on Excel: "Yes, 9AM_5PM, Morning" (or "Evening", or "Either",
+  // or no tag for a custom range). Legacy rows written before this feature
+  // shipped just say "Yes" and the parser falls back to the morning-shift
+  // default. That's the backward-compatibility contract — no Excel schema
+  // migration needed, no new columns, the existing day-column strings
+  // carry the additional info.
+  pendingHours: {
+    mon: [9, 17], tue: [9, 17], wed: [9, 17],
+    thu: [9, 17], fri: [9, 17], sat: [9, 17], sun: [9, 17],
+  },
+  // Per-day shift tag: 'Morning' | 'Evening' | 'Either' | '' (custom).
+  // The tag is the source of truth for which preset is "active" on a
+  // given day. When admin drags the time picker outside the preset's
+  // range, the tag clears to '' (custom) — the hours are still saved
+  // but the preset chip stops looking selected. When Either is set,
+  // the admin-side conflict check is intentionally relaxed: any
+  // booking inside 9 AM – 9 PM is OK for an Either mod, regardless
+  // of whether it falls in the morning or evening half. That's the
+  // entire point of the Either flexibility — it lets admin staff
+  // teams that mix Morning + Either or Evening + Either mods.
+  pendingShiftTags: {
+    mon: 'Morning', tue: 'Morning', wed: 'Morning',
+    thu: 'Morning', fri: 'Morning', sat: 'Morning', sun: 'Morning',
+  },
   pendingNotes: '',
   submitting: false,
 };
+// Shift presets surfaced as quick-pick pills on the availability tab.
+// Morning and Evening are both exactly 8 hours (the minimum span).
+// Either / On-call is the union: the moderator is flexible and can be
+// staffed on either shift. From the admin's perspective, an "Either"
+// mod can pair with a Morning mod (for a 9–5 booking) OR an Evening
+// mod (for a 1–9 booking) on the same team — that's the whole point
+// of the flexibility, it relaxes the team-composition constraints.
+//
+// Excel encoding: the day cell carries a trailing comma-separated tag
+// after the hour range so admin tooling can tell Morning from Either
+// (both have a 9 AM start, but Either also runs to 9 PM and accepts
+// shift-shifts that Morning rejects). See parseAvailabilityCell for
+// the read path and buildAvailabilityRow for the write path.
+const AVAILABILITY_SHIFT_PRESETS = {
+  morning: { start: 9,  end: 17, label: 'Morning · 9 AM – 5 PM', tag: 'Morning' },
+  evening: { start: 13, end: 21, label: 'Evening · 1 PM – 9 PM', tag: 'Evening' },
+  either:  { start: 9,  end: 21, label: 'Either · 9 AM – 9 PM',  tag: 'Either'  },
+};
+const AVAILABILITY_MIN_HOURS = 8;
+const AVAILABILITY_DAY_DEFAULT = [9, 17];
+const AVAILABILITY_DEFAULT_TAG = ''; // custom range, no preset label
+
+// Derive the "active" preset tag from current state — drives the
+// pill-highlight UI. Returns 'Morning' | 'Evening' | 'Either' | '' if
+// EVERY currently-available day shares the same tag. Mixed states
+// (some Morning, some Evening) return '' so no pill is highlighted.
+// When nothing's marked available yet, returns '' too.
+function _activePresetTag(state) {
+  const days = state && state.pendingDays || {};
+  const tags = state && state.pendingShiftTags || {};
+  const active = DAY_KEYS.filter(k => days[k]);
+  if (active.length === 0) return '';
+  const firstTag = tags[active[0]] || '';
+  if (!firstTag) return '';
+  for (const k of active) {
+    if ((tags[k] || '') !== firstTag) return '';
+  }
+  return firstTag;
+}
+
+// Format a 24-hour integer as a compact AM/PM label ("9AM", "12PM", "1PM").
+// Used for the Excel value format ("Yes, 9AM_5PM") and the picker display.
+// Stays compact (no spaces, no colons) so it survives Excel cell rendering
+// without quote-mangling and parses back unambiguously.
+function fmtHourCompact(h) {
+  if (h === 0) return '12AM';
+  if (h < 12)  return h + 'AM';
+  if (h === 12) return '12PM';
+  return (h - 12) + 'PM';
+}
+function fmtHourPretty(h) {
+  // For UI labels — slightly more readable than the compact form.
+  // "9 AM", "1 PM", "12 PM (noon)". The compact form is for Excel.
+  if (h === 0)  return '12 AM';
+  if (h < 12)   return h + ' AM';
+  if (h === 12) return '12 PM';
+  return (h - 12) + ' PM';
+}
+// Parse an Excel day-column value into { available, startHour, endHour, shiftTag }.
+// Tolerates:
+//   - legacy "Yes" / "Y" / "true" / "1" → default 9–17 range, no tag
+//   - "Yes, 9AM_5PM"         → exact range, tag inferred ('Morning' if matches)
+//   - "Yes, 9AM_5PM, Morning" → exact range + explicit tag
+//   - "Yes, 9AM_9PM, Either"  → Either shift (flexible — any time inside fits)
+//   - "Yes, 1PM_9PM, Evening" → Evening shift
+//   - any "no" / "" / null → not available
+//
+// The shiftTag is what drives the admin-side flexibility logic. An
+// "Either" mod is matched against assignments using the wider 9–21
+// window AND counted as compatible with both Morning and Evening
+// teammates. A "Morning" or "Evening" mod uses the narrower window
+// and is mutually exclusive with the other shift in mixed teams.
+function parseAvailabilityCell(raw) {
+  if (raw === true || raw === 1) return { available: true, startHour: 9, endHour: 17, shiftTag: 'Morning' };
+  const s = (raw == null ? '' : String(raw)).trim();
+  if (!s) return { available: false, startHour: 9, endHour: 17, shiftTag: '' };
+  const lower = s.toLowerCase();
+  const yes = lower.startsWith('yes') || lower === 'y' || lower === 'true' || lower === '1';
+  if (!yes) return { available: false, startHour: 9, endHour: 17, shiftTag: '' };
+  // Detect explicit tag — appears as a trailing comma-separated word.
+  // We check for these as substrings (case-insensitive) so the order of
+  // tag vs hour-range doesn't matter, and so a tag without a range
+  // ("Yes, Either") still picks the right shift.
+  let shiftTag = '';
+  if (/\beither\b/i.test(lower) || /\bon[-\s]?call\b/i.test(lower)) shiftTag = 'Either';
+  else if (/\bmorning\b/i.test(lower)) shiftTag = 'Morning';
+  else if (/\bevening\b/i.test(lower)) shiftTag = 'Evening';
+  // Look for a range like "9AM_5PM" or "1PM_9PM"
+  const m = lower.match(/(\d{1,2})\s*(am|pm)\s*[_\-–to]+\s*(\d{1,2})\s*(am|pm)/i);
+  if (!m) {
+    // No range but maybe a tag — derive range from the preset.
+    if (shiftTag === 'Either')  return { available: true, startHour: 9,  endHour: 21, shiftTag: 'Either' };
+    if (shiftTag === 'Evening') return { available: true, startHour: 13, endHour: 21, shiftTag: 'Evening' };
+    return { available: true, startHour: 9, endHour: 17, shiftTag: shiftTag || 'Morning' };
+  }
+  const toH = (n, suffix) => {
+    let h = parseInt(n, 10);
+    if (suffix.toLowerCase() === 'am') return h === 12 ? 0 : h;
+    return h === 12 ? 12 : h + 12;
+  };
+  const sh = toH(m[1], m[2]);
+  const eh = toH(m[3], m[4]);
+  if (sh >= 0 && eh > sh && eh <= 24) {
+    // If no explicit tag, infer it from the range — this lets older rows
+    // that just emit "Yes, 9AM_5PM" still get a meaningful shiftTag.
+    if (!shiftTag) {
+      if (sh === 9 && eh === 17)  shiftTag = 'Morning';
+      else if (sh === 13 && eh === 21) shiftTag = 'Evening';
+      else if (sh === 9 && eh === 21)  shiftTag = 'Either';
+      // else leave empty — custom range, no preset tag
+    }
+    return { available: true, startHour: sh, endHour: eh, shiftTag };
+  }
+  return { available: true, startHour: 9, endHour: 17, shiftTag: shiftTag || 'Morning' };
+}
 
 // ---------- Date helpers ------------------------------------------------
 // Returns the Monday (as a Date) of the week containing the given date.
@@ -17494,29 +18001,76 @@ function renderModCalAvailabilityHTML() {
     const isOn = !!modCalState.pendingDays[k];
     const isPast = ds < todayStr;
     const isToday = ds === todayStr;
-    const tag = isPast ? 'past' : (isOn ? 'available' : 'tap to mark');
+    // Time range row shown only when the day is toggled ON. Lets the
+    // moderator pick start/end hours (no minutes — hour granularity only).
+    // The pickers enforce an 8-hour minimum span; submitAvailability
+    // re-validates to catch any client-side bypass.
+    const [sh, eh] = modCalState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+    const tag = modCalState.pendingShiftTags[k] || '';
+    // Day-tag visual: if the day is using a preset (Morning/Evening/
+    // Either), surface the preset name so the moderator can scan the
+    // grid and see which days are flex (Either) vs fixed at a glance.
+    // For custom hours, just show the time range.
+    let tagShort;
+    if (isPast) {
+      tagShort = 'past';
+    } else if (!isOn) {
+      tagShort = 'tap to mark';
+    } else if (tag === 'Either') {
+      tagShort = 'Either · 9A–9P';
+    } else if (tag) {
+      tagShort = `${fmtHourPretty(sh)} – ${fmtHourPretty(eh)}`;
+    } else {
+      tagShort = `${fmtHourPretty(sh)} – ${fmtHourPretty(eh)}`;
+    }
+    const dayShiftClass = tag === 'Either'  ? 'shift-either'
+                       : tag === 'Morning'  ? 'shift-morning'
+                       : tag === 'Evening'  ? 'shift-evening'
+                       : '';
     return `
-      <button type="button"
-              class="mc-avail-day ${isOn ? 'is-on' : ''} ${isPast ? 'is-past' : ''} ${isToday ? 'is-today' : ''}"
-              data-day="${k}"
-              ${isPast ? 'disabled' : ''}
-              aria-pressed="${isOn}">
-        <span class="mc-avail-day-name">${k}</span>
-        <span class="mc-avail-day-num">${d.getDate()}</span>
-        <span class="mc-avail-day-tag">${tag}</span>
-      </button>
+      <div class="mc-avail-day-wrap">
+        <button type="button"
+                class="mc-avail-day ${isOn ? 'is-on' : ''} ${isPast ? 'is-past' : ''} ${isToday ? 'is-today' : ''} ${isOn ? dayShiftClass : ''}"
+                data-day="${k}"
+                ${isPast ? 'disabled' : ''}
+                aria-pressed="${isOn}">
+          <span class="mc-avail-day-name">${k}</span>
+          <span class="mc-avail-day-num">${d.getDate()}</span>
+          <span class="mc-avail-day-tag">${tagShort}</span>
+        </button>
+        ${isOn && !isPast ? `
+          <div class="mc-avail-time-row" data-day="${k}">
+            <select class="mc-avail-time" data-day="${k}" data-edge="start" aria-label="Start hour for ${k}">
+              ${[...Array(24)].map((_, h) => `<option value="${h}" ${h === sh ? 'selected' : ''}>${fmtHourPretty(h)}</option>`).join('')}
+            </select>
+            <span class="mc-avail-time-sep">to</span>
+            <select class="mc-avail-time" data-day="${k}" data-edge="end" aria-label="End hour for ${k}">
+              ${[...Array(25)].map((_, h) => `<option value="${h}" ${h === eh ? 'selected' : ''}>${fmtHourPretty(h === 24 ? 23 : h)}${h === 24 ? '' : ''}</option>`).join('')}
+            </select>
+          </div>` : ''}
+      </div>
     `;
   }).join('');
 
   const onCount = DAY_KEYS.filter(k => modCalState.pendingDays[k]).length;
-  const summary = onCount === 0
-    ? 'Tap days to mark yourself <strong>available</strong>.'
-    : `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked available for this week.`;
+  const eitherCount = DAY_KEYS.filter(k =>
+    modCalState.pendingDays[k] && modCalState.pendingShiftTags[k] === 'Either'
+  ).length;
+  let summary;
+  if (onCount === 0) {
+    summary = 'Tap days to mark yourself <strong>available</strong>.';
+  } else if (eitherCount === onCount) {
+    summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked <strong style="color: var(--accent-ink);">Either / On-call</strong> — admin can staff you for any shift.`;
+  } else if (eitherCount > 0) {
+    summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} available · ${eitherCount} on the <strong>Either</strong> shift.`;
+  } else {
+    summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked available for this week.`;
+  }
 
   return `
     <div class="mc-avail-intro">
       Mark the days you are <strong>available to work</strong> during the week of ${escapeHTML(weekRangeLabel(modCalState.availabilityWeekStart))}.
-      Your admin uses this when scheduling new sessions. Past days can't be edited.
+      Pick a shift preset (Morning, Evening, or <strong>Either</strong> for flexible / on-call) or set custom hours per day. Minimum ${AVAILABILITY_MIN_HOURS} hours, past days can't be edited.
     </div>
 
     <div class="mc-weeknav">
@@ -17527,6 +18081,29 @@ function renderModCalAvailabilityHTML() {
       <button class="mc-weeknav-today" id="mcAvailNext7">Next week</button>
       <button class="mc-weeknav-arrow" id="mcAvailNext" aria-label="Next week">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <!-- Shift preset pills. Apply to all available days at once.
+         Morning / Evening are exact 8-hour shifts. Either / On-call is
+         a flexible "I can do whichever shift" option that admin can
+         use as a swing slot when building teams — an Either mod pairs
+         freely with Morning or Evening teammates and can be staffed
+         for any booking inside 9 AM – 9 PM. Active preset highlights
+         based on the first available day's tag (since presets are a
+         bulk action). -->
+    <div class="mc-avail-shifts">
+      <button type="button" class="mc-avail-shift-pill ${_activePresetTag(modCalState) === 'Morning' ? 'is-active' : ''}" data-shift="morning">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Morning · 9 AM – 5 PM
+      </button>
+      <button type="button" class="mc-avail-shift-pill ${_activePresetTag(modCalState) === 'Evening' ? 'is-active' : ''}" data-shift="evening">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M12 9.5a4.5 4.5 0 0 1-6-4.2A4.5 4.5 0 1 0 12 9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        Evening · 1 PM – 9 PM
+      </button>
+      <button type="button" class="mc-avail-shift-pill is-either ${_activePresetTag(modCalState) === 'Either' ? 'is-active' : ''}" data-shift="either" title="Flexible: admin can staff you for either shift">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h8l-2-2M13 11H5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Either · 9 AM – 9 PM
       </button>
     </div>
 
@@ -17557,6 +18134,92 @@ function bindModCalAvailability(body) {
       if (btn.disabled) return;
       const k = btn.dataset.day;
       modCalState.pendingDays[k] = !modCalState.pendingDays[k];
+      // Initialize hours + shift tag when first toggled on — gives a
+      // sensible default even when the moderator never touches the
+      // time picker. Once they do touch it, the value sticks across
+      // toggles via pendingHours / pendingShiftTags.
+      if (modCalState.pendingDays[k] && !modCalState.pendingHours[k]) {
+        modCalState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+      }
+      if (modCalState.pendingDays[k] && !modCalState.pendingShiftTags[k]) {
+        modCalState.pendingShiftTags[k] = 'Morning';
+      }
+      renderModCalBody();
+    });
+  });
+
+  // Per-day time pickers. Two selects per day (start hour + end hour).
+  // The 8-hour minimum is enforced HERE, at the moment the moderator
+  // makes a change, with friendly correction: if they pick a start that
+  // would leave less than 8 hours, we auto-adjust the OTHER edge to
+  // maintain the 8-hour span. This is gentler than throwing an error
+  // mid-edit. submitAvailability does a final defensive check.
+  //
+  // Dragging the picker also REVERTS the shift tag to '' (custom) for
+  // that day, because the moderator has stepped outside the preset
+  // boundary. We DO re-detect Morning/Evening/Either by matching the
+  // new range against the preset hours — so if admin drags to a
+  // preset's exact bounds, the tag snaps back. This gives an intuitive
+  // "the preset is what you currently have" feel without locking the
+  // sliders.
+  body.querySelectorAll('.mc-avail-time').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const k = e.target.dataset.day;
+      const edge = e.target.dataset.edge;
+      const v = parseInt(e.target.value, 10);
+      let [sh, eh] = modCalState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+      if (edge === 'start') {
+        sh = v;
+        // If new start makes the span < 8h, push end forward to maintain min.
+        if (eh - sh < AVAILABILITY_MIN_HOURS) eh = sh + AVAILABILITY_MIN_HOURS;
+        // Don't allow end past midnight (24h is the max). If maintaining
+        // the 8h span would require eh > 24, clamp end at 24 and back
+        // up start to keep the span. This lets the moderator pick a
+        // legal late-evening shift like 16–24 (4 PM – midnight).
+        if (eh > 24) { eh = 24; sh = eh - AVAILABILITY_MIN_HOURS; }
+      } else {
+        eh = v;
+        // Symmetric: pulling end earlier? Drag start back to maintain min.
+        if (eh - sh < AVAILABILITY_MIN_HOURS) sh = eh - AVAILABILITY_MIN_HOURS;
+        if (sh < 0) { sh = 0; eh = sh + AVAILABILITY_MIN_HOURS; }
+      }
+      modCalState.pendingHours[k] = [sh, eh];
+      // Re-derive the shift tag from the new range — snaps back to a
+      // preset when the moderator's drag lands on preset bounds, else
+      // clears to '' so the "custom" state is visible.
+      if (sh === 9 && eh === 17)      modCalState.pendingShiftTags[k] = 'Morning';
+      else if (sh === 13 && eh === 21) modCalState.pendingShiftTags[k] = 'Evening';
+      else if (sh === 9 && eh === 21)  modCalState.pendingShiftTags[k] = 'Either';
+      else                             modCalState.pendingShiftTags[k] = '';
+      renderModCalBody();
+    });
+  });
+
+  // Shift preset pills. Apply the preset to every day currently marked
+  // available. If no day is currently toggled on, we APPLY the preset
+  // to all days AND toggle them on — pressing a shift pill from the
+  // empty state is a "I'm available all week, on this shift" gesture.
+  // This is the most common first-use case for the Either pill: the
+  // moderator wants to flag themselves on-call for the entire week.
+  body.querySelectorAll('.mc-avail-shift-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const preset = AVAILABILITY_SHIFT_PRESETS[btn.dataset.shift];
+      if (!preset) return;
+      const onDays = DAY_KEYS.filter(k => modCalState.pendingDays[k]);
+      if (onDays.length > 0) {
+        // Apply to currently-on days only.
+        onDays.forEach(k => {
+          modCalState.pendingHours[k] = [preset.start, preset.end];
+          modCalState.pendingShiftTags[k] = preset.tag;
+        });
+      } else {
+        // No days picked yet → "available all week on this shift".
+        DAY_KEYS.forEach(k => {
+          modCalState.pendingDays[k] = true;
+          modCalState.pendingHours[k] = [preset.start, preset.end];
+          modCalState.pendingShiftTags[k] = preset.tag;
+        });
+      }
       renderModCalBody();
     });
   });
@@ -17587,16 +18250,28 @@ function bindModCalAvailability(body) {
     renderModCalBody();
   });
 
-  // Quick selectors
+  // Quick selectors — preserve the per-day pendingHours that already exist
   const weekdays = body.querySelector('#mcAvailWeekdays');
   const all = body.querySelector('#mcAvailAll');
   const none = body.querySelector('#mcAvailNone');
   if (weekdays) weekdays.addEventListener('click', () => {
-    DAY_KEYS.forEach(k => { modCalState.pendingDays[k] = ['mon','tue','wed','thu','fri'].includes(k); });
+    DAY_KEYS.forEach(k => {
+      modCalState.pendingDays[k] = ['mon','tue','wed','thu','fri'].includes(k);
+      if (modCalState.pendingDays[k] && !modCalState.pendingHours[k]) {
+        modCalState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+      }
+      if (modCalState.pendingDays[k] && !modCalState.pendingShiftTags[k]) {
+        modCalState.pendingShiftTags[k] = 'Morning';
+      }
+    });
     renderModCalBody();
   });
   if (all) all.addEventListener('click', () => {
-    DAY_KEYS.forEach(k => { modCalState.pendingDays[k] = true; });
+    DAY_KEYS.forEach(k => {
+      modCalState.pendingDays[k] = true;
+      if (!modCalState.pendingHours[k]) modCalState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+      if (!modCalState.pendingShiftTags[k]) modCalState.pendingShiftTags[k] = 'Morning';
+    });
     renderModCalBody();
   });
   if (none) none.addEventListener('click', () => {
@@ -17623,7 +18298,27 @@ function bindModCalAvailability(body) {
 function buildAvailabilityRow() {
   const profile = state.modProfile || {};
   const onDays = {};
-  DAY_KEYS.forEach(k => { onDays[k] = modCalState.pendingDays[k] ? 'Yes' : ''; });
+  // Format: "" (not available) or "Yes, 9AM_5PM, Morning"
+  // (available with hours + preset tag). Custom hours have no tag,
+  // emitting "Yes, 10AM_8PM" without a third comma-separated value.
+  //
+  // The legacy reader handles a bare "Yes" too, so old rows still parse.
+  // The new reader (parseAvailabilityCell) extracts the hour range from
+  // the comma-separated suffix when present, AND detects the trailing
+  // "Morning" / "Evening" / "Either" tag to drive admin-side flexibility
+  // (Either mods can be staffed alongside Morning OR Evening teammates).
+  // No Excel schema change — we're packing three fields into one cell
+  // using a convention the reader recognizes.
+  DAY_KEYS.forEach(k => {
+    if (!modCalState.pendingDays[k]) {
+      onDays[k] = '';
+      return;
+    }
+    const [sh, eh] = modCalState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+    const tag = modCalState.pendingShiftTags[k] || '';
+    const base = `Yes, ${fmtHourCompact(sh)}_${fmtHourCompact(eh)}`;
+    onDays[k] = tag ? `${base}, ${tag}` : base;
+  });
   return {
     availabilityId: 'avail_' + Date.now() + '_' + Math.floor(Math.random() * 1e6).toString(36),
     orbitLoginId: profile.orbitLoginId || state.username || '',
@@ -17660,6 +18355,22 @@ async function submitAvailability() {
   if (!row.weekRange) {
     toast('Pick a week first');
     return;
+  }
+  // Validate that every available day has at least the minimum hour span.
+  // The picker auto-corrects to stay >= 8h on every edit, so this is
+  // really a belt-and-suspenders check against state corruption (e.g.,
+  // localStorage edited externally, or stale state across upgrades).
+  for (const k of DAY_KEYS) {
+    if (!modCalState.pendingDays[k]) continue;
+    const [sh, eh] = modCalState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+    if (eh - sh < AVAILABILITY_MIN_HOURS) {
+      await appAlert({
+        title:   `${k.toUpperCase()}: shift too short`,
+        message: `Available days need at least ${AVAILABILITY_MIN_HOURS} hours. ${k.toUpperCase()} is currently set to ${fmtHourPretty(sh)} – ${fmtHourPretty(eh)} (${eh - sh}h). Adjust the hours and try again.`,
+        variant: 'warning',
+      });
+      return;
+    }
   }
 
   modCalState.submitting = true;
@@ -18067,12 +18778,50 @@ function getModAvailabilityForDate(modId, ymdDate) {
   const row = idx.get(key);
   if (!row) return 'unsubmitted';
   const colName = _DAY_COL_BY_DOW[d.getDay()];
-  // Tolerate: "Yes" / "yes" / "Y" / "true" / true / "1" / 1
+  // Use the unified parser so legacy "Yes" and new "Yes, 9AM_5PM" rows
+  // both resolve correctly. Returns just the boolean status here — for
+  // hour-range queries, callers should use getModAvailabilityHoursForDate.
+  const parsed = parseAvailabilityCell(row[colName]);
+  return parsed.available ? 'yes' : 'no';
+}
+
+// Hour-range variant: returns { available, startHour, endHour, startMin, endMin }
+// for a mod on a date. startMin/endMin are minutes-since-midnight equivalents
+// so the assignment-modal conflict checker can compare directly with
+// modal.startMin / modal.endMin without unit conversion.
+//
+// Returns null when no row exists yet (vs the boolean variant which
+// returns 'unsubmitted'). Null is a clearer signal for the team-filter
+// path — admin shouldn't penalize teams whose mods haven't submitted.
+function getModAvailabilityHoursForDate(modId, ymdDate) {
+  if (!modId || !ymdDate) return null;
+  const rows = (adminState && adminState.availability) || loadAvailabilityCache();
+  const idx = indexLatestAvailability(rows);
+  const d = parseYMD(ymdDate);
+  if (!d) return null;
+  const dow = (d.getDay() + 6) % 7;
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+  const key = String(modId).toLowerCase().trim() + '|' + ymdLocal(monday);
+  const row = idx.get(key);
+  if (!row) return null;
+  const colName = _DAY_COL_BY_DOW[d.getDay()];
   const raw = row[colName];
-  if (raw === true || raw === 1) return 'yes';
-  const val = (raw == null ? '' : String(raw)).trim().toLowerCase();
-  if (val === 'yes' || val === 'y' || val === 'true' || val === '1') return 'yes';
-  return 'no';
+  // Distinguish "no row" from "row says not available" — both unsubmitted
+  // and explicit "no" need different downstream treatment. The cell-level
+  // null check above handled "no row for this week"; here we check the
+  // specific day cell.
+  if (raw == null || String(raw).trim() === '') {
+    return { available: false, startHour: 0, endHour: 0, startMin: 0, endMin: 0, shiftTag: '' };
+  }
+  const parsed = parseAvailabilityCell(raw);
+  return {
+    available: parsed.available,
+    startHour: parsed.startHour,
+    endHour:   parsed.endHour,
+    startMin:  parsed.startHour * 60,
+    endMin:    parsed.endHour   * 60,
+    shiftTag:  parsed.shiftTag || '',
+  };
 }
 
 // Convenience for a whole team on a date — returns counts.
@@ -18088,16 +18837,139 @@ function getTeamAvailabilityForDate(team, ymdDate) {
   return { yes, no, unsub, total: ids.length };
 }
 
+/* ----------- Team hours-conflict checker -----------
+ * Given a team, a date, and a proposed assignment time window
+ * (startMin / endMin in minutes-since-midnight), determine whether
+ * the team's primary moderators are all available for that window.
+ *
+ * Returns an object describing the verdict:
+ *   {
+ *     ok: true | false,
+ *     reason: 'no-primaries' | 'unsubmitted' | 'unavailable' | 'hours-conflict' | 'ok',
+ *     conflicts: [ { modId, modName, availStart, availEnd, ...} ],
+ *     summary: string  // human-readable one-liner for the UI
+ *   }
+ *
+ * Rules:
+ *   - If the team has no primary mods, can't validate → ok with caveat.
+ *     We don't block here; admin can fix the team membership separately.
+ *   - For each primary mod, look up their availability on the assignment
+ *     date via getModAvailabilityHoursForDate.
+ *     • Unsubmitted (no row at all) → treated as "unknown, don't block"
+ *       per the admin tooling pattern we already use for the count summary.
+ *       We log it but don't reject. The team-availability-summary in the
+ *       modal already calls out unsubmitted as "⚠".
+ *     • Available with a window that FULLY CONTAINS [startMin, endMin) → ok.
+ *     • Available with a window that DOES NOT contain the assignment → CONFLICT.
+ *     • Marked not-available (cell empty / "no") → CONFLICT.
+ *   - If any mod is in conflict, ok=false, conflicts[] lists them.
+ *
+ * Why "fully contains" rather than "overlaps":
+ *   The assignment window is what the moderator owes the participant.
+ *   If the mod says they're available 9–17 and the booking is 15–18,
+ *   they're missing the last hour — that's a real scheduling conflict
+ *   even though the windows overlap. Strict containment is the only
+ *   correct rule for staffing.
+ *
+ * Backup mods aren't included in the strict check — they're spares by
+ * definition. The team-availability-summary still shows their counts
+ * for context, but the deal-breaker check is primaries only. Callers
+ * that want backup-strict behavior can extend the ids list. */
+function checkTeamHoursForAssignment(team, ymdDate, startMin, endMin) {
+  const result = { ok: true, reason: 'ok', conflicts: [], summary: '' };
+  if (!team || !ymdDate || startMin == null || endMin == null || endMin <= startMin) {
+    result.ok = false; result.reason = 'no-primaries';
+    result.summary = 'Invalid team or time window';
+    return result;
+  }
+  const primaryIds = (team.primaryIds || []).filter(Boolean);
+  if (primaryIds.length === 0) {
+    // Empty teams aren't blocked by THIS check, but they don't pass cleanly
+    // either. The modal already nudges admin about empty teams elsewhere.
+    result.ok = true; result.reason = 'no-primaries';
+    result.summary = 'Team has no primary moderators yet — add at least one.';
+    return result;
+  }
+  let eitherCount = 0;
+  for (const id of primaryIds) {
+    const hours = getModAvailabilityHoursForDate(id, ymdDate);
+    const modName = (typeof getModeratorDisplayName === 'function')
+      ? getModeratorDisplayName(id) : id;
+    if (!hours) {
+      // No row for this week — treat as unknown, NOT a conflict. The
+      // availability-summary line in the modal already signals "no
+      // submission" to admin; we don't want to make every freshly-added
+      // mod a hard block on team selection.
+      continue;
+    }
+    if (!hours.available) {
+      result.conflicts.push({
+        modId: id, modName, availStart: null, availEnd: null,
+        reason: 'unavailable',
+      });
+      continue;
+    }
+    // Strict containment: assignment window must fit inside the mod's
+    // available window. Equality at edges (e.g., mod 9–17, assignment
+    // 9–17) is fine. Either mods naturally pass for any 9 AM – 9 PM
+    // window because parseAvailabilityCell expands their range to the
+    // full union, so we don't need a special branch here — the math
+    // takes care of itself. We just count them so the summary can say
+    // "Either mod covers this slot" rather than implying they were
+    // pinned to a specific shift.
+    if (hours.shiftTag === 'Either') eitherCount++;
+    if (startMin < hours.startMin || endMin > hours.endMin) {
+      result.conflicts.push({
+        modId: id, modName,
+        availStart: hours.startMin, availEnd: hours.endMin,
+        reason: 'hours-conflict',
+      });
+    }
+  }
+  if (result.conflicts.length > 0) {
+    result.ok = false;
+    // Pick a primary reason — prefer "unavailable" (stronger statement
+    // than just hours-mismatch) so the summary message reads right.
+    const anyUnavail = result.conflicts.find(c => c.reason === 'unavailable');
+    result.reason = anyUnavail ? 'unavailable' : 'hours-conflict';
+    if (anyUnavail) {
+      const names = result.conflicts
+        .filter(c => c.reason === 'unavailable')
+        .map(c => c.modName).join(', ');
+      result.summary = `Not available: ${names}`;
+    } else {
+      const c = result.conflicts[0];
+      result.summary = `${c.modName} only available ${fmtTimeOfDay(c.availStart)}–${fmtTimeOfDay(c.availEnd)}`;
+    }
+  } else {
+    // All clear. If any of the primaries are on the Either shift,
+    // call it out — gives admin a visible signal that they have
+    // flexibility on this team (e.g., they can swap the booking
+    // time without losing the team's compatibility).
+    if (eitherCount > 0) {
+      result.summary = `All ${primaryIds.length} primary mod${primaryIds.length === 1 ? '' : 's'} available · ${eitherCount} on Either / on-call`;
+    } else {
+      result.summary = `All ${primaryIds.length} primary mod${primaryIds.length === 1 ? '' : 's'} available for this window`;
+    }
+  }
+  return result;
+}
+
 // Operator-side: pull this operator's prior submission for the currently focused
-// week into modCalState.pendingDays / pendingNotes so the My Availability tab
-// shows what they already reported instead of starting blank. Always resets to
-// a clean slate first — so calling this on every week change correctly clears
-// stale toggles when navigating to a week with no prior submission.
+// week into modCalState.pendingDays / pendingHours / pendingNotes so the My
+// Availability tab shows what they already reported instead of starting blank.
+// Always resets to a clean slate first — so calling this on every week change
+// correctly clears stale toggles when navigating to a week with no prior
+// submission.
 //
 // Returns true if a row was found and applied, false otherwise.
 function hydrateOperatorAvailabilityForWeek() {
   // Always reset first — guarantees consistent state on every nav change
-  DAY_KEYS.forEach(k => { modCalState.pendingDays[k] = false; });
+  DAY_KEYS.forEach(k => {
+    modCalState.pendingDays[k] = false;
+    modCalState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+    modCalState.pendingShiftTags[k] = 'Morning';
+  });
   modCalState.pendingNotes = '';
 
   const myId = state.modProfile && state.modProfile.orbitLoginId;
@@ -18112,7 +18984,17 @@ function hydrateOperatorAvailabilityForWeek() {
   const row = idx.get(String(myId).toLowerCase().trim() + '|' + week);
   if (!row) return false;
 
-  DAY_KEYS.forEach(k => { modCalState.pendingDays[k] = _availIsYes(row[k]); });
+  // Pull flags + hours + shift tag from each day cell via the unified
+  // parser. Legacy rows (just "Yes", no range, no tag) hydrate as
+  // Morning at 9–17 — same default the picker uses when newly opened.
+  DAY_KEYS.forEach(k => {
+    const parsed = parseAvailabilityCell(row[k]);
+    modCalState.pendingDays[k] = parsed.available;
+    if (parsed.available) {
+      modCalState.pendingHours[k] = [parsed.startHour, parsed.endHour];
+      modCalState.pendingShiftTags[k] = parsed.shiftTag || '';
+    }
+  });
   modCalState.pendingNotes = String(row.notesText || '');
   return true;
 }
@@ -18286,6 +19168,18 @@ async function doLogin() {
 }
 
 function init() {
+  // Stamp the live APP_VERSION into the version labels so the login
+  // screen + sidebar footer always reflect the current build. Without
+  // this, those labels were hardcoded "v1.0" strings that drifted out
+  // of sync every time the version constant moved. Doing it via the
+  // DOM at init keeps the two displays as a single source of truth
+  // (the APP_VERSION constant) and removes the need to remember to
+  // edit hardcoded labels on every release.
+  const loginVer = document.getElementById('loginVersionLabel');
+  if (loginVer) loginVer.textContent = 'v' + APP_VERSION;
+  const sidebarVer = document.getElementById('sidebarVersionLabel');
+  if (sidebarVer) sidebarVer.textContent = `Centific Data Collection — Project Orbit · v${APP_VERSION}`;
+
   // Try to auto-resume if saved state has a username
   const saved = loadState();
   if (saved && saved.username) {
