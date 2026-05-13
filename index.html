@@ -11141,6 +11141,327 @@ function buildEmailSubject(participantName, sessionDateLabel) {
   return `Reminder: Your Project Orbit session on ${sessionDateLabel}`;
 }
 
+// =====================================================================
+// MODERATOR-FACING EMAIL TEMPLATE
+//
+// Companion to ORBIT_EMAIL_TEMPLATE_HTML above. Same visual language
+// (header logo, 600px container, rounded card, footer), but the body
+// addresses the moderator instead of the participant:
+//
+//   - Greeting uses moderator's first name
+//   - Details table shows the PARTICIPANT's info (name, address, phone,
+//     time) so the moderator knows where to go and what to expect
+//   - Team members row lists other primary moderators on the same team
+//   - Backup row only renders when backups exist (empty otherwise)
+//   - Important callout reminds them to grab equipment and call the
+//     participant beforehand
+//   - CTA button links to the Orbit app for session start
+//   - No PDF agreement link (moderators don't need to read the NDA;
+//     it's the participant's document)
+//
+// Placeholders used (different from participant template, no overlap):
+//   {moderatorName}      first name only, for greeting
+//   {participantName}    participant's full name in the details table
+//   {bookedDate}         "Friday, May 22, 2026"
+//   {bookedTime}         "10:00 AM – 12:00 PM"
+//   {participantAddress} formatted address line
+//   {participantPhone}   phone number, or "—" if unknown
+//   {teamMemberLine}     "Sarah Kim" or "Sarah Kim & Marcus Chen" — the
+//                        OTHER primary mods on the team. Empty string
+//                        when the moderator is the only primary; the
+//                        fillModEmailTemplate helper conditionally hides
+//                        the row in that case.
+//   {backupLine}         "Marcus Chen" — backup mod(s) on the team.
+//                        Empty when no backups exist; row hidden.
+//   {orbitAppUrl}        clickable CTA target
+//
+// fillModEmailTemplate (below) replaces these and also strips the
+// team-member / backup rows entirely when those values are empty —
+// avoids rendering "Team member: —" or "Backup: —" which would look
+// like a data error.
+// =====================================================================
+const ORBIT_MOD_EMAIL_TEMPLATE_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="https://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Project Orbit — Session Assignment</title>
+<!--[if mso]>
+<style type="text/css">
+table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !important; }
+</style>
+<![endif]-->
+</head>
+<body style="margin:0; padding:0; width:100%; background-color:#F5F5F7; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+
+<!-- Preheader: shows in the inbox preview line. Hidden inside the email. -->
+<div style="display:none; font-size:1px; color:#F5F5F7; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
+  Session assignment for {bookedDate}. Participant details + equipment reminder inside.
+</div>
+
+<!-- Outer table — full-width background -->
+<table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#F5F5F7;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <!-- Main container — 600px max, centered -->
+      <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="600" style="max-width:600px; width:100%; background-color:#FFFFFF; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,21,40,0.05);">
+
+        <!-- Header band with logo — centered inside the frame -->
+        <tr>
+          <td align="center" style="padding:36px 40px 28px; background-color:#FFFFFF; border-bottom:1px solid #EFEFF2;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0">
+              <tr>
+                <td align="center" style="padding-bottom:14px;">
+                  <img src="https://raw.githubusercontent.com/dk-centific/orbit-email-assets/main/centific-logo.png" alt="Centific" width="44" height="44" style="display:block; width:44px; height:44px; border:0; outline:none; text-decoration:none;">
+                </td>
+              </tr>
+              <tr>
+                <td align="center">
+                  <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11.5px; font-weight:600; letter-spacing:0.16em; text-transform:uppercase; color:#0091A6;">
+                    Centific · Project Orbit
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Hero — greeting + assignment summary -->
+        <tr>
+          <td align="left" style="padding:36px 40px 8px;">
+            <h1 style="margin:0 0 12px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:26px; line-height:1.25; font-weight:700; color:#001528; letter-spacing:-0.02em;">
+              Hi {moderatorName}, you have a session booked
+            </h1>
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40; letter-spacing:-0.005em;">
+              A participant has been assigned to your team for <strong style="color:#001528;">{bookedDate}</strong>. The full details are below — please review and prepare before the session.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Details card — participant + session info -->
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#F0F7FA; border:1px solid #D6E5EA; border-radius:10px;">
+              <tr>
+                <td style="padding:18px 22px;">
+                  <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%">
+                    <!-- Participant -->
+                    <tr>
+                      <td style="padding:4px 0; vertical-align:top; width:130px;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Participant</p>
+                      </td>
+                      <td style="padding:4px 0; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; font-weight:600; line-height:1.5; color:#001528; letter-spacing:-0.005em;">{participantName}</p>
+                      </td>
+                    </tr>
+                    <!-- Date -->
+                    <tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Date</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">{bookedDate}</p>
+                      </td>
+                    </tr>
+                    <!-- Time -->
+                    <tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Time</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">{bookedTime}</p>
+                      </td>
+                    </tr>
+                    <!-- Address -->
+                    <tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Address</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">{participantAddress}</p>
+                      </td>
+                    </tr>
+                    <!-- Phone -->
+                    <tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Phone</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">{participantPhone}</p>
+                      </td>
+                    </tr>
+                    <!-- Team member(s) — conditionally rendered; placeholder gets replaced with full <tr>...</tr> or empty string -->
+                    {teamMemberRow}
+                    <!-- Backup(s) — conditionally rendered as above -->
+                    {backupRow}
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Important callout — equipment + pre-call reminders -->
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color:#FFFFFF; border-left:3px solid #C23287; border-radius:0 6px 6px 0;">
+              <tr>
+                <td style="padding:14px 18px;">
+                  <p style="margin:0 0 10px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.10em; text-transform:uppercase; color:#C23287;">
+                    Before you head out
+                  </p>
+                  <p style="margin:0 0 8px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#1A1A1F;">
+                    <strong style="color:#001528;">Grab all equipment</strong> you'll need for the session before you leave.
+                  </p>
+                  <p style="margin:0 0 8px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#1A1A1F;">
+                    <strong style="color:#001528;">Call the participant ahead of time</strong> to confirm they're ready for you — this avoids wasted trips and surprises on arrival.
+                  </p>
+                  <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#1A1A1F;">
+                    <strong style="color:#001528;">Plan your travel time</strong> in advance — factor in traffic and parking so you arrive at the participant's home on time.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- CTA — open the Orbit App -->
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <p style="margin:0 0 14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#3A3A40;">
+              When you're ready to start, log in to the Orbit App to begin your session journey.
+            </p>
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="margin:4px 0 0;">
+              <tr>
+                <td align="center" style="padding:0;">
+                  <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#00B4D8" style="border-radius:8px; background-color:#00B4D8;">
+                        <!--[if mso]>
+                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{orbitAppUrl}" style="height:46px;v-text-anchor:middle;width:220px;" arcsize="17%" stroke="f" fillcolor="#00B4D8">
+                          <w:anchorlock/>
+                          <center style="color:#FFFFFF;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:600;">Open Orbit App</center>
+                        </v:roundrect>
+                        <![endif]-->
+                        <!--[if !mso]><!-->
+                        <a href="{orbitAppUrl}" target="_blank" rel="noopener" style="display:inline-block; padding:13px 28px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:8px; letter-spacing:-0.01em; mso-hide:all;">
+                          Open Orbit App
+                          <span style="display:inline-block; margin-left:6px; vertical-align:-1px;">→</span>
+                        </a>
+                        <!--<![endif]-->
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Cancellation note + sign-off -->
+        <tr>
+          <td align="left" style="padding:32px 40px 0;">
+            <p style="margin:0 0 18px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:1.6; color:#3A3A40; letter-spacing:-0.005em;">
+              If you need to cancel or can't make it, please contact us as soon as possible so we can make alternative arrangements.
+            </p>
+            <p style="margin:0 0 6px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#1A1A1F; letter-spacing:-0.005em;">
+              Safe travels and thank you!
+            </p>
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:1.5; color:#5A6A72;">
+              — The Centific Project Orbit Team
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="padding:32px 40px 32px;">
+            <div style="border-top:1px solid #EFEFF2; padding-top:20px;">
+              <p style="margin:0 0 6px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:12px; line-height:1.5; color:#9A9AA0; letter-spacing:0.02em;">
+                This is an automated assignment notification from Project Orbit.
+              </p>
+              <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; line-height:1.5; color:#9A9AA0; letter-spacing:0.04em;">
+                © Centific · Project Orbit
+              </p>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
+</body>
+</html>
+`;
+
+// Public URL for the Orbit mod app — used as the CTA target in the
+// moderator assignment email. Lives near the email config so it's
+// easy to find and update without hunting through the template body.
+// Empty string is allowed (the CTA still renders but points at #).
+const ORBIT_APP_URL = 'https://dk-centific.github.io/Orbit-Tracker/';
+
+// Subject line for moderator assignment emails. Keeps it scannable
+// in a busy inbox: short, lead with the participant first name and
+// the date so the mod can triage at a glance.
+function buildModEmailSubject(participantFirstName, shortDateLabel) {
+  const name = (participantFirstName || '').trim() || 'a participant';
+  return `Session assignment: ${name} on ${shortDateLabel}`;
+}
+
+// Fill the mod email template with assignment + moderator data. Mirrors
+// fillEmailTemplate above but with the mod-specific placeholders.
+//
+// Conditionally renders the team-member and backup table rows: when
+// teamMemberLine or backupLine is empty, the corresponding <tr>...</tr>
+// is omitted entirely rather than left as a blank row. This avoids the
+// "Backup: —" eyesore for sessions where no backup was assigned.
+function fillModEmailTemplate(template, data) {
+  const safe = (s) => escapeHTML(String(s == null ? '' : s));
+  // Conditional team-member row. The fragment matches the table-row
+  // styling used by the other rows above for visual consistency.
+  const teamRow = data.teamMemberLine
+    ? `<tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Team member</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">${safe(data.teamMemberLine)}</p>
+                      </td>
+                    </tr>`
+    : '';
+  const backupRow = data.backupLine
+    ? `<tr>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A6A72;">Backup</p>
+                      </td>
+                      <td style="padding:8px 0 4px; vertical-align:top;">
+                        <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.5; color:#1A1A1F; letter-spacing:-0.005em;">${safe(data.backupLine)}</p>
+                      </td>
+                    </tr>`
+    : '';
+  // URL goes into href + VML — same handling as the participant template's
+  // agreement button: not re-escaped because it's already an admin-controlled
+  // safe value, and escaping would corrupt the URL.
+  const url = data.orbitAppUrl || ORBIT_APP_URL || '#';
+  return template
+    .replace(/\{moderatorName\}/g,      safe(data.moderatorName))
+    .replace(/\{participantName\}/g,    safe(data.participantName))
+    .replace(/\{bookedDate\}/g,         safe(data.bookedDate))
+    .replace(/\{bookedTime\}/g,         safe(data.bookedTime))
+    .replace(/\{participantAddress\}/g, safe(data.participantAddress))
+    .replace(/\{participantPhone\}/g,   safe(data.participantPhone))
+    .replace(/\{teamMemberRow\}/g,      teamRow)
+    .replace(/\{backupRow\}/g,          backupRow)
+    .replace(/\{orbitAppUrl\}/g,        url);
+}
+
 // Substitute placeholders in the HTML template. Every value is HTML-
 // escaped so a participant's name with apostrophes or an address with
 // "&" doesn't break the markup. The `{48hours_bookDate}` token gets
@@ -11365,6 +11686,155 @@ async function sendBookingEmail(assignment) {
     console.warn('[Orbit] Email send threw:', e);
     return { ok: false, error: e.message || String(e) };
   }
+}
+
+// Send the moderator-facing assignment email to each primary moderator
+// on the team. One email per mod, addressed by name, with the OTHER
+// primaries listed as "team member(s)" and any backups as "backup".
+// Fires from notifyParticipant alongside the participant email so the
+// admin gets a one-click "notify everyone" experience.
+//
+// Returns a summary object with counts: { ok, sent, skipped, failed,
+// details: [{ orbitLoginId, ok, error? }, ...] }. The caller can
+// surface per-mod status if any fail.
+//
+// Recipient resolution: prefers centificEmail (work) → personalEmail
+// (fallback). Mods without an email on file are skipped (logged but
+// don't fail the whole batch — admin still wants the other mods to
+// get notified).
+//
+// IMPORTANT: this iterates modSnapshots (primaries only, snapshotted
+// at save time). Backups are NOT emailed by default — they're spares
+// and shouldn't get a "you have a session booked" message that
+// implies a commitment. If admin promotes a backup to primary later
+// via team edit, the next email cycle will include them.
+async function sendModBookingEmails(assignment) {
+  const summary = { ok: true, sent: 0, skipped: 0, failed: 0, details: [] };
+  if (!assignment) return summary;
+  if (!EMAIL_PA_SEND_URL) {
+    console.log('[Orbit] Mod email skipped — EMAIL_PA_SEND_URL not configured.');
+    summary.ok = false;
+    summary.skipped = (assignment.modSnapshots || []).length;
+    return summary;
+  }
+  const mods = assignment.modSnapshots || [];
+  if (mods.length === 0) return summary;
+
+  // Build shared values once — every per-mod email uses the same
+  // participant info + date/time. Only the greeting name and the
+  // team-member line vary across recipients.
+  const pd = assignment.participantData || {};
+  const dateObj = parseYMD(assignment.date);
+  const dateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : assignment.date;
+  const shortDateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : assignment.date;
+  const timeLabel = buildEmailTimeLabel(assignment.startMin, assignment.endMin);
+  const pFirstName = (pd.firstName || '').trim();
+  const pLastName  = (pd.lastName  || '').trim();
+  const participantFullName = [pFirstName, pLastName].filter(Boolean).join(' ') || 'a participant';
+  const addressParts = [pd.address, pd.state, pd.zipCode].filter(Boolean);
+  const address = addressParts.join(', ') || pd.address || '—';
+  const phone = (pd.phone || pd.phoneNumber || '').trim() || '—';
+
+  // Build the list of backup names for this team. Backups live on the
+  // team object, not the assignment's modSnapshots (which is primaries
+  // only). We look up the team and resolve each backup id to a full
+  // name via the moderator roster. If the team is gone (e.g.,
+  // unassigned), backups end up empty — which is fine; the email
+  // simply omits the backup row.
+  const team = adminState.teams.find(t => t.id === assignment.teamId);
+  const backupIds = team ? getTeamBackupIds(team) : [];
+  const backupNames = backupIds.map(id => {
+    if (typeof getModeratorDisplayName === 'function') {
+      return getModeratorDisplayName(id);
+    }
+    return id;
+  }).filter(Boolean);
+  const backupLine = backupNames.length === 0
+    ? ''
+    : backupNames.length === 1
+    ? backupNames[0]
+    : backupNames.length === 2
+    ? backupNames.join(' & ')
+    : backupNames.slice(0, -1).join(', ') + ' & ' + backupNames[backupNames.length - 1];
+
+  // Pre-compute per-mod info: full name, first name (for greeting),
+  // email address. We need this for the team-member line too — each
+  // mod sees the OTHER mods as team members, so we list everyone here
+  // and then exclude the current recipient when assembling each email.
+  const modInfo = mods.map(m => {
+    const mfn = (m.firstName || '').trim();
+    const mln = (m.lastName  || '').trim();
+    const fullName = [mfn, mln].filter(Boolean).join(' ') || m.orbitLoginId || '';
+    const firstNameForGreeting = mfn || (m.orbitLoginId || '').split(/[\.\s@]/)[0] || 'there';
+    const email = (m.centificEmail || m.personalEmail || '').trim();
+    return { orbitLoginId: m.orbitLoginId, fullName, firstNameForGreeting, email };
+  });
+
+  // Send one email per mod, sequentially. We don't parallelize so a
+  // failure of one mod's send doesn't accidentally throttle PA into
+  // 429-ing every other send. PA's email action takes ~1-2s normally
+  // so a serial sequence of 2-4 mods is fast enough.
+  for (let i = 0; i < modInfo.length; i++) {
+    const mi = modInfo[i];
+    if (!mi.email) {
+      console.warn(`[Orbit] Skipping mod email — no email on file for ${mi.orbitLoginId}`);
+      summary.skipped++;
+      summary.details.push({ orbitLoginId: mi.orbitLoginId, ok: false, error: 'No email on file' });
+      continue;
+    }
+    // Team-member line: all OTHER mods, joined naturally. Empty when
+    // this mod is the only primary on the team (the fill helper hides
+    // the row in that case).
+    const others = modInfo.filter((_, idx) => idx !== i).map(o => o.fullName).filter(Boolean);
+    const teamMemberLine = others.length === 0
+      ? ''
+      : others.length === 1
+      ? others[0]
+      : others.length === 2
+      ? others.join(' & ')
+      : others.slice(0, -1).join(', ') + ' & ' + others[others.length - 1];
+
+    const body = fillModEmailTemplate(ORBIT_MOD_EMAIL_TEMPLATE_HTML, {
+      moderatorName:      mi.firstNameForGreeting,
+      participantName:    participantFullName,
+      bookedDate:         dateLabel,
+      bookedTime:         timeLabel,
+      participantAddress: address,
+      participantPhone:   phone,
+      teamMemberLine:     teamMemberLine,
+      backupLine:         backupLine,
+      orbitAppUrl:        ORBIT_APP_URL,
+    });
+    const subject = buildModEmailSubject(pFirstName, shortDateLabel);
+
+    try {
+      const res = await fetch(EMAIL_PA_SEND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: mi.email, subject, body }),
+      });
+      if (res.ok || res.status === 202) {
+        console.log(`[Orbit] Mod email sent to ${mi.email} (${mi.fullName})`);
+        summary.sent++;
+        summary.details.push({ orbitLoginId: mi.orbitLoginId, ok: true });
+      } else {
+        const errText = await res.text().catch(() => '');
+        console.warn(`[Orbit] Mod email to ${mi.email} returned HTTP ${res.status}`, errText);
+        summary.failed++;
+        summary.details.push({ orbitLoginId: mi.orbitLoginId, ok: false, error: `HTTP ${res.status}` });
+      }
+    } catch (e) {
+      console.warn(`[Orbit] Mod email to ${mi.email} threw:`, e);
+      summary.failed++;
+      summary.details.push({ orbitLoginId: mi.orbitLoginId, ok: false, error: e.message || String(e) });
+    }
+  }
+  summary.ok = summary.failed === 0;
+  return summary;
 }
 
 
@@ -15775,6 +16245,33 @@ async function notifyParticipant(asgnId) {
   openViewAssignmentModal(asgnId);
   toast(`📧 Email sent to ${result.to}`);
   renderAssignment();
+
+  // Fire moderator-facing emails in parallel — one per primary on the
+  // team. This is fire-and-forget from the admin's perspective: the
+  // participant notification succeeded (the main thing they were
+  // confirming), so we don't block the UI on the mod sends. Per-mod
+  // results are logged to the console and we surface a single summary
+  // toast at the end.
+  //
+  // Why we don't roll mod-send failure into the participant flow's
+  // success/failure: from the admin's point of view, the participant
+  // got their confirmation — that's the bar. A failing mod email is
+  // recoverable (admin can re-trigger or contact the mod directly),
+  // not catastrophic enough to roll back the Notified status change.
+  sendModBookingEmails(a).then(modResult => {
+    if (modResult.sent > 0) {
+      const parts = [`📧 ${modResult.sent} mod email${modResult.sent === 1 ? '' : 's'} sent`];
+      if (modResult.skipped > 0) parts.push(`${modResult.skipped} skipped (no email)`);
+      if (modResult.failed  > 0) parts.push(`${modResult.failed} failed`);
+      toast(parts.join(' · '));
+    } else if (modResult.failed > 0) {
+      toast(`⚠ Mod emails failed (${modResult.failed}) — check console`);
+    } else if (modResult.skipped > 0) {
+      toast(`No mod emails — ${modResult.skipped} mod${modResult.skipped === 1 ? '' : 's'} missing email on file`);
+    }
+    // No toast for the zero-mods case — the participant got their
+    // email, that was the explicit admin action; quiet success.
+  });
 
   // Push the updated row to Excel so other admins see Notified on refresh.
   // Fire-and-forget; local state is already correct.
