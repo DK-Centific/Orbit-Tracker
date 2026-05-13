@@ -6875,7 +6875,7 @@ const LS_KEY = 'centific_orbit_progress_v1';
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051226';
+const APP_VERSION = '1.2.051326';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -11825,13 +11825,32 @@ async function fetchAssignmentsFromPA() {
     if (!a.id || !remoteIds.has(a.id)) return false;
     const r = remoteById.get(a.id);
     if (!r) return false;
-    // Primary: savedAt timestamp comparison.
+    // PRIMARY: explicit terminal-action lock. Set by cancelAssignment,
+    // completeAssignment, and unassignTeamFromAssignment when admin
+    // takes a terminal action directly. This is an ACTION-based signal
+    // (rather than a timestamp-based one), so it's immune to every
+    // failure mode that breaks the savedAt comparison:
+    //   - PA pagination dropping newer rows from the response
+    //   - Excel auto-converting lastActive column from Text to Date and
+    //     reformatting the timestamps so local/remote no longer compare
+    //   - PA's "Add a row" silently dropping empty fields, losing the
+    //     status='Cancelled' marker on empty-mods rows
+    // None of those affect the lock — it lives entirely in localStorage
+    // until an explicit edit-revive (saveAssignment) clears it. Without
+    // this, terminal-state assignments could silently revert to Booked
+    // on the next refresh.
+    if (a._terminalLock) {
+      console.log('[Orbit] Keeping local terminal-state', a.id, '(status:', a.status, ')— terminal lock active');
+      return true;
+    }
+    // Secondary: savedAt timestamp comparison. Catches the
+    // standard race-condition case where local saved newer than what
+    // PA has returned yet.
     if (a.savedAt && r.savedAt && a.savedAt > r.savedAt) return true;
-    // Secondary: belt against clock skew. If local is in a terminal state
-    // (Completed/Cancelled/Unassigned) and remote shows a NON-terminal
-    // state, the local must be newer in event-time even if wall-clock
-    // says otherwise. Booked → Completed, Booked → Cancelled, and
-    // Booked → Unassigned are all monotonic.
+    // Tertiary belt: terminal-state local vs non-terminal remote, no
+    // lock present. Same defensive idea as the lock but weaker — kept
+    // for backward compatibility with locally-cached terminal states
+    // that pre-date the lock (e.g., from a previous build).
     const terminal = s => s === 'Completed' || s === 'Cancelled' || s === 'Unassigned';
     if (terminal(a.status) && !terminal(r.status)) return true;
     return false;
@@ -15349,6 +15368,16 @@ async function saveAssignment() {
       comment: existing.comment || '',
       savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      // Clear the terminal-action lock when reviving a terminal state.
+      // The lock was set by cancelAssignment / unassignTeamFromAssignment
+      // to prevent background fetches from reverting the terminal state;
+      // an explicit edit-revive is the ONE action that legitimately
+      // clears it. Without this, the revived assignment would be locked
+      // into whatever state it had before the edit, even though admin
+      // just explicitly transitioned it to Booked.
+      _terminalLock: (existing.status === 'Cancelled' || existing.status === 'Unassigned')
+        ? false
+        : existing._terminalLock,
     };
     adminState.assignments[idx] = newAsgn;
   } else {
@@ -15813,6 +15842,12 @@ async function completeAssignment(asgnId, opts) {
     // than the previous Booked/Notified row. Without this, read-back's
     // newest-first sort can't pick this row as the current state.
     savedAt: now,
+    // Terminal-action lock — same protection as cancelAssignment. Once a
+    // mod has marked a session Completed, a background fetch must NEVER
+    // revert that to Booked, even if PA returns stale rows or its
+    // timestamps got reformatted. The lock is only cleared by explicit
+    // edit-revive in saveAssignment.
+    _terminalLock: true,
   };
   saveAssignmentData();
 
@@ -15863,6 +15898,28 @@ async function cancelAssignment(asgnId, comment) {
     // distinguish them. With this bump, the cancelled row is unambiguously
     // newer than the booked row in Excel.
     savedAt: now,
+    // Terminal-action lock: marks this local copy as the product of a
+    // direct admin action that MUST NOT be reverted by a background fetch.
+    // The fetch's merge logic checks this flag and keeps the local copy
+    // regardless of timestamps or remote state.
+    //
+    // The previous protection relied entirely on savedAt being strictly
+    // greater than remote.savedAt — which fails under three real conditions
+    // observed in production:
+    //   1. PA pagination ceiling (256 rows) drops newer Cancelled rows
+    //      from the read response, leaving only stale Booked rows whose
+    //      lastActive is later than expected.
+    //   2. Excel auto-converts the lastActive column from Text to Date,
+    //      rewriting timestamps on write/read so local and remote end up
+    //      with the same value.
+    //   3. PA's "Add a row" action drops empty fields (like empty
+    //      orbitLoginId on marker rows), causing the status='Cancelled'
+    //      to be silently lost from a cancellation-marker row.
+    // Each of these can produce a refresh-after-cancel revert. The lock
+    // bypasses all three by making the cancel decision durable in
+    // localStorage — only an explicit user action (edit-to-revive in
+    // saveAssignment) can clear it.
+    _terminalLock: true,
   };
   saveAssignmentData();
   closeAsgnModal();
@@ -15963,6 +16020,11 @@ async function unassignTeamFromAssignment(asgnId, opts) {
     // than the previous Booked/Notified row. Without this, read-back's
     // newest-first sort can't pick this row as the current state.
     savedAt: now,
+    // Terminal-action lock — same protection as cancelAssignment. The
+    // local Unassigned state must survive any background refresh, even
+    // if PA returns stale Booked rows or its timestamps don't compare
+    // cleanly. Only an explicit edit-revive (saveAssignment) can clear it.
+    _terminalLock: true,
   };
   saveAssignmentData();
 
