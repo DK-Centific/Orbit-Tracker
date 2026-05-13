@@ -3603,6 +3603,22 @@ nav {
   background: rgba(245, 158, 11, 0.14);
   border-color: rgba(245, 158, 11, 0.40);
 }
+/* Hard-block variant — same banner shape, red palette. Used when admin
+   tries to book a participant who's ALREADY on the selected team.
+   That's a true duplicate that no admin would intentionally do; we
+   block the save outright and the banner explains why. */
+.asgn-warning.is-hard-block {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.40);
+}
+[data-theme="dark"] .asgn-warning.is-hard-block {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+.asgn-warning.is-hard-block .asgn-warning-icon { color: #dc2626; }
+.asgn-warning.is-hard-block .asgn-warning-title { color: #dc2626; }
+[data-theme="dark"] .asgn-warning.is-hard-block .asgn-warning-icon { color: #f87171; }
+[data-theme="dark"] .asgn-warning.is-hard-block .asgn-warning-title { color: #f87171; }
 .asgn-warning-icon {
   flex-shrink: 0;
   color: #d97706;
@@ -3818,6 +3834,272 @@ nav {
 }
 .cal-list-date.today {
   color: var(--accent-ink);
+}
+/* ============================================================
+   CALENDAR — STAT TILES
+   ============================================================
+   Three count pills (Booked / Completed / Available) that live just
+   above the calendar grid and dynamically reflect the current view's
+   scope: day, week, or month. Numbers recompute on every view change
+   or navigation step, so admin always sees the right scope. */
+.cal-stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+}
+.cal-stat-tile {
+  padding: 10px 14px;
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  display: flex; flex-direction: column;
+  gap: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.cal-stat-tile::before {
+  /* Soft accent strip along the left edge — color-codes the tile so
+     admin can scan by category (blue = booked pipeline, purple =
+     throughput, green = capacity) without reading the labels. */
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--text3);
+}
+.cal-stat-tile.cal-stat-booked::before    { background: rgb(59, 130, 246); }
+.cal-stat-tile.cal-stat-completed::before { background: rgb(168, 85, 247); }
+.cal-stat-tile.cal-stat-available::before { background: rgb(34, 197, 94); }
+.cal-stat-tile-num {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.cal-stat-tile-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+@media (max-width: 720px) {
+  .cal-stat-tiles { gap: 6px; padding: 8px 10px; }
+  .cal-stat-tile { padding: 8px 10px 8px 14px; }
+  .cal-stat-tile-num { font-size: 18px; }
+  .cal-stat-tile-label { font-size: 10px; }
+}
+   ============================================================
+   A traditional 7-column month grid. Each cell shows the date number
+   in the top-left and colored dots representing each booking that day.
+   Tap an empty cell to create a new booking on that date; tap a cell
+   with bookings to drill into the Day view for detail. */
+.month-view {
+  display: flex; flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.month-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+.month-dow {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.month-dow.is-weekend { color: var(--text3); opacity: 0.7; }
+.month-grid {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(80px, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+.month-cell {
+  background: var(--bg);
+  padding: 6px 8px;
+  display: flex; flex-direction: column;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+  min-height: 0;
+  position: relative;
+}
+.month-cell:hover { background: var(--bg2); }
+.month-cell:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.month-cell.other-month {
+  background: var(--bg2);
+  opacity: 0.45;
+}
+.month-cell.other-month:hover { opacity: 0.75; }
+.month-cell.is-weekend { background: var(--bg2); }
+[data-theme="light"] .month-cell.is-weekend { background: rgba(0,0,0,0.02); }
+.month-cell.today {
+  background: var(--accent-soft);
+}
+.month-cell.today:hover { background: var(--accent-soft); }
+.month-cell.today .month-cell-date-btn {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.month-cell.has-bookings .month-cell-date-btn {
+  font-weight: 600;
+}
+/* Date number button — replaces the old static .month-cell-date div.
+   Acts as a self-contained jump-to-day affordance so admin can pick
+   any visible date in the month view and immediately switch to Day
+   view for it. The button has a hover/focus state to make the
+   interaction discoverable; the rest of the cell still handles
+   create-booking / drill-into-day actions via the outer click. */
+.month-cell-date-btn {
+  align-self: flex-start;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 5px;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  margin-bottom: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+.month-cell-date-btn:hover {
+  background: var(--bg4);
+  color: var(--accent-ink);
+}
+.month-cell-date-btn:focus-visible {
+  outline: none;
+  background: var(--bg4);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* Week-jump pill that appears on cell hover. Lets admin pivot from
+   month view to week view for the row their pointer is on, without
+   leaving the calendar context. Hidden by default to keep cells
+   clean; revealed by .month-cell:hover and :focus-within so keyboard
+   users with focus inside the cell also see it. */
+.month-cell-week-jump {
+  position: absolute;
+  top: 4px; right: 4px;
+  font-family: var(--font);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 0.5px solid rgba(0, 240, 255, 0.4);
+  border-radius: 99px;
+  padding: 2px 7px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, background 0.12s;
+  z-index: 2;
+}
+.month-cell:hover .month-cell-week-jump,
+.month-cell:focus-within .month-cell-week-jump {
+  opacity: 1;
+  pointer-events: auto;
+}
+.month-cell-week-jump:hover {
+  background: var(--accent);
+  color: #001114;
+}
+.month-cell-week-jump:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: #001114;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.month-cell-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-content: flex-start;
+}
+/* Small hint banner above the month grid — explains the date-number
+   and Week button affordances so admin discovers them without trial
+   and error. */
+.month-jump-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--bg3);
+  border-bottom: 0.5px solid var(--border);
+  letter-spacing: -0.005em;
+}
+.month-jump-hint svg {
+  color: var(--accent-ink);
+  flex-shrink: 0;
+}
+.month-jump-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.month-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.month-dot.status-booked    { background: rgb(59, 130, 246); }     /* blue */
+.month-dot.status-notified  { background: rgb(34, 197, 94); }      /* green */
+.month-dot.status-completed { background: rgb(168, 85, 247); }     /* purple */
+.month-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
+.month-dot-more {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--bg4);
+  padding: 0 5px;
+  border-radius: 99px;
+  line-height: 14px;
+  height: 14px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.month-legend {
+  display: flex;
+  gap: 16px;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.month-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+}
+@media (max-width: 720px) {
+  .month-grid { grid-auto-rows: minmax(60px, 1fr); }
+  .month-cell { padding: 4px 5px; }
+  .month-cell-date-btn { font-size: 11.5px; padding: 1px 4px; }
+  .month-cell-week-jump { font-size: 8.5px; padding: 1px 5px; top: 2px; right: 2px; }
+  .month-dot { width: 6px; height: 6px; }
 }
 .cal-list-items {
   display: flex; flex-direction: column; gap: 6px;
@@ -8767,7 +9049,32 @@ function escapeHTML(s) {
    ADMIN APP
    ===================================================================== */
 
-const ADMIN_USERNAME = 'Admin-orbit';
+// Admin login is allowed for any username in this list (case-insensitive).
+// The legacy single-username form is kept as ADMIN_USERNAME (= the first
+// entry) for any code outside the auth path that needs a "default" admin
+// label; everywhere else, prefer isAdminUsername() so all listed admins
+// authenticate correctly.
+//
+// To add a new admin: append to ADMIN_USERNAMES. No other code changes
+// needed — every check goes through isAdminUsername. The username the
+// admin typed at login is preserved on state.username and displayed in
+// the top-nav, so each admin sees their own identity.
+const ADMIN_USERNAMES = ['Admin-orbit', 'Ritu-Orbit', 'John-Orbit'];
+const ADMIN_USERNAME = ADMIN_USERNAMES[0];  // legacy alias, default label
+function isAdminUsername(name) {
+  if (!name) return false;
+  const lower = String(name).toLowerCase();
+  return ADMIN_USERNAMES.some(u => u.toLowerCase() === lower);
+}
+// Resolve the canonical-case version of an admin username from the
+// list (so "ritu-orbit" types matches "Ritu-Orbit" in the display).
+// Falls back to the entered string when no match — should never happen
+// since this is only called after isAdminUsername() returns true.
+function canonicalAdminUsername(name) {
+  if (!name) return name;
+  const lower = String(name).toLowerCase();
+  return ADMIN_USERNAMES.find(u => u.toLowerCase() === lower) || name;
+}
 const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
 
@@ -9886,6 +10193,19 @@ function setupDonutHover(completed, remaining, total) {
 
 function renderAdminTabBody() {
   const body = document.getElementById('adminTabBody');
+  // Clean up the Assignment-tab polling timer when admin navigates AWAY
+  // from the Assignment tab. The timer was started by renderAssignment
+  // to keep cross-admin data fresh while admin's viewing the calendar
+  // — but once they switch to another tab, the polling becomes useless
+  // network traffic and (more importantly) a re-render on poll completion
+  // would clobber the new tab's content with stale Assignment markup.
+  // Resetting to null also ensures the timer is RECREATED next time
+  // admin returns to the Assignment tab, rather than reusing a stale
+  // closure from a previous mount.
+  if (adminState.tab !== 'assignment' && adminState._asgnPollTimer) {
+    clearInterval(adminState._asgnPollTimer);
+    adminState._asgnPollTimer = null;
+  }
   if (adminState.tab === 'overview') {
     renderOverview(body);
     return;
@@ -9969,7 +10289,16 @@ async function loadModerators(force = false) {
     adminState.moderators = [];
   } finally {
     adminState.modLoading = false;
-    if (adminState.subtab === 'assignment') {
+    // Re-render the right surface based on where admin is. After my
+    // earlier change that promoted Assignment from a sub-tab to a
+    // top-level tab, this branch was still checking the OLD location
+    // (subtab === 'assignment'). That meant when admin was on the
+    // Assignment tab and mods finished loading, the function would
+    // call renderModerators() — silently NOT updating the Assignment
+    // view, leaving stale data on screen. Two checks now: the new
+    // top-level location and the legacy sub-tab name (in case any
+    // old build still has it cached on the runtime adminState).
+    if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
       renderAssignment();
     } else {
       renderModerators();
@@ -10408,7 +10737,10 @@ async function loadParticipants(force = false) {
     adminState.participants = [];
   } finally {
     adminState.partLoading = false;
-    if (adminState.subtab === 'assignment') {
+    // Same as loadModerators above: route the post-load render to the
+    // Assignment tab when admin is viewing it. Was checking the old
+    // sub-tab location and missing top-level Assignment tab views.
+    if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
       renderAssignment();
     } else {
       renderParticipants();
@@ -12924,6 +13256,71 @@ async function fetchAssignmentsFromPA() {
   }
   mergedAssignments = [...asgnDedup.values()];
 
+  // ===================================================================
+  // FIELD-LEVEL REPAIR — backfill missing values from local cache.
+  // ===================================================================
+  // After the merge picks the winning row per id, some fields on the
+  // remote-reconstructed row can be MISSING even though the local copy
+  // has them correct. The most common cause: the user's Excel
+  // Assignment table is missing one of the newer columns (teamId,
+  // participantOrbitId, modSnapshots), so PA returns rows with those
+  // fields as undefined/null. The reconstruction at line 12872 coerces
+  // missing teamId to `null`.
+  //
+  // Symptom: a freshly-saved booking briefly shows on the calendar
+  // (from the local push), then DISAPPEARS a few seconds later when
+  // the auto-fetch returns the same row with teamId=null. The
+  // calendar's per-team filter (`a.teamId === team.id`) fails for
+  // null teamId, so the booking is data-present but visually
+  // orphaned.
+  //
+  // Fix: for every merged row, look up the local copy by id. For each
+  // field that the merged row is missing/null/empty BUT local has,
+  // copy the local value forward. This preserves the booking's
+  // ability to render even when the remote reconstruction was
+  // degraded by a partial Excel schema.
+  //
+  // We only patch DATA fields, not metadata flags like _excelSynced
+  // or _terminalLock — those are managed by their own semantics.
+  const localById = new Map((local.assignments || []).map(a => [a.id, a]));
+  let backfilledCount = 0;
+  mergedAssignments = mergedAssignments.map(r => {
+    const l = localById.get(r.id);
+    if (!l) return r;
+    // Helper: is this field "missing"? null, undefined, '' all count.
+    // Note: 0 and false do NOT count as missing — preserve them.
+    const missing = v => v == null || v === '';
+    const patches = {};
+    if (missing(r.teamId)            && !missing(l.teamId))            patches.teamId = l.teamId;
+    if (missing(r.teamName)          && !missing(l.teamName))          patches.teamName = l.teamName;
+    if (missing(r.participantOrbitId) && !missing(l.participantOrbitId)) patches.participantOrbitId = l.participantOrbitId;
+    // modSnapshots: empty array on remote (no mods could be reconstructed
+    // because of missing orbit_login_id or empty marker rows), local
+    // likely has the snapshot from when the booking was saved.
+    if ((!Array.isArray(r.modSnapshots) || r.modSnapshots.length === 0) && Array.isArray(l.modSnapshots) && l.modSnapshots.length > 0) {
+      patches.modSnapshots = l.modSnapshots;
+    }
+    // participantData: remote rebuilds from r.assignedTo string split,
+    // which may be less rich than what we saved (no email/phone/address
+    // if those columns are missing). Prefer local participantData when
+    // it has more fields populated than remote.
+    if (l.participantData && r.participantData) {
+      const localKeys = Object.keys(l.participantData).filter(k => !missing(l.participantData[k])).length;
+      const remoteKeys = Object.keys(r.participantData).filter(k => !missing(r.participantData[k])).length;
+      if (localKeys > remoteKeys) patches.participantData = l.participantData;
+    } else if (l.participantData && !r.participantData) {
+      patches.participantData = l.participantData;
+    }
+    if (Object.keys(patches).length > 0) {
+      backfilledCount++;
+      return { ...r, ...patches };
+    }
+    return r;
+  });
+  if (backfilledCount > 0) {
+    console.log(`[Orbit] Backfilled ${backfilledCount} merged assignment${backfilledCount === 1 ? '' : 's'} from local cache (remote was missing teamId, participant data, or mod snapshots — usually means Excel is missing one of the newer columns)`);
+  }
+
   // For teams: merge so locally-created teams not yet reflected in any
   // assignment row still appear. Local team data may include backups
   // which the remote can't reconstruct, so prefer local backup info when
@@ -13429,6 +13826,46 @@ function renderAssignment() {
     adminState.teams = stored.teams;
     adminState.assignments = stored.assignments;
     adminState._asgnLoaded = true;
+  }
+
+  // Cross-admin freshness — pull assignments/teams from Excel every time
+  // admin opens the Assignment tab AND every 60 seconds while they stay
+  // here. Without this, an admin who navigates to the tab and stays for
+  // a while never sees bookings other admins created during that
+  // session — the "different admins see different teams/bookings" bug.
+  //
+  // The fetch function itself handles updating adminState AND triggering
+  // a re-render (via renderAdmin) — so we don't need a .then handler to
+  // re-render ourselves; doing so would risk double-rendering.
+  //
+  // Throttling: 5s window prevents re-render storms during search-typing
+  // from queueing redundant fetches. Search keystrokes re-render the
+  // teams panel only, but the panel calls renderAssignment indirectly
+  // via tab switches, so the throttle protects the network from search
+  // amplification.
+  const now = Date.now();
+  if (typeof fetchAssignmentsFromPA === 'function') {
+    if (!adminState._lastAsgnFetchTs || now - adminState._lastAsgnFetchTs > 5000) {
+      adminState._lastAsgnFetchTs = now;
+      // Fire-and-forget — internal renderAdmin will paint when done.
+      fetchAssignmentsFromPA().catch(() => {
+        // Failure already logged inside fetchAssignmentsFromPA; we keep
+        // showing the cached state, which is the safest fallback.
+      });
+    }
+  }
+  // 60-second polling timer. Only fires while admin is actually on the
+  // Assignment tab — leaving the tab clears the timer via the cleanup
+  // hook in renderAdminTabBody. The timer also bumps the throttle ts
+  // so an immediate manual Refresh click right after a poll fire
+  // doesn't get suppressed.
+  if (!adminState._asgnPollTimer) {
+    adminState._asgnPollTimer = setInterval(() => {
+      if (adminState.tab !== 'assignment') return;
+      if (typeof fetchAssignmentsFromPA !== 'function') return;
+      adminState._lastAsgnFetchTs = Date.now();
+      fetchAssignmentsFromPA().catch(() => {});
+    }, 60 * 1000);
   }
 
   ensureCalAnchor();
@@ -14197,6 +14634,9 @@ function renderCalendarPanelHTML() {
 
   // List view has its own renderer
   if (view === 'list') return renderCalendarListHTML();
+  // Month view also has its own renderer — different layout (7×5/6 grid
+  // of date cells rather than the team×day matrix used for day/week).
+  if (view === 'month') return renderCalendarMonthHTML();
 
   const days = view === 'week'
     ? Array.from({length: 7}, (_, i) => addDays(startOfWeek(anchor), i))
@@ -14229,6 +14669,7 @@ function renderCalendarPanelHTML() {
           <div class="cal-view-toggle">
             <button class="cal-view-btn ${view === 'day' ? 'active' : ''}" data-view="day">Day</button>
             <button class="cal-view-btn ${view === 'week' ? 'active' : ''}" data-view="week">Week</button>
+            <button class="cal-view-btn ${view === 'month' ? 'active' : ''}" data-view="month">Month</button>
             <button class="cal-view-btn ${view === 'list' ? 'active' : ''}" data-view="list">List</button>
           </div>
           <button class="btn btn-ghost" id="scheduleByModBtn" style="font-size: 13px; padding: 7px 12px;" title="Pick a mod first, then schedule a session on one of their available days">
@@ -14263,6 +14704,7 @@ function renderCalendarPanelHTML() {
         </div>
         ${renderTeamLegendHTML()}
       </div>
+      ${renderCalendarStatTilesHTML(view, days)}
       <div class="cal-grid-scroll">
         ${gridHTML}
       </div>
@@ -14530,6 +14972,211 @@ function renderTeamGridHTML(days) {
     <div class="tg-grid ${view === 'day' ? 'day-view' : ''}" style="--tg-cols: ${days.length};">
       <div class="tg-grid-header">${headersHTML}</div>
       <div class="tg-grid-body">${rowsHTML}</div>
+    </div>
+  `;
+}
+
+// Scope-aware stat tiles. Renders a row of count pills (Booked, Completed,
+// Available days) that are dynamically scoped to whatever date range
+// the calendar is currently showing — day, week, or month. The "days"
+// array passed in defines the scope: 1 day for day view, 7 for week,
+// 35–42 for month. List view skips this (its own header already shows
+// upcoming/past counts).
+//
+// Why three tiles instead of more:
+//   - BOOKED captures the workload pipeline — what's coming up in this
+//     scope. Includes Notified (they've been emailed but the session
+//     hasn't happened yet).
+//   - COMPLETED captures throughput — what already finished in this
+//     scope. Lets admin see velocity at a glance.
+//   - AVAILABLE captures opportunity — how many days have AT LEAST ONE
+//     team fully available so admin can spot fillable slots without
+//     scanning the grid. Always 0 in day view if no team has all primaries
+//     available; admin sees that number and immediately knows whether
+//     to look elsewhere.
+function renderCalendarStatTilesHTML(view, days) {
+  if (!days || days.length === 0) return '';
+  const scopeStart = ymd(days[0]);
+  const scopeEnd   = ymd(days[days.length - 1]);
+  // Filter assignments to the current scope.
+  const inScope = (adminState.assignments || []).filter(a => {
+    if (!a || !a.date) return false;
+    return a.date >= scopeStart && a.date <= scopeEnd;
+  });
+  const bookedCount    = inScope.filter(a => a.status === 'Booked' || a.status === 'Notified').length;
+  const completedCount = inScope.filter(a => a.status === 'Completed').length;
+  // Available — semantics depend on view:
+  //   - day view:   how many teams have every primary available TODAY
+  //                 (admin wants to know "how many bookable teams do I
+  //                 have right now?")
+  //   - week/month: how many DAYS in scope have at least one team
+  //                 fully available (admin wants to spot fillable
+  //                 days). For multi-day scopes, counting available
+  //                 teams per day would over-count and lose the day
+  //                 dimension that matters here.
+  let availableCount = 0;
+  const teams = adminState.teams || [];
+  if (teams.length > 0 && typeof getTeamAvailabilityForDate === 'function') {
+    if (view === 'day') {
+      const ds = ymd(days[0]);
+      availableCount = teams.filter(t => {
+        const av = getTeamAvailabilityForDate(t, ds);
+        return av.total > 0 && av.yes === av.total;
+      }).length;
+    } else {
+      for (const d of days) {
+        const ds = ymd(d);
+        const someTeamReady = teams.some(t => {
+          const av = getTeamAvailabilityForDate(t, ds);
+          return av.total > 0 && av.yes === av.total;
+        });
+        if (someTeamReady) availableCount++;
+      }
+    }
+  }
+  // Scope label — picks an appropriate phrase based on the view so
+  // admin can read the tile at a glance ("this week", "this day",
+  // "this month") without parsing the number.
+  let scopeLabel;
+  if (view === 'day')        scopeLabel = 'today';
+  else if (view === 'week')  scopeLabel = 'this week';
+  else if (view === 'month') scopeLabel = 'this month';
+  else                       scopeLabel = 'in scope';
+  return `
+    <div class="cal-stat-tiles" data-view="${view}">
+      <div class="cal-stat-tile cal-stat-booked">
+        <div class="cal-stat-tile-num">${bookedCount}</div>
+        <div class="cal-stat-tile-label">Booked ${scopeLabel}</div>
+      </div>
+      <div class="cal-stat-tile cal-stat-completed">
+        <div class="cal-stat-tile-num">${completedCount}</div>
+        <div class="cal-stat-tile-label">Completed ${scopeLabel}</div>
+      </div>
+      <div class="cal-stat-tile cal-stat-available">
+        <div class="cal-stat-tile-num">${availableCount}</div>
+        <div class="cal-stat-tile-label">${view === 'day' ? 'Teams fully available' : 'Days with team available'}</div>
+      </div>
+    </div>
+  `;
+}
+
+// MONTH VIEW — full month grid showing booking dots per day across all
+// teams. Layout: 7 columns (Sun–Sat header), 5-6 rows depending on the
+// month's calendar layout. Each cell shows the date number + colored
+// dots for each active assignment that day. Tapping a date jumps to
+// the Day view for that date so admin can drill in to assign or
+// inspect bookings.
+function renderCalendarMonthHTML() {
+  const anchor = parseYMD(adminState.calAnchor) || new Date();
+  const today = ymd(new Date());
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  // Compute the calendar's full grid range. First cell = the Sunday on
+  // or before the 1st of the month; last cell = the Saturday on or
+  // after the last of the month. Typically 35-42 cells (5-6 weeks).
+  const firstOfMonth = new Date(year, month, 1);
+  const lastOfMonth = new Date(year, month + 1, 0);
+  const startDow = firstOfMonth.getDay(); // 0 = Sun
+  const gridStart = new Date(year, month, 1 - startDow);
+  const totalCells = Math.ceil((startDow + lastOfMonth.getDate()) / 7) * 7;
+  // Build a flat list of all cells to render.
+  const cells = [];
+  for (let i = 0; i < totalCells; i++) {
+    const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+    cells.push(d);
+  }
+  // Index assignments by date for O(1) cell lookups.
+  const byDate = new Map();
+  for (const a of (adminState.assignments || [])) {
+    if (!a || !a.date) continue;
+    // Skip Unassigned — the team has been severed from this booking,
+    // it shouldn't appear in the calendar. Cancelled stays visible as
+    // a small dot on its original day so admin can see history.
+    if (a.status === 'Unassigned') continue;
+    const list = byDate.get(a.date) || [];
+    list.push(a);
+    byDate.set(a.date, list);
+  }
+  // Render each cell. Each cell exposes THREE actions:
+  //   - Click the bare date number → jump to Day view for that date
+  //   - Click the "Week" affordance (appears on hover) → jump to Week
+  //     view for that week
+  //   - Click anywhere else → existing behavior (drill into Day view
+  //     when cell has bookings; open new-assignment modal when empty)
+  // The two "jump" actions stop event propagation so the wider cell
+  // click doesn't fire after them.
+  const cellsHTML = cells.map(d => {
+    const ds = ymd(d);
+    const isToday = ds === today;
+    const isCurMonth = d.getMonth() === month;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const all = byDate.get(ds) || [];
+    const booked    = all.filter(a => a.status === 'Booked');
+    const notified  = all.filter(a => a.status === 'Notified');
+    const completed = all.filter(a => a.status === 'Completed');
+    const cancelled = all.filter(a => a.status === 'Cancelled');
+    const activeCount = booked.length + notified.length + completed.length;
+    // Dot list — up to 6 dots, rest overflow into a "+N" pill.
+    const maxDots = 6;
+    const dots = [];
+    [...booked, ...notified, ...completed, ...cancelled].forEach((a) => {
+      if (dots.length >= maxDots) return;
+      const team = adminState.teams.find(t => t.id === a.teamId);
+      const teamName = team ? team.name : 'Unknown team';
+      const statusKey = a.status === 'Cancelled' ? 'cancelled'
+                      : a.status === 'Completed' ? 'completed'
+                      : a.status === 'Notified'  ? 'notified'
+                      : 'booked';
+      const tip = `${teamName} · ${(a.startMin/60|0).toString().padStart(2,'0')}:${(a.startMin%60).toString().padStart(2,'0')} · ${a.status}`;
+      dots.push(`<span class="month-dot status-${statusKey}" title="${escapeHTML(tip)}"></span>`);
+    });
+    const overflow = activeCount + cancelled.length > maxDots
+      ? `<span class="month-dot-more" title="${activeCount + cancelled.length - maxDots} more">+${activeCount + cancelled.length - maxDots}</span>`
+      : '';
+    const action = activeCount > 0 ? 'drill-day' : 'new-asgn';
+    return `
+      <div class="month-cell ${isToday ? 'today' : ''} ${isCurMonth ? '' : 'other-month'} ${isWeekend ? 'is-weekend' : ''} ${activeCount > 0 ? 'has-bookings' : ''}"
+           data-date="${ds}" data-action="${action}"
+           role="button" tabindex="0">
+        <button type="button" class="month-cell-date-btn" data-jump="day" data-date="${ds}"
+                title="View this day"
+                aria-label="View ${d.toLocaleDateString(undefined, {weekday: 'long', month: 'long', day: 'numeric'})} in day view">
+          ${d.getDate()}
+        </button>
+        <button type="button" class="month-cell-week-jump" data-jump="week" data-date="${ds}"
+                title="View this week"
+                aria-label="View week of ${d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} in week view">
+          Week
+        </button>
+        <div class="month-cell-dots">${dots.join('')}${overflow}</div>
+      </div>
+    `;
+  }).join('');
+  // Day-of-week header row (Sun–Sat).
+  const headerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+    .map((name, i) => `<div class="month-dow ${(i === 0 || i === 6) ? 'is-weekend' : ''}">${name}</div>`).join('');
+  // Stat tiles for month view — only count cells in the CURRENT
+  // month so leading/trailing greyed-out adjacent-month dates don't
+  // inflate the totals.
+  const currentMonthCells = cells.filter(d => d.getMonth() === month);
+  return `
+    <div class="month-view">
+      ${renderCalendarStatTilesHTML('month', currentMonthCells)}
+      <div class="month-jump-hint">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 5v3.5l2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Tap the date number to view that <strong>day</strong>, or hover a cell and click <strong>Week</strong> to view its week.</span>
+      </div>
+      <div class="month-dow-row">${headerHTML}</div>
+      <div class="month-grid">${cellsHTML}</div>
+      <div class="month-legend">
+        <span class="month-legend-item"><span class="month-dot status-booked"></span>Booked</span>
+        <span class="month-legend-item"><span class="month-dot status-notified"></span>Notified</span>
+        <span class="month-legend-item"><span class="month-dot status-completed"></span>Completed</span>
+        <span class="month-legend-item"><span class="month-dot status-cancelled"></span>Cancelled</span>
+      </div>
     </div>
   `;
 }
@@ -15126,6 +15773,66 @@ function bindAssignmentEvents() {
     });
   });
 
+  // Month view cell clicks. Empty cells open the assignment modal
+  // pre-filled with the date (no team — admin picks one). Cells with
+  // bookings drill into the Day view for that date so admin sees the
+  // team×bookings layout for that single day.
+  body.querySelectorAll('.month-cell').forEach(cell => {
+    const handler = (e) => {
+      const date = cell.dataset.date;
+      const action = cell.dataset.action;
+      if (!date) return;
+      if (action === 'drill-day') {
+        adminState.calAnchor = date;
+        adminState.calView = 'day';
+        renderAssignment();
+      } else {
+        // Empty cell — open the assignment modal with the date set,
+        // a sensible default time window (9 AM–5 PM), and no team.
+        // Admin picks a team and adjusts the time inside the modal.
+        openAssignmentModal(date, 9 * 60, {
+          startMin: 9 * 60,
+          endMin: 17 * 60,
+        });
+      }
+    };
+    cell.addEventListener('click', handler);
+    cell.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+    });
+  });
+
+  // Day/Week jump buttons inside each month cell. These are nested
+  // INSIDE .month-cell so we have to stop propagation — otherwise the
+  // outer cell's click handler would also fire after the jump,
+  // immediately overriding the view change.
+  body.querySelectorAll('.month-cell-date-btn, .month-cell-week-jump').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const date = btn.dataset.date;
+      const jump = btn.dataset.jump;
+      if (!date || !jump) return;
+      adminState.calAnchor = date;
+      adminState.calView = (jump === 'week') ? 'week' : 'day';
+      renderAssignment();
+    });
+    // Same handling for keyboard activation when the button is focused
+    // via tab — Space/Enter from the inner button shouldn't bubble to
+    // the cell-level keydown handler.
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+        e.preventDefault();
+        const date = btn.dataset.date;
+        const jump = btn.dataset.jump;
+        if (!date || !jump) return;
+        adminState.calAnchor = date;
+        adminState.calView = (jump === 'week') ? 'week' : 'day';
+        renderAssignment();
+      }
+    });
+  });
+
   // Export
   const exportBtn = document.getElementById('exportAsgnBtn');
   if (exportBtn) exportBtn.addEventListener('click', exportAssignments);
@@ -15333,7 +16040,23 @@ function openScheduleByModPicker() {
 
 function navCalendar(delta) {
   const anchor = parseYMD(adminState.calAnchor);
-  const next = adminState.calView === 'week' ? addDays(anchor, 7 * delta) : addDays(anchor, delta);
+  let next;
+  if (adminState.calView === 'month') {
+    // Month view: shift by full months. Day-of-month is preserved
+    // when possible (e.g., from May 15 → Apr 15), clamped to the
+    // target month's last day if it would overflow (May 31 → Jun 30).
+    next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, anchor.getDate());
+    // JS Date constructor naturally handles clamp via overflow, but
+    // we want predictable behavior — if the date overflowed, snap
+    // back to last day of intended month.
+    if (next.getMonth() !== ((anchor.getMonth() + delta) % 12 + 12) % 12) {
+      next = new Date(next.getFullYear(), next.getMonth(), 0);
+    }
+  } else if (adminState.calView === 'week') {
+    next = addDays(anchor, 7 * delta);
+  } else {
+    next = addDays(anchor, delta);
+  }
   adminState.calAnchor = ymd(next);
   renderAssignment();
 }
@@ -16611,7 +17334,19 @@ function renderAssignmentModal() {
         if (!sel) return '';
         const conflicts = findActiveBookingsForParticipant(sel, m.editingId || null);
         if (conflicts.length === 0) return '';
-        const c = conflicts[0];
+        // NEW: distinguish duplicate-on-same-team (HARD BLOCK) from
+        // double-booking-across-teams (SOFT WARNING). The team rule is:
+        // a participant should never be booked on the SAME team more
+        // than once at a time — that's a true duplicate that admin
+        // almost certainly didn't mean. Cross-team bookings are
+        // unusual but sometimes legitimate (e.g., participant
+        // rescheduled after a no-show but the original team's row is
+        // still active waiting for cleanup) — so admin keeps the
+        // override there.
+        const sameTeamConflict = conflicts.find(c => c.teamId === m.teamId);
+        const isHardBlock = !!sameTeamConflict;
+        const displayConflict = sameTeamConflict || conflicts[0];
+        const c = displayConflict;
         const team = adminState.teams.find(t => t.id === c.teamId);
         const teamName = team ? team.name : 'another team';
         const cDateObj = parseYMD(c.date);
@@ -16623,6 +17358,28 @@ function renderAssignmentModal() {
         const others = conflicts.length > 1
           ? ` <span class="asgn-warning-others">+ ${conflicts.length - 1} other booking${conflicts.length - 1 === 1 ? '' : 's'}</span>`
           : '';
+        // Banner styling differs by severity. Hard block uses the
+        // danger variant (red) and tells admin the save is locked;
+        // soft warning uses the existing amber variant.
+        if (isHardBlock) {
+          return `
+            <div class="asgn-warning is-hard-block" id="asgnDoubleBookWarn">
+              <span class="asgn-warning-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M5.5 5.5L10.5 10.5M10.5 5.5L5.5 10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <div class="asgn-warning-text">
+                <div class="asgn-warning-title">Already on this team</div>
+                <div class="asgn-warning-detail">
+                  ${escapeHTML(fullName)} is already booked with <strong>${escapeHTML(teamName)}</strong> on <strong>${escapeHTML(dateLabel)}${timeLabel ? ' · ' + escapeHTML(timeLabel) : ''}</strong>.${others}
+                  <span class="asgn-warning-override">Each participant can be booked once per team. To rebook, cancel the existing booking first or pick a different participant.</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }
         return `
           <div class="asgn-warning" id="asgnDoubleBookWarn">
             <span class="asgn-warning-icon" aria-hidden="true">
@@ -16652,12 +17409,17 @@ function renderAssignmentModal() {
           const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email') || p.email || (p.firstName + p.lastName);
           return id === m.participantOrbitId;
         });
-        const hasConflict = sel && findActiveBookingsForParticipant(sel, m.editingId || null).length > 0;
-        // When conflict exists, the save button is RELABELED to "Save anyway"
-        // and styled amber so the override is visible — but it remains enabled
-        // so admin can proceed without extra clicks. The amber warning banner
-        // in the modal body provides the full "why" detail.
-        if (hasConflict) {
+        const conflicts = sel ? findActiveBookingsForParticipant(sel, m.editingId || null) : [];
+        const hasSameTeamDup = conflicts.some(c => c.teamId === m.teamId);
+        const hasOtherConflict = conflicts.length > 0 && !hasSameTeamDup;
+        // SAME-TEAM duplicate is a HARD BLOCK — save disabled outright,
+        // admin must cancel the existing booking or pick a different
+        // participant. The tooltip on the disabled button tells them why.
+        if (hasSameTeamDup) {
+          return `<button class="btn btn-primary" id="asgnSaveBtn" disabled title="This participant is already booked on this team. Cancel the existing booking first.">${isEdit ? 'Save changes' : 'Save'}</button>`;
+        }
+        // CROSS-TEAM double-booking keeps the existing soft override.
+        if (hasOtherConflict) {
           return `<button class="btn btn-primary btn-warn" id="asgnSaveBtn">Save anyway</button>`;
         }
         return `<button class="btn btn-primary" id="asgnSaveBtn">${isEdit ? 'Save changes' : 'Save'}</button>`;
@@ -16769,6 +17531,36 @@ async function saveAssignment() {
   const isEdit = m.kind === 'editAssignment';
 
   const team = adminState.teams.find(t => t.id === m.teamId);
+
+  // Hard guard: prevent SAME-TEAM duplicates. Belt-and-suspenders with
+  // the UI's disabled Save button — there are paths to saveAssignment
+  // that bypass the button (Enter key, programmatic call), so we re-check
+  // here. The check uses the same findActiveBookingsForParticipant helper
+  // that powers the in-modal warning, so the rule is consistent across
+  // both surfaces.
+  const sel = (adminState.participants ? normalizeParticipants() : []).find(p => {
+    const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email') || p.email || (p.firstName + p.lastName);
+    return id === m.participantOrbitId;
+  });
+  if (sel) {
+    const conflicts = findActiveBookingsForParticipant(sel, m.editingId || null);
+    const sameTeamDup = conflicts.find(c => c.teamId === m.teamId);
+    if (sameTeamDup) {
+      const cDateObj = parseYMD(sameTeamDup.date);
+      const dateLabel = cDateObj
+        ? cDateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+        : sameTeamDup.date;
+      const teamName = team ? team.name : 'this team';
+      const fullName = [sel.firstName, sel.lastName].filter(Boolean).join(' ') || 'This participant';
+      await appAlert({
+        title:   'Duplicate booking blocked',
+        message: `${fullName} is already booked with <strong>${escapeHTML(teamName)}</strong> on <strong>${escapeHTML(dateLabel)}</strong>. Each participant can only be booked once per team — cancel the existing booking first or pick a different participant.`,
+        html:    true,
+        variant: 'warning',
+      });
+      return;
+    }
+  }
 
   // Hard guard: don't allow saving an assignment whose team is unavailable
   // for the requested time window. The dropdown already disables conflicting
@@ -18039,9 +18831,23 @@ function startAdminApp() {
   // Theme
   document.documentElement.setAttribute('data-theme', state.theme || 'dark');
   document.getElementById('themeDesc').textContent = (state.theme === 'light') ? 'Currently light' : 'Currently dark';
-  // User chip
+  // User chip — show whichever admin name is signed in, and derive
+  // initials from that name so Ritu-Orbit shows "RO" and John-Orbit
+  // shows "JO" instead of every admin sharing the static "AD" label.
+  // For backwards compat, the legacy Admin-orbit account still shows
+  // "AD" since that's what it always rendered.
   document.getElementById('adminUserName').textContent = state.username;
-  document.getElementById('adminAvatar').textContent = 'AD';
+  document.getElementById('adminAvatar').textContent = (() => {
+    const name = String(state.username || '');
+    if (name.toLowerCase() === 'admin-orbit') return 'AD';
+    // Take the first letter of each hyphen-separated chunk (capped at 2)
+    // so "Ritu-Orbit" → "RO", "John-Orbit" → "JO", "Some-Other-Admin"
+    // → "SO" (first two parts).
+    const parts = name.split(/[-\s]+/).filter(Boolean);
+    if (parts.length === 0) return 'AD';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  })();
   // Side menu wiring (re-uses the same drawer)
   document.getElementById('logoutSub').textContent = state.username;
   // Render
@@ -18084,6 +18890,26 @@ function bindAdminMenu() {
         if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
         if (typeof fetchAssignmentsFromPA === 'function')  fetchAssignmentsFromPA();
         if (typeof fetchWorklogFromPA === 'function')      fetchWorklogFromPA();
+      } else if (tab === 'assignment') {
+        // Assignment tab — top-level now (was a sub-tab under Moderator Hub
+        // until promoted earlier). MISSING from this dispatcher before this
+        // fix, which meant clicking Refresh while on the Assignment tab
+        // ran ZERO fetches. Admins kept seeing their local cache only and
+        // never picked up changes other admins had committed to Excel —
+        // exactly the "different admins see different teams/bookings" bug.
+        //
+        // The Assignment view depends on all five data sources: moderators
+        // (mod names + emails), participants (the picker), availability (the
+        // calendar's color strip + team-fully-available count), assignments
+        // (the bookings themselves + teams as a side-effect of the merge),
+        // and worklog (completion state). We refresh all of them so the
+        // calendar grid, stat tiles, team list, and search results all
+        // reflect the latest cross-admin state in one click.
+        if (typeof loadModerators === 'function')          loadModerators(true);
+        if (typeof loadParticipants === 'function')        loadParticipants(true);
+        if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
+        if (typeof fetchAssignmentsFromPA === 'function')  fetchAssignmentsFromPA();
+        if (typeof fetchWorklogFromPA === 'function')      fetchWorklogFromPA();
       } else if (tab === 'moderators') {
         // Moderator Hub: refresh based on the active subtab, matching the
         // logic the old in-tab Refresh button used
@@ -18092,11 +18918,6 @@ function bindAdminMenu() {
           if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
         } else if (adminState.subtab === 'participants') {
           if (typeof loadParticipants === 'function') loadParticipants(true);
-        } else if (adminState.subtab === 'assignment') {
-          if (typeof loadModerators === 'function')          loadModerators(true);
-          if (typeof loadParticipants === 'function')        loadParticipants(true);
-          if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
-          if (typeof fetchAssignmentsFromPA === 'function')  fetchAssignmentsFromPA();
         }
         // Worklog is cheap and almost certainly relevant — pull it for any subtab
         if (typeof fetchWorklogFromPA === 'function') fetchWorklogFromPA();
@@ -18501,8 +19322,10 @@ async function fetchWorklogFromPA() {
     const merged = [...rows, ...localOnly];
     saveWorklogCache(merged);
 
-    // Re-render any visible UI that depends on worklog
-    if (typeof renderAssignment === 'function' && adminState.subtab === 'assignment') {
+    // Re-render any visible UI that depends on worklog. Same migration
+    // as the loadModerators/loadParticipants fixes — checks both the new
+    // top-level tab location AND the legacy sub-tab name for safety.
+    if (typeof renderAssignment === 'function' && (adminState.tab === 'assignment' || adminState.subtab === 'assignment')) {
       renderAssignment();
     }
     if (typeof renderMySessionSection === 'function') {
@@ -20889,14 +21712,27 @@ async function doLogin() {
     shakeLoginCard();
     return;
   }
-  // Admin login — case-insensitive check on the magic username
-  if (v.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+  // Admin login — match against the list of allowed admin usernames
+  // (case-insensitive). Multiple admins (Admin-orbit, Ritu-Orbit,
+  // John-Orbit) can sign in; the username they typed is preserved and
+  // rendered in the top nav so each admin sees their own identity.
+  // Same-account behavior for everyone — all admins share the same
+  // localStorage cache because the data layer (Excel) is the source
+  // of truth and admin-specific separation isn't a data concept here.
+  if (isAdminUsername(v)) {
+    const enteredAdminName = canonicalAdminUsername(v);
     const saved = loadState();
-    if (saved && saved.username && saved.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+    if (saved && saved.username && isAdminUsername(saved.username)) {
+      // Restore prior admin session, BUT update the username field to
+      // whoever just signed in. Without this update, "Ritu-Orbit"
+      // signing in after a prior "Admin-orbit" session would still
+      // render as "Admin-orbit" in the header.
       state = saved;
+      state.username = enteredAdminName;
+      saveState();
     } else {
       state = defaultState();
-      state.username = ADMIN_USERNAME;
+      state.username = enteredAdminName;
       saveState();
     }
     startAdminApp();
@@ -20972,7 +21808,12 @@ function init() {
   const saved = loadState();
   if (saved && saved.username) {
     state = saved;
-    if (state.username && state.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+    // Resume into the admin app if the saved username matches ANY of
+    // the allowed admin accounts (case-insensitive). Previously this
+    // only matched the single legacy ADMIN_USERNAME, so Ritu-Orbit
+    // and John-Orbit sessions would fall through to startApp() (the
+    // operator app) on reload — broken for new admin accounts.
+    if (isAdminUsername(state.username)) {
       startAdminApp();
     } else {
       startApp();
