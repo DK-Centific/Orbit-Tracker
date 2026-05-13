@@ -10566,6 +10566,37 @@ const ASSIGNMENT_PA_READ_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49
 const EMAIL_PA_SEND_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e938e13988e64d27aee8d64118c7a7c2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YGownJUTVE8NwUrGC4op6Z2jU2B5jUbzrtBhCYMPe4Y';
 
 // =====================================================================
+// PARTICIPATION AGREEMENT PDF
+//
+// Public URL to the participation agreement PDF that the confirmation
+// email links to via a "View Participation Agreement" CTA button.
+// The recipient clicks the button → PDF opens in their browser. No
+// download required, no checkbox, no signature in the email — the
+// day-of acknowledgment happens in person during the session wrap-up
+// (handled by the moderator app's existing flow).
+//
+// To update the agreement: replace the PDF at the URL below. Every
+// future email sent will link to the new version automatically — no
+// code change required. (If the file ever moves to a different host,
+// update this constant and that's the only edit needed.)
+//
+// Empty string disables the CTA button — the email body still renders
+// cleanly without it. Use this if the agreement isn't ready yet or
+// during a transition between hosts.
+// =====================================================================
+const AGREEMENT_PDF_URL = 'https://digitaltechedge-my.sharepoint.com/:b:/g/personal/david_kang_centific_com/IQCYetfbVh05Rq_GwjHOcJ_1AQueP23ghcK9tHi8cKfb_6M?e=4nxyiY';
+
+// Password gating the PDF. SharePoint prompts the recipient for this
+// after they click the link. We surface it in the email body next to
+// the CTA button so recipients don't have to hunt for it — mobile
+// users especially struggle to switch contexts mid-flow.
+//
+// Set to empty string if the PDF stops requiring a password (e.g.,
+// after migrating to a public host). The email body's password line
+// auto-hides when empty so we don't ship "password: " with no value.
+const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
+
+// =====================================================================
 // TEAM LOG — authoritative cross-admin team storage
 //
 // Teams are stored in a dedicated Excel table (separate from Assignment).
@@ -11054,6 +11085,15 @@ table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !impo
           </td>
         </tr>
 
+        <!-- Agreement PDF CTA. Rendered only when AGREEMENT_PDF_URL is set;
+             fillEmailTemplate strips this whole row otherwise. The button
+             uses a bulletproof table-based layout (mso fallback included)
+             so it renders consistently in Outlook desktop, Gmail web, Apple
+             Mail, and mobile clients. The teal accent matches the app's
+             primary action color (#00B4D8 family) — recipients who've
+             interacted with the app before recognize the visual language. -->
+        {agreementButton}
+
         <!-- Closing + signature -->
         <tr>
           <td align="left" style="padding:28px 40px 8px;">
@@ -11110,13 +11150,122 @@ function buildEmailSubject(participantName, sessionDateLabel) {
 // spots.
 function fillEmailTemplate(template, data) {
   const safe = (s) => escapeHTML(String(s == null ? '' : s));
+  // Build the agreement-PDF CTA only when the URL is configured. When it
+  // isn't, this resolves to an empty string and the row disappears from
+  // the email body without leaving an empty <tr> behind that some clients
+  // would render as a blank visual gap.
+  //
+  // Bulletproof table layout: every padding/color/font is inlined because
+  // email clients (especially Outlook) strip <style> tags, ignore inherited
+  // styles, and treat margin/padding inconsistently between table elements.
+  // The mso conditional block forces button-width-aware rendering in
+  // Outlook desktop where rounded corners and centered layout would
+  // otherwise break.
+  let agreementButtonHTML = '';
+  if (typeof AGREEMENT_PDF_URL !== 'undefined' && AGREEMENT_PDF_URL) {
+    const url = AGREEMENT_PDF_URL;
+    // Password row — rendered only when AGREEMENT_PDF_PASSWORD is set.
+    // SharePoint and most hosted-PDF flows show a password prompt only
+    // AFTER the recipient clicks the link, so the password needs to be
+    // visible in the email body, not just the button tooltip. We render
+    // it as monospace text on a light-grey chip so it's easy to copy
+    // from any email client (Outlook desktop / web, Gmail web / mobile,
+    // Apple Mail). Bold + monospace also makes it scannable at a glance
+    // on small screens where the password might otherwise visually
+    // blur into surrounding body copy.
+    const pw = (typeof AGREEMENT_PDF_PASSWORD !== 'undefined') ? AGREEMENT_PDF_PASSWORD : '';
+    agreementButtonHTML = `
+        <tr>
+          <td align="left" style="padding:24px 40px 0;">
+            <p style="margin:0 0 14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#3A3A40;">
+              <strong style="color:#001528;">Please review the participation agreement before your session.</strong> You'll be asked to acknowledge it in person on the day of your visit.
+            </p>
+            <!--
+              Outer block container for the CTA region. cellpadding=0 and
+              width=100% give us a predictable layout column inside the
+              email's content padding. Inside this we lay out the button
+              row, the helper caption, and the password row each in its
+              OWN row of the same table — guaranteed vertical stacking
+              regardless of which email client renders the message.
+              Previous version used a floated <table align="left"> for
+              just the button, which caused the helper text and password
+              chip to wrap to the right of the button on most clients
+              instead of stacking below. That layout bug is what this
+              restructure fixes.
+
+              Each row uses align="center" on its TD so the inline-block
+              button table and inline-block password chip sit centered
+              within the available width. Body copy above stays
+              left-aligned because that's still reading text, but the
+              call-to-action elements get visual emphasis from the
+              centered placement.
+            -->
+            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="margin:4px 0 0;">
+              <!-- Button row — centered within the block container. -->
+              <tr>
+                <td align="center" style="padding:0;">
+                  <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#00B4D8" style="border-radius:8px; background-color:#00B4D8;">
+                        <!--[if mso]>
+                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:46px;v-text-anchor:middle;width:260px;" arcsize="17%" stroke="f" fillcolor="#00B4D8">
+                          <w:anchorlock/>
+                          <center style="color:#FFFFFF;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:600;">View Participation Agreement</center>
+                        </v:roundrect>
+                        <![endif]-->
+                        <!--[if !mso]><!-->
+                        <a href="${url}" target="_blank" rel="noopener" style="display:inline-block; padding:13px 28px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:8px; letter-spacing:-0.01em; mso-hide:all;">
+                          View Participation Agreement
+                          <span style="display:inline-block; margin-left:6px; vertical-align:-1px;">→</span>
+                        </a>
+                        <!--<![endif]-->
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <!-- Helper caption — centered directly under the button. -->
+              <tr>
+                <td align="center" style="padding:8px 0 0;">
+                  <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:12.5px; line-height:1.5; color:#7A7A80;">
+                    Opens in your browser · PDF
+                  </p>
+                </td>
+              </tr>
+              ${pw ? `
+              <!-- Password callout — its own row, visually distinct so
+                   recipients can't miss it. The chip uses a soft tinted
+                   background and monospace font so the password is easy
+                   to scan and copy on any device. Centered to align
+                   visually with the button above. -->
+              <tr>
+                <td align="center" style="padding:18px 0 0;">
+                  <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center" style="background-color:#F0F7FA; border:1px solid #D6E5EA; border-radius:8px;">
+                    <tr>
+                      <td style="padding:11px 16px;">
+                        <span style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; font-weight:500; color:#3A3A40; letter-spacing:-0.005em;">Password to open:</span>
+                        <span style="display:inline-block; margin-left:8px; padding:3px 10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:14px; font-weight:600; color:#001528; background-color:#FFFFFF; border:1px solid #C8D8DE; border-radius:5px; letter-spacing:0.02em; vertical-align:middle;">${safe(pw)}</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>` : ''}
+            </table>
+          </td>
+        </tr>`;
+  }
   return template
     .replace(/\{participantName\}/g,    safe(data.participantName))
     .replace(/\{bookedDate\}/g,         safe(data.bookedDate))
     .replace(/\{bookedTime\}/g,         safe(data.bookedTime))
     .replace(/\{48hours_bookDate\}/g,   safe(data.sessionDate))
     .replace(/\{participant_address\}/g, safe(data.address))
-    .replace(/\{moderators\}/g,          safe(data.moderators));
+    .replace(/\{moderators\}/g,          safe(data.moderators))
+    // The CTA HTML is already built with proper escaping (URL is admin-
+    // controlled, only inserted into href + same-origin attributes), so
+    // it goes in without re-escaping. Re-escaping would turn the HTML
+    // tags into literal text.
+    .replace(/\{agreementButton\}/g,    agreementButtonHTML);
 }
 
 // Format the time range for the email body. Single-time format when
