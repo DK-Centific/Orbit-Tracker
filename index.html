@@ -1169,6 +1169,454 @@ nav {
    look right. */
 .btn-notify > svg { flex-shrink: 0; }
 .btn-notify > span { white-space: nowrap; }
+
+/* Split button for the notify action — main button (Send/Resend email)
+   sits flush against a small caret button that opens the recipient
+   chooser. Using a flex container so the two buttons read as one unit
+   visually while remaining individually clickable. The shared border-
+   radius treatment makes them feel attached: left-rounded on the main,
+   right-rounded on the caret, square on the touching edges.
+   Border between them is a subtle dim treatment so they don't visually
+   merge into one shape. */
+.asgn-notify-split { display: inline-flex; align-items: stretch; }
+.asgn-notify-split .asgn-notify-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.asgn-notify-split .asgn-notify-caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 10px 9px;        /* narrower than main button — just enough for the caret */
+  border-left: 0.5px solid rgba(0,0,0,0.18);  /* subtle separator on primary variant */
+}
+.asgn-notify-split .asgn-notify-caret.btn-ghost {
+  border-left: 0.5px solid var(--border-strong);  /* match ghost border for visual continuity */
+}
+
+/* Email history list inside the View Assignment modal — compact rows
+   stacked vertically, each showing recipient + status + relative time.
+   Uses muted colors so it sits below the main assignment data without
+   pulling focus, but green/red accents on the status pill draw the eye
+   to any failures. */
+.email-history-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.email-history-row {
+  display: flex; align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg2);
+  border-radius: 8px;
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+}
+.email-history-icon {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.email-history-icon.sent    { background: rgba(34,197,94,0.16);  color: rgb(34,197,94);  }
+.email-history-icon.failed  { background: rgba(239,68,68,0.16);  color: rgb(239,68,68);  }
+.email-history-icon.skipped { background: rgba(245,158,11,0.16); color: rgb(245,158,11); }
+.email-history-body {
+  flex: 1;
+  min-width: 0;
+  display: flex; flex-direction: column;
+  gap: 1px;
+}
+.email-history-recipient {
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.email-history-meta {
+  color: var(--text3);
+  font-size: 11.5px;
+}
+.email-history-meta .email-history-error {
+  color: var(--red);
+  margin-left: 4px;
+}
+
+/* Calendar booking context menu — small popover that appears on
+   right-click (desktop) or long-press (mobile) on any booking element.
+   Positioned absolutely at the cursor/finger location, with viewport-
+   edge clamping handled in JS.
+   Uses the standard card background + border treatment so it feels
+   like a continuation of the existing UI rather than a system-level
+   popup. */
+.booking-ctx-menu {
+  position: fixed;
+  z-index: 800;
+  min-width: 180px;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex; flex-direction: column;
+  /* Subtle fade-in so the menu doesn't pop harshly into existence.
+     Short duration (160ms) keeps the interaction feeling snappy. */
+  animation: ctxMenuIn 0.16s ease-out;
+}
+@keyframes ctxMenuIn {
+  from { opacity: 0; transform: scale(0.96); transform-origin: top left; }
+  to   { opacity: 1; transform: scale(1); }
+}
+.booking-ctx-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+.booking-ctx-item:hover { background: var(--bg3); }
+.booking-ctx-item.danger { color: var(--red); }
+.booking-ctx-item.danger:hover { background: rgba(239,68,68,0.10); }
+.booking-ctx-icon {
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.booking-ctx-item.danger .booking-ctx-icon { color: var(--red); }
+
+/* =========================================================
+   BULK RESEND MODAL
+   ========================================================= */
+.bulk-resend-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -46%) scale(0.97);
+  /* Wider than the standard teammate-sync modal because the booking list
+     can be long and we want room for the row's content (name, team, date,
+     time, status) on one line each. Caps at 720px on huge screens. */
+  width: min(94vw, 680px);
+  max-height: 88vh;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.35);
+  z-index: 701;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.bulk-resend-modal.open {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1; pointer-events: all;
+}
+.bulk-resend-head {
+  padding: 22px 24px 16px;
+  border-bottom: 0.5px solid var(--border);
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.bulk-resend-title {
+  font-size: 18px; font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--text);
+}
+.bulk-resend-sub {
+  font-size: 13px; color: var(--text2);
+  margin-top: 4px; letter-spacing: -0.005em;
+}
+.bulk-resend-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex; flex-direction: column;
+  gap: 18px;
+}
+.bulk-resend-section {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.bulk-resend-section-label {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.bulk-resend-section-label-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+}
+.bulk-resend-select-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px;
+}
+.bulk-resend-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 12.5px; font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  letter-spacing: -0.005em;
+  transition: background 0.12s ease;
+}
+.bulk-resend-link-btn:hover { background: var(--accent-soft); }
+.bulk-resend-divider { color: var(--text3); }
+
+/* Range chips — pill-shaped toggle buttons for preset date ranges.
+   The active chip uses the accent background; inactive chips are
+   ghost-style with subtle borders. */
+.bulk-resend-range-chips {
+  display: flex; flex-wrap: wrap;
+  gap: 6px;
+}
+.bulk-resend-chip {
+  padding: 7px 14px;
+  font-family: var(--font);
+  font-size: 13px;
+  letter-spacing: -0.005em;
+  background: var(--bg2);
+  color: var(--text2);
+  border: 0.5px solid var(--border);
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.bulk-resend-chip:hover { background: var(--bg3); color: var(--text); }
+.bulk-resend-chip.active {
+  background: var(--accent);
+  color: #001114;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Custom date range (only shown when 'Custom…' chip is active) */
+.bulk-resend-custom-range {
+  display: flex; gap: 12px;
+  margin-top: 4px;
+}
+.bulk-resend-date-field {
+  flex: 1;
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.bulk-resend-date-label {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.bulk-resend-date-field input[type="date"] {
+  padding: 8px 12px;
+  font-size: 14px;
+  background: var(--input-bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+.bulk-resend-status-checks,
+.bulk-resend-recipient-chips {
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+
+/* Booking list — scrollable container with rows that resemble the
+   teammate-sync-stat panels but with a checkbox on the left. */
+.bulk-resend-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  /* Caps the list height so admin can still see footer + status when
+     selecting from a huge list. The outer modal body already scrolls,
+     but capping here gives the list its own scroll region for tighter
+     UX when there are dozens of bookings. */
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.bulk-resend-row {
+  display: flex; align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.bulk-resend-row:hover { background: var(--bg3); }
+.bulk-resend-row input[type="checkbox"] { display: none; }
+.bulk-resend-row .checkbox-box { flex-shrink: 0; }
+.bulk-resend-row-body {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  gap: 2px;
+}
+.bulk-resend-row-title {
+  font-size: 14px; font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bulk-resend-row-team {
+  color: var(--text3);
+  font-weight: 400;
+}
+.bulk-resend-row-meta {
+  font-size: 12px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  display: flex; align-items: center; gap: 6px;
+}
+.bulk-resend-row-badge {
+  display: inline-flex; align-items: center;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.bulk-resend-row-badge.booked   { background: var(--green-bg); color: var(--green-text); }
+.bulk-resend-row-badge.notified { background: rgba(0,180,216,0.14); color: #00838f; }
+
+.bulk-resend-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text3);
+  background: var(--bg2);
+  border: 0.5px dashed var(--border);
+  border-radius: 10px;
+}
+
+.bulk-resend-foot {
+  padding: 14px 24px;
+  border-top: 0.5px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.bulk-resend-foot-summary {
+  font-size: 13px;
+  color: var(--text2);
+}
+.bulk-resend-foot-actions {
+  display: flex; gap: 8px;
+}
+
+/* Progress step — large progress bar + three-stat row */
+.bulk-resend-progress-body {
+  align-items: center;
+  text-align: center;
+  padding: 40px 24px;
+  gap: 28px;
+}
+.bulk-resend-progress-bar-wrap {
+  width: 100%;
+  height: 8px;
+  background: var(--bg3);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bulk-resend-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+.bulk-resend-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+}
+.bulk-resend-stat {
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.bulk-resend-stat-num {
+  font-size: 24px; font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  font-family: var(--font-num);
+}
+.bulk-resend-stat-label {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+/* Results step — list of per-booking outcomes */
+.bulk-resend-results-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.bulk-resend-result-row {
+  display: flex; align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+}
+.bulk-resend-result-row.fail {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+.bulk-resend-result-icon {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.bulk-resend-result-row.ok   .bulk-resend-result-icon { background: rgba(34, 197, 94, 0.16); color: rgb(34, 197, 94); }
+.bulk-resend-result-row.fail .bulk-resend-result-icon { background: rgba(239, 68, 68, 0.16); color: rgb(239, 68, 68); }
+.bulk-resend-result-body {
+  flex: 1; min-width: 0;
+}
+.bulk-resend-result-name {
+  font-size: 14px; font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.bulk-resend-result-meta {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 1px;
+  letter-spacing: -0.005em;
+}
+.bulk-resend-result-err {
+  color: var(--red);
+  margin-left: 4px;
+}
+
+/* Mobile — tighter padding, stack the progress stats vertically when
+   the screen is narrow so each stat keeps its full readability. */
+@media (max-width: 540px) {
+  .bulk-resend-modal { width: min(96vw, 100%); border-radius: 18px; }
+  .bulk-resend-head, .bulk-resend-foot { padding-left: 18px; padding-right: 18px; }
+  .bulk-resend-body { padding-left: 18px; padding-right: 18px; }
+  .bulk-resend-progress-stats { grid-template-columns: 1fr; }
+  .bulk-resend-custom-range { flex-direction: column; gap: 10px; }
+}
 .btn-secondary {
   background: var(--bg2); color: var(--text);
   border: 0.5px solid var(--border-strong);
@@ -8195,7 +8643,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051436';
+const APP_VERSION = '1.2.051438';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -11939,6 +12387,26 @@ async function loadParticipants(force = false) {
       return s === 'washington' || s === 'wa';
     });
     console.log(`[Orbit] Participants loaded: ${all.length} from PA → ${adminState.participants.length} after Washington filter (${all.length - adminState.participants.length} non-WA dropped)`);
+    // Now that participants are loaded, retroactively enrich any
+    // assignments that were fetched before. Without this, the first-
+    // load race condition (assignments arrive ~200ms before
+    // participants) leaves assignments with sparse participantData
+    // until the next refresh cycle. Calling enrichment here is a
+    // no-op for already-enriched rows (idempotent) so it's safe to
+    // call unconditionally.
+    if (typeof enrichAssignmentsWithParticipants === 'function'
+        && Array.isArray(adminState.assignments)
+        && adminState.assignments.length > 0) {
+      enrichAssignmentsWithParticipants(adminState.assignments);
+      // Persist the enriched copy so future reloads pick up the
+      // joined data without needing to repeat the participant fetch.
+      try {
+        localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+          teams: adminState.teams || [],
+          assignments: adminState.assignments,
+        }));
+      } catch (e) {}
+    }
   } catch (e) {
     adminState.partError = e.message || String(e);
     adminState.participants = [];
@@ -12559,6 +13027,42 @@ const ASSIGNMENT_PA_READ_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49
 //   5. Paste it between the quotes below in EMAIL_PA_SEND_URL.
 // =====================================================================
 const EMAIL_PA_SEND_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e938e13988e64d27aee8d64118c7a7c2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YGownJUTVE8NwUrGC4op6Z2jU2B5jUbzrtBhCYMPe4Y';
+
+// =====================================================================
+// EMAIL LOG — audit trail for every confirmation email sent
+//
+// Every call to sendBookingEmail or sendModBookingEmails writes a row to
+// the EmailLog Excel table via the WRITE flow below. This gives admins a
+// per-assignment history of WHEN emails were sent, TO WHOM, by WHICH
+// admin, and whether the send SUCCEEDED. Useful for diagnosing "the
+// participant says they never got the confirmation" reports — the log
+// will show whether we tried to send, whether PA accepted it, and at
+// what time.
+//
+// The READ flow returns all rows; the View Assignment modal filters by
+// assignmentId client-side to show that booking's send history.
+//
+// EXCEL TABLE SCHEMA (column name | type — keep ALL columns as Text per
+// the project's Power Automate convention):
+//   emailLogId      — unique row id (set client-side: 'el_' + adminId + '_' + asgnId + '_' + Date.now())
+//   assignmentId    — FK to the Assignments table
+//   recipientType   — 'participant' | 'moderator'
+//   recipientEmail  — the address we tried to send to
+//   recipientName   — display name (participant full name or mod full name)
+//   sentAt          — ISO timestamp
+//   sentBy          — admin orbitLoginId who triggered the send
+//   triggerSource   — 'view_modal' | 'calendar_quick' | 'bulk_resend' | 'initial_booking'
+//   status          — 'sent' | 'failed' | 'skipped'
+//   errorMessage    — empty on success, error text on failure
+//   appVersion      — the APP_VERSION at send time (helps debug version skew)
+//
+// Set these to '' (empty string) until the PA flows are created.
+// When empty: email-log writes silently no-op (warnings to console only),
+// the rest of the app keeps working — emails still send, just without
+// audit history. This matches the WORKLOG_PA_READ_URL deferred pattern.
+// =====================================================================
+const EMAILLOG_PA_WRITE_URL = '';
+const EMAILLOG_PA_READ_URL  = '';
 
 // =====================================================================
 // PARTICIPATION AGREEMENT PDF
@@ -13949,6 +14453,172 @@ async function sendModBookingEmails(assignment) {
 }
 
 
+/* =====================================================================
+   EMAIL LOG — audit trail helpers
+   =====================================================================
+   Three functions:
+     - logEmailSend(entry)       — write one row to EmailLog table
+     - fetchEmailLogRows()       — read all rows from EmailLog table
+     - logEmailSendsBatch(asgn, results, trigger) — convenience wrapper
+       that takes the result of a sendBookingEmail + sendModBookingEmails
+       round and writes one row per recipient (participant + each mod).
+
+   Why fire-and-forget on writes: the email already sent. If the audit
+   write fails (network, quota, missing flow URL), the user has done
+   nothing wrong and shouldn't see an error. The log entry is a nice-
+   to-have; the actual email is the contract. Errors only go to console.
+
+   IDs use the project's standard pattern:
+     el_<adminId>_<asgnId>_<timestamp>
+   This guarantees uniqueness across admins and assignments without
+   needing a uuid library. Slight collision risk if one admin fires
+   multiple sends in the same millisecond — acceptable trade-off.
+*/
+
+function getCurrentAdminId() {
+  // Identify which admin triggered the email. Prefer the canonical
+  // adminId helper if present (it handles the Admin-orbit / Ritu-Orbit /
+  // John-Orbit aliases); otherwise fall back to state.username, which
+  // is whatever they typed at the login screen.
+  if (typeof canonicalAdminUsername === 'function') {
+    const c = canonicalAdminUsername(state.username);
+    if (c) return c;
+  }
+  return state.username || 'unknown';
+}
+
+async function logEmailSend(entry) {
+  // entry shape (all fields optional except assignmentId + recipientType + status):
+  //   {
+  //     assignmentId, recipientType, recipientEmail, recipientName,
+  //     status: 'sent' | 'failed' | 'skipped',
+  //     errorMessage, triggerSource
+  //   }
+  if (!EMAILLOG_PA_WRITE_URL) {
+    // Flow not configured — log to console as fallback so the data
+    // isn't completely lost during development.
+    console.log('[Orbit] EmailLog (no flow):', entry);
+    return { ok: false, skipped: true };
+  }
+  if (!entry || !entry.assignmentId) {
+    console.warn('[Orbit] logEmailSend: missing assignmentId, skipping');
+    return { ok: false, error: 'Missing assignmentId' };
+  }
+  const adminId = getCurrentAdminId();
+  const sentAt  = entry.sentAt || new Date().toISOString();
+  const emailLogId = `el_${adminId}_${entry.assignmentId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  const row = {
+    emailLogId:     emailLogId,
+    assignmentId:   String(entry.assignmentId),
+    recipientType:  String(entry.recipientType || ''),
+    recipientEmail: String(entry.recipientEmail || ''),
+    recipientName:  String(entry.recipientName || ''),
+    sentAt:         sentAt,
+    sentBy:         adminId,
+    triggerSource:  String(entry.triggerSource || 'unknown'),
+    status:         String(entry.status || 'sent'),
+    errorMessage:   String(entry.errorMessage || ''),
+    appVersion:     (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '',
+  };
+
+  try {
+    const res = await fetch(EMAILLOG_PA_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(row),
+    });
+    if (!res.ok && res.status !== 202) {
+      console.warn(`[Orbit] EmailLog write HTTP ${res.status}`);
+      return { ok: false, status: res.status };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn('[Orbit] EmailLog write threw:', e && e.message);
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+// Convenience: take the results from a notify round (participantResult
+// from sendBookingEmail + modResult from sendModBookingEmails) and
+// append one log row per recipient. Fire-and-forget — caller doesn't
+// need to await this. If one write fails the others still go.
+async function logEmailSendsBatch(asgn, participantResult, modResult, triggerSource) {
+  if (!asgn || !asgn.id) return;
+  const writes = [];
+  // Participant entry — always logged (so we have a record even when
+  // the participant had no email on file: status='skipped'). This makes
+  // the history strip honest about what was attempted.
+  if (participantResult) {
+    const pd = asgn.participantData || {};
+    const pName = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || '';
+    writes.push(logEmailSend({
+      assignmentId:   asgn.id,
+      recipientType:  'participant',
+      recipientEmail: pd.email || '',
+      recipientName:  pName,
+      status:         participantResult.ok ? 'sent'
+                    : participantResult.skipped ? 'skipped'
+                    : 'failed',
+      errorMessage:   participantResult.error || '',
+      triggerSource:  triggerSource || 'unknown',
+    }));
+  }
+  // Moderator entries — one per mod. The modResult.details array carries
+  // per-mod outcomes already. We look up the email from modSnapshots so
+  // the log row carries the address that was attempted (not just orbitId).
+  if (modResult && Array.isArray(modResult.details)) {
+    for (const d of modResult.details) {
+      const snap = (asgn.modSnapshots || []).find(s => s.orbitLoginId === d.orbitLoginId) || {};
+      const mEmail = (snap.centificEmail || snap.personalEmail || '').trim();
+      const mName  = [snap.firstName, snap.lastName].filter(Boolean).join(' ').trim()
+                   || d.orbitLoginId || '';
+      writes.push(logEmailSend({
+        assignmentId:   asgn.id,
+        recipientType:  'moderator',
+        recipientEmail: mEmail,
+        recipientName:  mName,
+        status:         d.ok ? 'sent' : (d.skipped ? 'skipped' : 'failed'),
+        errorMessage:   d.error || '',
+        triggerSource:  triggerSource || 'unknown',
+      }));
+    }
+  }
+  // Fire concurrently; ignore individual failures so a single bad row
+  // doesn't prevent the others from logging.
+  try { await Promise.all(writes); } catch (_) {}
+}
+
+// Read all rows from EmailLog. Returns an array (possibly empty). Cached
+// briefly on adminState to avoid re-fetching for every modal open in a
+// tight session, but always refreshed when the View Assignment modal
+// is opened so admins see the latest sends.
+async function fetchEmailLogRows() {
+  if (!EMAILLOG_PA_READ_URL) return [];
+  try {
+    const res = await fetch(EMAILLOG_PA_READ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return [];
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { return []; }
+    // Reuse the existing extractArray helper to peel the standard PA
+    // response envelopes (data, data.value, data.rows, etc).
+    const rows = (typeof extractArray === 'function') ? extractArray(data)
+               : (Array.isArray(data) ? data : (Array.isArray(data.value) ? data.value : []));
+    // Sort newest first — the history strip in the modal renders top-down.
+    rows.sort((a, b) => String(b.sentAt || '').localeCompare(String(a.sentAt || '')));
+    return rows;
+  } catch (e) {
+    console.warn('[Orbit] EmailLog fetch failed:', e && e.message);
+    return [];
+  }
+}
+
+
 // Normalizer for team backup membership. Teams went from `backupId` (single
 // optional id) to `backupIds` (array of up to 2 ids). Old localStorage data
 // and any legacy in-memory team object can still surface a `backupId` —
@@ -14700,6 +15370,31 @@ async function fetchAssignmentsFromPA() {
 
   info.assignmentCount = mergedAssignments.length;
   info.teamCount = mergedTeams.length;
+
+  // Enrich participantData with live participant fields before storing.
+  // The Assignment Excel table doesn't carry the participant's email,
+  // phone, state, or zipCode — only firstName/lastName (parsed from
+  // the `assignedTo` column) and address. So when an assignment comes
+  // back from a fresh PA read, its participantData is sparse, even
+  // though the Participants Excel table has those fields.
+  //
+  // Symptom this fixes: the View Assignment modal showed "No email on
+  // file" for bookings whose participant DID have an email visible in
+  // the Participants tab. The check at modal-open time tests
+  // `a.participantData.email`, which was always empty on cross-device
+  // reads because the remote rebuild never populated it.
+  //
+  // The enrichment pass walks each merged assignment and, when its
+  // participantOrbitId matches a live participant, fills in any
+  // missing fields from the live record without overwriting fields
+  // the assignment already has (so an assignment's address override
+  // doesn't get clobbered by an outdated participants-table address).
+  //
+  // Skipping when adminState.participants is null: participants load
+  // is a separate async fetch; if it hasn't completed yet we'll catch
+  // up on the next assignment fetch, or via the display-time fallback
+  // (enrichAsgnParticipantData() called from openViewAssignmentModal).
+  mergedAssignments = enrichAssignmentsWithParticipants(mergedAssignments);
 
   // Persist the merged result and update adminState
   if (typeof adminState !== 'undefined') {
@@ -15983,6 +16678,14 @@ function renderCalendarPanelHTML() {
             </svg>
             Schedule by mod
           </button>
+          <button class="btn btn-ghost" id="bulkResendBtn" style="font-size: 13px; padding: 7px 12px;" title="Resend confirmation emails for multiple bookings at once">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="4" width="9" height="7" rx="1" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M2.5 4.5l4 3 4-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M11 9l3 3-3 3M14 12H7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Bulk resend
+          </button>
           <button class="btn btn-ghost" id="exportAsgnBtn" style="font-size: 13px; padding: 7px 12px;">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
               <path d="M8 2v8M5 7l3 3 3-3M3 12v1.5h10V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -16557,6 +17260,14 @@ function renderCalendarListHTML() {
               <path d="M3 13c0-2.5 2.2-4 5-4s5 1.5 5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             Schedule by mod
+          </button>
+          <button class="btn btn-ghost" id="bulkResendBtn" style="font-size: 13px; padding: 7px 12px;" title="Resend confirmation emails for multiple bookings at once">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="4" width="9" height="7" rx="1" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M2.5 4.5l4 3 4-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M11 9l3 3-3 3M14 12H7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Bulk resend
           </button>
           <button class="btn btn-ghost" id="exportAsgnBtn" style="font-size: 13px; padding: 7px 12px;">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
@@ -17156,6 +17867,12 @@ function bindAssignmentEvents() {
   // Schedule by mod (Phase 2 — mod-first flow)
   const sbModBtn = document.getElementById('scheduleByModBtn');
   if (sbModBtn) sbModBtn.addEventListener('click', openScheduleByModPicker);
+
+  // Bulk resend — multi-select bookings, choose recipients, fire emails
+  // sequentially. Defined alongside the other toolbar buttons so it's
+  // wired on every calendar render path (team-grid, day, week, month, list).
+  const bulkResendBtn = document.getElementById('bulkResendBtn');
+  if (bulkResendBtn) bulkResendBtn.addEventListener('click', openBulkResendModal);
 
   // Modal overlay close
   const overlay = document.getElementById('asgnModalOverlay');
@@ -19080,6 +19797,13 @@ async function saveAssignment() {
 function openViewAssignmentModal(asgnId) {
   const a = adminState.assignments.find(x => x.id === asgnId);
   if (!a) return;
+  // Display-time fallback: if the assignment fetch ran before the
+  // participants list was loaded, the bulk enrichment in
+  // fetchAssignmentsFromPA would have been a no-op. Run a single-row
+  // enrichment here so the modal always shows the freshest joinable
+  // data. Idempotent — does nothing if fields are already populated.
+  enrichOneAssignmentParticipantData(a);
+
   const team = adminState.teams.find(t => t.id === a.teamId);
   const dateLabel = parseYMD(a.date).toLocaleDateString(undefined, {weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'});
   const partName = a.participantData ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ') : '—';
@@ -19088,7 +19812,12 @@ function openViewAssignmentModal(asgnId) {
   const isNotified = status === 'Notified';
   const isCompleted = status === 'Completed';
   const isUnassigned = status === 'Unassigned';
-  const hasEmail = !!(a.participantData && a.participantData.email);
+  // hasEmail: trim before checking so a stored " " (single space)
+  // doesn't count as a valid email. Some Excel rows have whitespace
+  // padding from manual data entry.
+  const hasEmail = !!(a.participantData
+                   && a.participantData.email
+                   && String(a.participantData.email).trim());
 
   // Status badge — five distinct states with their own color treatments.
   // Booked     = green (active, awaiting notification)
@@ -19238,6 +19967,16 @@ function openViewAssignmentModal(asgnId) {
             }).join('')}
           </div>`;
       })()}
+      <!-- Email history strip — lists every send attempt for this booking.
+           Populated asynchronously after the modal renders (fetchEmailLogRows
+           reads from the cloud). Hidden when no entries exist; shows a compact
+           list when there are entries, with newest first. -->
+      <div class="asgn-field" id="asgnEmailHistoryField" style="display: none;">
+        <label class="asgn-field-label">Email history</label>
+        <div id="asgnEmailHistoryList" style="font-size: 13px; color: var(--text2);">
+          <span style="color: var(--text3);">Loading…</span>
+        </div>
+      </div>
       <div class="asgn-field">
         <label class="asgn-field-label">Saved</label>
         <div style="font-size: 13px; color: var(--text2);">${escapeHTML(new Date(a.savedAt).toLocaleString())}${a.updatedAt && a.updatedAt !== a.savedAt ? ' · updated ' + escapeHTML(new Date(a.updatedAt).toLocaleString()) : ''}</div>
@@ -19247,14 +19986,27 @@ function openViewAssignmentModal(asgnId) {
       ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
       <div style="flex: 1"></div>
       ${(!isImmutableAssignmentStatus(status) && hasEmail) ? `
-        <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify" id="asgnNotifyBtn"
-                title="${isNotified ? 'Send the confirmation email again' : 'Send confirmation email to participant'}">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
-            <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
-            <path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span>${isNotified ? 'Resend email' : 'Send email'}</span>
-        </button>` : ''}
+        <!-- Split button: main action = send (default = both recipients);
+             caret = chooser (lets admin pick participant vs moderators).
+             Wrapped in a flex container so the two buttons sit flush
+             against each other visually like Apple's split buttons. -->
+        <div class="asgn-notify-split">
+          <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify asgn-notify-main" id="asgnNotifyBtn"
+                  title="${isNotified ? 'Send the confirmation email again to participant and moderators' : 'Send confirmation email to participant and moderators'}">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>${isNotified ? 'Resend email' : 'Send email'}</span>
+          </button>
+          <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} asgn-notify-caret" id="asgnNotifyCaretBtn"
+                  aria-label="Choose recipients"
+                  title="Choose which recipients to send to">
+            <svg width="11" height="11" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+              <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>` : ''}
       ${(!isImmutableAssignmentStatus(status) && !hasEmail) ? `
         <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
       ${isUnassigned ? `<button class="btn btn-primary" id="asgnReassignBtn" title="Pick a new team for this slot — status returns to Booked">Reassign team</button>` : ''}
@@ -19273,8 +20025,30 @@ function openViewAssignmentModal(asgnId) {
     });
     const notifyBtn = document.getElementById('asgnNotifyBtn');
     if (notifyBtn) {
-      notifyBtn.addEventListener('click', () => notifyParticipant(asgnId));
+      // Main button — fires the default action (both recipients). This is
+      // the one-click happy path that hasn't changed from previous builds.
+      notifyBtn.addEventListener('click', () => notifyParticipant(asgnId, {
+        recipients: { participant: true, moderators: true },
+        triggerSource: 'view_modal',
+      }));
     }
+    // Caret button — opens the recipient chooser. Lets admin pick which
+    // recipients to (re)send to. Useful when the participant got the email
+    // but a moderator didn't (or vice versa) — sends only what's needed
+    // rather than spamming everyone twice.
+    const notifyCaretBtn = document.getElementById('asgnNotifyCaretBtn');
+    if (notifyCaretBtn) {
+      notifyCaretBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openRecipientChooserModal(asgnId);
+      });
+    }
+  }
+  // Email history — fetch and render asynchronously after modal opens.
+  // Fire-and-forget; failures hide the section silently. Skipping the
+  // fetch when EMAILLOG_PA_READ_URL is empty saves a wasted network call.
+  if (typeof renderEmailHistoryInAsgnModal === 'function') {
+    renderEmailHistoryInAsgnModal(asgnId);
   }
   // Reassign-team button only appears for Unassigned status. It opens the
   // edit modal pre-populated with the existing slot, allowing admin to
@@ -19340,6 +20114,94 @@ function openCancelAssignmentModal(asgnId) {
   }, 100);
 }
 
+/* =====================================================================
+   PARTICIPANT DATA ENRICHMENT
+   =====================================================================
+   The Excel Assignment table only stores a subset of participant info
+   (firstName/lastName via `assignedTo`, address, phonenumber). When
+   assignments come back from a cross-admin PA read, the rebuilt
+   participantData is missing email, state, zipCode — even though the
+   Participants Excel table HAS those fields.
+
+   These helpers join assignments against the live participants list at
+   read time. The enrichment is non-destructive: an assignment's stored
+   fields always win over the live lookup, so per-booking overrides
+   (e.g., an updated address that hasn't been pushed back to the
+   participants sheet yet) aren't clobbered.
+
+   Two entry points:
+     1. enrichAssignmentsWithParticipants(arr)  — bulk pass at fetch time
+     2. enrichOneAssignmentParticipantData(a)   — single-row at display time
+*/
+
+function getLiveParticipantByAssignmentId(participantOrbitId) {
+  // Find the live participant record whose stable ID matches the
+  // assignment's stored participantOrbitId. The picker used the SAME
+  // priority cascade at booking time, so this is symmetric.
+  if (!participantOrbitId) return null;
+  if (!adminState.participants) return null;
+  const normalized = (typeof normalizeParticipants === 'function')
+    ? normalizeParticipants()
+    : [];
+  for (const p of normalized) {
+    const id = pickField(p.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email')
+            || p.email
+            || (p.firstName + p.lastName);
+    if (id === participantOrbitId) return p;
+  }
+  return null;
+}
+
+function enrichOneAssignmentParticipantData(a) {
+  // Mutates assignment in place to fill missing participantData fields.
+  // Returns the same assignment for chaining. Safe to call multiple
+  // times on the same row.
+  if (!a) return a;
+  if (!a.participantOrbitId) return a;        // no link to participant record
+  const live = getLiveParticipantByAssignmentId(a.participantOrbitId);
+  if (!live) return a;                         // participant not in live list
+  // Build a baseline participantData if none exists
+  if (!a.participantData) a.participantData = {};
+  const pd = a.participantData;
+  // Fill ONLY missing fields — don't overwrite existing values.
+  // hasValue treats null/undefined/empty/whitespace as missing.
+  const has = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+  if (!has(pd.firstName) && has(live.firstName)) pd.firstName = live.firstName;
+  if (!has(pd.lastName)  && has(live.lastName))  pd.lastName  = live.lastName;
+  if (!has(pd.email)     && has(live.email))     pd.email     = live.email;
+  if (!has(pd.phone)     && has(live.phone))     pd.phone     = live.phone;
+  if (!has(pd.address)   && has(live.address))   pd.address   = live.address;
+  if (!has(pd.state)     && has(live.state))     pd.state     = live.state;
+  if (!has(pd.zipCode)   && has(live.zipCode))   pd.zipCode   = live.zipCode;
+  return a;
+}
+
+function enrichAssignmentsWithParticipants(arr) {
+  // Bulk version called from fetchAssignmentsFromPA after merge. Skips
+  // silently when participants haven't been loaded yet — the per-row
+  // helper enrichOneAssignmentParticipantData covers the display-time
+  // catch-up case for those.
+  if (!Array.isArray(arr)) return arr;
+  if (!adminState.participants) return arr;
+  let enrichedCount = 0;
+  for (const a of arr) {
+    const before = a.participantData ? Object.keys(a.participantData).filter(k => {
+      const v = a.participantData[k];
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    }).length : 0;
+    enrichOneAssignmentParticipantData(a);
+    const after = a.participantData ? Object.keys(a.participantData).filter(k => {
+      const v = a.participantData[k];
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    }).length : 0;
+    if (after > before) enrichedCount++;
+  }
+  if (enrichedCount > 0) {
+    console.log(`[Orbit] Enriched participantData on ${enrichedCount} assignment${enrichedCount === 1 ? '' : 's'} from live participants list`);
+  }
+  return arr;
+}
+
 // Manually trigger the booking-confirmation email and flip the assignment's
 // status to 'Notified'. Triggered from the View Assignment modal's
 // "Send confirmation email" button. Two-phase:
@@ -19348,7 +20210,18 @@ function openCancelAssignmentModal(asgnId) {
 // The status bump is what makes Notified visible to other admins via the
 // existing Assignment Read flow (the row with the newer lastActive wins
 // on next refresh, exactly the same way Cancelled does).
-async function notifyParticipant(asgnId) {
+async function notifyParticipant(asgnId, opts) {
+  // opts: {
+  //   recipients: { participant: bool, moderators: bool }  — default both true
+  //   triggerSource: string  — 'view_modal' | 'calendar_quick' | 'bulk_resend' | 'initial_booking'
+  // }
+  // Backward-compatible: callers passing no opts get the original behavior
+  // (both recipients, triggerSource='view_modal'). New callers (chooser
+  // modal, calendar context menu, bulk resend) supply explicit values.
+  opts = opts || {};
+  const recipients = opts.recipients || { participant: true, moderators: true };
+  const triggerSource = opts.triggerSource || 'view_modal';
+
   const idx = adminState.assignments.findIndex(x => x.id === asgnId);
   if (idx === -1) return;
   const a = adminState.assignments[idx];
@@ -19384,14 +20257,24 @@ async function notifyParticipant(asgnId) {
   // Build the two send promises. We don't await them yet — both kick
   // off concurrently so the total wall-clock time is max(p, m) instead
   // of p + m.
-  const participantPromise = participantHasEmail
-    ? sendBookingEmail(a)
-    : Promise.resolve({
-        ok: false,
-        skipped: true,
-        error: 'Participant has no email on file',
-      });
-  const modPromise = sendModBookingEmails(a);
+  //
+  // Recipient filtering: when opts.recipients.participant is false, the
+  // participant send is bypassed entirely (resolves to a 'skipped'
+  // result with a clear reason). Same for moderators. This lets the
+  // chooser modal say "resend ONLY to moderators" without firing a
+  // wasted participant send.
+  const participantPromise = !recipients.participant
+    ? Promise.resolve({ ok: false, skipped: true, error: 'Not selected by admin' })
+    : (participantHasEmail
+        ? sendBookingEmail(a)
+        : Promise.resolve({
+            ok: false,
+            skipped: true,
+            error: 'Participant has no email on file',
+          }));
+  const modPromise = !recipients.moderators
+    ? Promise.resolve({ ok: true, sent: 0, skipped: 0, failed: 0, details: [], _filterSkipped: true })
+    : sendModBookingEmails(a);
 
   let participantResult, modResult;
   try {
@@ -19457,13 +20340,32 @@ async function notifyParticipant(asgnId) {
     parts.push(`📧 ${modPart}`);
   } else if (modResult.failed > 0) {
     parts.push(`⚠ All mod emails failed`);
+  } else if (modResult._filterSkipped) {
+    // Admin explicitly unchecked "Moderators" — say nothing. The
+    // participant line above is the entire story in that case.
   } else if (modResult.skipped > 0) {
     parts.push(`⚠ ${modResult.skipped} mod${modResult.skipped === 1 ? '' : 's'}: no email`);
   } else {
-    // 0 sent, 0 skipped, 0 failed → no recipients found.
+    // 0 sent, 0 skipped, 0 failed, not filter-skipped → no recipients found.
     parts.push(`⚠ No mods on team`);
   }
   toast(parts.join(' · '));
+
+  // Audit log — append rows to EmailLog table for every recipient we
+  // attempted to email. Fire-and-forget; failures only warn to console.
+  // We skip logging participant when admin unchecked it (no attempt was
+  // made, no row to record), and skip mod logging when the filter
+  // skipped moderators (modResult._filterSkipped). This keeps the log
+  // honest about what was actually attempted.
+  try {
+    const participantToLog = recipients.participant ? participantResult : null;
+    const modToLog = (!recipients.moderators || modResult._filterSkipped)
+      ? null
+      : modResult;
+    logEmailSendsBatch(a, participantToLog, modToLog, triggerSource);
+  } catch (e) {
+    console.warn('[Orbit] EmailLog batch threw:', e && e.message);
+  }
 
   // Push the updated row to Excel ONLY if the participant email landed
   // (i.e., the status actually flipped to Notified). Otherwise the local
@@ -19478,6 +20380,1070 @@ async function notifyParticipant(asgnId) {
       }).catch(() => {});
     }
   }
+}
+
+/* =====================================================================
+   RECIPIENT CHOOSER MODAL
+   =====================================================================
+   Small modal that lets admin pick which recipients to send/resend to.
+   Triggered by the caret button next to the main Send/Resend button.
+
+   UX:
+     - Two checkboxes: Participant, Moderators
+     - Both checked by default (matching the main button's behavior)
+     - Each row shows the count / name so admin knows what they're
+       picking ("Participant: Jane Doe (jane@x.com)" / "3 moderators")
+     - "Send" button is enabled only when at least one recipient is selected
+     - "Cancel" closes without sending
+*/
+function openRecipientChooserModal(asgnId) {
+  const a = adminState.assignments.find(x => x.id === asgnId);
+  if (!a) return;
+  const pd = a.participantData || {};
+  const partName = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'Participant';
+  const partEmail = (pd.email || '').trim();
+  const partHasEmail = !!partEmail;
+  const modSnapshots = a.modSnapshots || [];
+  const modsWithEmail = modSnapshots.filter(m =>
+    ((m.centificEmail || m.personalEmail || '').trim())
+  );
+
+  // Build a description of each row so admin can verify before sending.
+  const partRowDesc = partHasEmail
+    ? `<span style="color: var(--text2); font-size: 12.5px;">${escapeHTML(partName)} · ${escapeHTML(partEmail)}</span>`
+    : `<span style="color: var(--text3); font-size: 12.5px; font-style: italic;">No email on file</span>`;
+  const modRowDesc = modsWithEmail.length === 0
+    ? `<span style="color: var(--text3); font-size: 12.5px; font-style: italic;">No moderators with email</span>`
+    : `<span style="color: var(--text2); font-size: 12.5px;">${modsWithEmail.length} moderator${modsWithEmail.length === 1 ? '' : 's'} · ${escapeHTML(modsWithEmail.map(m => [m.firstName, m.lastName].filter(Boolean).join(' ') || m.orbitLoginId).join(', '))}</span>`;
+
+  // Reuse the existing teammate-sync overlay/modal CSS for consistent
+  // look (same dim+blur backdrop pattern).
+  const overlay = document.createElement('div');
+  overlay.id = 'recipientChooserOverlay';
+  overlay.className = 'teammate-sync-overlay';
+  document.body.appendChild(overlay);
+
+  const modal = document.createElement('div');
+  modal.id = 'recipientChooserModal';
+  modal.className = 'teammate-sync-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.innerHTML = `
+    <button class="teammate-sync-modal-close" id="recipientChooserCloseBtn" aria-label="Cancel">×</button>
+    <div class="teammate-sync-modal-title">Choose recipients</div>
+    <div class="teammate-sync-modal-sub">Pick who should get the confirmation email for this session.</div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;">
+      <label class="checkbox-row" style="padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg2); ${partHasEmail ? '' : 'opacity: 0.5; pointer-events: none;'}">
+        <input type="checkbox" id="recipChooserPartCheck" ${partHasEmail ? 'checked' : ''} ${partHasEmail ? '' : 'disabled'}>
+        <span class="checkbox-box"></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span class="checkbox-label" style="font-weight: 500;">Participant</span>
+          ${partRowDesc}
+        </span>
+      </label>
+      <label class="checkbox-row" style="padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg2); ${modsWithEmail.length > 0 ? '' : 'opacity: 0.5; pointer-events: none;'}">
+        <input type="checkbox" id="recipChooserModsCheck" ${modsWithEmail.length > 0 ? 'checked' : ''} ${modsWithEmail.length > 0 ? '' : 'disabled'}>
+        <span class="checkbox-box"></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span class="checkbox-label" style="font-weight: 500;">Moderators</span>
+          ${modRowDesc}
+        </span>
+      </label>
+    </div>
+
+    <div class="teammate-sync-modal-actions">
+      <button class="btn btn-primary" id="recipChooserSendBtn">Send selected</button>
+      <button class="btn btn-ghost"   id="recipChooserCancelBtn">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+  });
+
+  const prevFocus = document.activeElement;
+  const close = () => {
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    document.removeEventListener('keydown', onKey);
+    setTimeout(() => { overlay.remove(); modal.remove(); }, 300);
+    try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+  };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', close);
+  document.getElementById('recipientChooserCloseBtn').addEventListener('click', close);
+  document.getElementById('recipChooserCancelBtn').addEventListener('click', close);
+
+  // Disable Send button when nothing is checked — prevents the "nothing
+  // happened" non-error when admin unchecks both rows then clicks Send.
+  const sendBtn = document.getElementById('recipChooserSendBtn');
+  const partCheck = document.getElementById('recipChooserPartCheck');
+  const modCheck  = document.getElementById('recipChooserModsCheck');
+  const updateSendBtnState = () => {
+    const anyChecked = (partCheck && partCheck.checked) || (modCheck && modCheck.checked);
+    sendBtn.disabled = !anyChecked;
+  };
+  if (partCheck) partCheck.addEventListener('change', updateSendBtnState);
+  if (modCheck)  modCheck.addEventListener('change',  updateSendBtnState);
+
+  sendBtn.addEventListener('click', () => {
+    const recipients = {
+      participant: !!(partCheck && partCheck.checked),
+      moderators:  !!(modCheck  && modCheck.checked),
+    };
+    close();
+    notifyParticipant(asgnId, {
+      recipients,
+      triggerSource: 'view_modal',
+    });
+  });
+
+  // Auto-focus the Send button so Enter immediately commits the (default
+  // both-checked) action — matches the main button's one-click behavior
+  // when admin doesn't actually want to customize.
+  setTimeout(() => {
+    try { sendBtn.focus(); } catch (_) {}
+  }, 80);
+}
+
+/* =====================================================================
+   EMAIL HISTORY RENDERER (inside View Assignment modal)
+   =====================================================================
+   Reads the EmailLog table, filters to rows for this assignment, renders
+   a compact list inside the #asgnEmailHistoryField. Hides the entire
+   field when EMAILLOG_PA_READ_URL isn't configured (no point showing
+   "Loading..." forever) or when there's no history for this booking.
+*/
+async function renderEmailHistoryInAsgnModal(asgnId) {
+  const field = document.getElementById('asgnEmailHistoryField');
+  const list  = document.getElementById('asgnEmailHistoryList');
+  if (!field || !list) return;
+
+  // If the read flow isn't configured, hide the field entirely. Better
+  // than showing perpetual "Loading…" or an empty section that confuses
+  // admin during the period when only the WRITE flow is set up.
+  if (!EMAILLOG_PA_READ_URL) {
+    field.style.display = 'none';
+    return;
+  }
+
+  let rows = [];
+  try {
+    rows = await fetchEmailLogRows();
+  } catch (e) {
+    field.style.display = 'none';
+    return;
+  }
+  // Filter to this assignment only
+  const myRows = rows.filter(r => String(r.assignmentId || '') === String(asgnId));
+  if (myRows.length === 0) {
+    field.style.display = 'none';
+    return;
+  }
+
+  // Format each row. Newest first (fetchEmailLogRows already sorted).
+  const html = `<div class="email-history-list">${myRows.map(r => {
+    const status = String(r.status || 'sent').toLowerCase();
+    const icon = status === 'sent'
+      ? `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : status === 'failed'
+      ? `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
+      : `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11" r="0.8" fill="currentColor"/></svg>`;
+    const recipientLabel = r.recipientType === 'participant'
+      ? `Participant${r.recipientName ? ' · ' + r.recipientName : ''}`
+      : `Moderator${r.recipientName ? ' · ' + r.recipientName : ''}`;
+    let when = '';
+    try {
+      const d = new Date(r.sentAt);
+      when = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch (_) { when = r.sentAt || ''; }
+    const sentByLabel = r.sentBy ? ` · by ${r.sentBy}` : '';
+    const trigLabel = r.triggerSource && r.triggerSource !== 'unknown' ? ` · ${friendlyTriggerLabel(r.triggerSource)}` : '';
+    const errLabel = (status !== 'sent' && r.errorMessage)
+      ? `<span class="email-history-error">${escapeHTML(r.errorMessage)}</span>`
+      : '';
+    return `
+      <div class="email-history-row">
+        <div class="email-history-icon ${status}">${icon}</div>
+        <div class="email-history-body">
+          <div class="email-history-recipient">${escapeHTML(recipientLabel)}</div>
+          <div class="email-history-meta">${escapeHTML(when)}${escapeHTML(sentByLabel)}${escapeHTML(trigLabel)} ${errLabel}</div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+  list.innerHTML = html;
+  field.style.display = '';
+}
+
+// Map internal trigger source names to human-readable labels for the
+// history meta line. Keeps the log's machine-readable values intact
+// (good for filtering in Excel) while showing admin something friendlier.
+function friendlyTriggerLabel(source) {
+  switch (source) {
+    case 'view_modal':       return 'from booking view';
+    case 'calendar_quick':   return 'from calendar';
+    case 'bulk_resend':      return 'bulk resend';
+    case 'initial_booking':  return 'initial send';
+    default:                 return source;
+  }
+}
+
+/* =====================================================================
+   CALENDAR BOOKING CONTEXT MENU
+   =====================================================================
+   Right-click (desktop) or long-press (mobile) on any booking element
+   in the calendar opens a small popup menu with quick actions:
+     - View booking         → opens View Assignment modal (same as left-click)
+     - Resend email         → fires resend with both recipients (default path)
+     - Edit booking         → opens Edit modal
+     - Cancel booking       → opens Cancel confirmation
+   Hidden when the booking is in a terminal state (Cancelled / Completed)
+   except for "View booking" which is always available.
+
+   Uses document-level event delegation so any current OR future render
+   path that produces a [data-asgn-id] element is automatically supported
+   without needing per-element listeners.
+
+   Long-press tuning:
+     - LONG_PRESS_MS = 500ms is the threshold most native apps use
+     - Movement during the press cancels it (treats as scroll/drag, not a
+       hold). The MOVE_TOLERANCE_PX = 10 buffer absorbs minor finger jitter.
+     - Multi-touch cancels the press entirely (avoids accidental triggers
+       during pinch-zoom or two-finger scroll).
+*/
+
+const CTX_MENU_LONG_PRESS_MS  = 500;
+const CTX_MENU_MOVE_TOLERANCE = 10;
+
+const _ctxMenuState = {
+  pressTimer: null,
+  pressStartX: 0,
+  pressStartY: 0,
+  pressTarget: null,
+};
+
+function cancelPendingLongPress() {
+  if (_ctxMenuState.pressTimer) {
+    clearTimeout(_ctxMenuState.pressTimer);
+    _ctxMenuState.pressTimer = null;
+  }
+  _ctxMenuState.pressTarget = null;
+}
+
+// Find the nearest ancestor with data-asgn-id, returning the assignment
+// id and the element itself (or null/null if no match). We walk up
+// instead of relying on `e.target` directly because the click might
+// land on a nested span inside the .cal-asgn container.
+function findAsgnFromEvent(e) {
+  let el = e.target;
+  while (el && el !== document.body) {
+    if (el.dataset && el.dataset.asgnId) {
+      return { id: el.dataset.asgnId, el };
+    }
+    el = el.parentElement;
+  }
+  return { id: null, el: null };
+}
+
+// Build & display the context menu at the given screen coordinates.
+// Positioning logic clamps the menu inside the viewport so it never
+// renders off-screen (right edge / bottom edge collision detection).
+function openBookingContextMenu(asgnId, x, y) {
+  // Dismiss any existing menu first
+  closeBookingContextMenu();
+  const a = adminState.assignments.find(z => z.id === asgnId);
+  if (!a) return;
+  const status = a.status || 'Booked';
+  const isImmutable = isImmutableAssignmentStatus(status);
+  const hasEmail = !!(a.participantData && a.participantData.email);
+
+  const menu = document.createElement('div');
+  menu.id = 'bookingContextMenu';
+  menu.className = 'booking-ctx-menu';
+  menu.setAttribute('role', 'menu');
+
+  // Items vary by status. "View" is always present; mutating actions
+  // hidden for terminal-state bookings (Cancelled/Completed/Unassigned).
+  const items = [
+    { key: 'view', label: 'View booking', icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 8C3 5 5.5 3.5 8 3.5s5 1.5 6.5 4.5c-1.5 3-4 4.5-6.5 4.5S3 11 1.5 8z" stroke="currentColor" stroke-width="1.5"/></svg>' },
+  ];
+  if (!isImmutable && hasEmail) {
+    items.push({ key: 'resend', label: status === 'Notified' ? 'Resend email' : 'Send email', icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' });
+  }
+  if (!isImmutable) {
+    items.push({ key: 'edit',   label: 'Edit booking', icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-8 8H3v-3l8-8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>' });
+    items.push({ key: 'cancel', label: 'Cancel booking', icon: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>', danger: true });
+  }
+
+  menu.innerHTML = items.map(it =>
+    `<button class="booking-ctx-item ${it.danger ? 'danger' : ''}" data-ctx-action="${it.key}">
+       <span class="booking-ctx-icon">${it.icon}</span>
+       <span>${escapeHTML(it.label)}</span>
+     </button>`
+  ).join('');
+
+  document.body.appendChild(menu);
+
+  // Position the menu — measure size first, then clamp to viewport.
+  // Default placement is below-right of the cursor; flip if it would
+  // overflow the viewport edges.
+  const rect = menu.getBoundingClientRect();
+  let left = x + 4;
+  let top  = y + 4;
+  if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+  if (top + rect.height > window.innerHeight - 8) top  = y - rect.height - 4;
+  if (left < 8) left = 8;
+  if (top  < 8) top  = 8;
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+
+  // Wire actions
+  menu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-ctx-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-ctx-action');
+    closeBookingContextMenu();
+    if (action === 'view') {
+      openViewAssignmentModal(asgnId);
+    } else if (action === 'resend') {
+      notifyParticipant(asgnId, {
+        recipients: { participant: true, moderators: true },
+        triggerSource: 'calendar_quick',
+      });
+    } else if (action === 'edit') {
+      openEditAssignmentModal(asgnId);
+    } else if (action === 'cancel') {
+      openCancelAssignmentModal(asgnId);
+    }
+  });
+
+  // Dismiss on outside click, scroll, or Escape
+  setTimeout(() => {
+    document.addEventListener('click', closeBookingContextMenu, { once: true });
+  }, 0);
+  document.addEventListener('keydown', _ctxMenuOnKey);
+  window.addEventListener('scroll', closeBookingContextMenu, { passive: true, once: true });
+}
+
+function _ctxMenuOnKey(e) {
+  if (e.key === 'Escape') closeBookingContextMenu();
+}
+
+function closeBookingContextMenu() {
+  const existing = document.getElementById('bookingContextMenu');
+  if (existing) existing.remove();
+  document.removeEventListener('keydown', _ctxMenuOnKey);
+}
+
+// Desktop: right-click on a booking element
+document.addEventListener('contextmenu', (e) => {
+  const { id } = findAsgnFromEvent(e);
+  if (!id) return;
+  // Only intercept inside the admin app — operator app has its own
+  // long-press meanings we don't want to override.
+  const adminApp = document.getElementById('adminApp');
+  if (!adminApp || !adminApp.classList.contains('active')) return;
+  e.preventDefault();
+  openBookingContextMenu(id, e.clientX, e.clientY);
+});
+
+// Mobile: long-press detection. We track touchstart → arm a timer →
+// touchmove/touchend/touchcancel disarms it. Multi-touch cancels too.
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) {
+    cancelPendingLongPress();
+    return;
+  }
+  const adminApp = document.getElementById('adminApp');
+  if (!adminApp || !adminApp.classList.contains('active')) return;
+
+  const { id, el } = findAsgnFromEvent(e);
+  if (!id) return;
+
+  const t = e.touches[0];
+  _ctxMenuState.pressStartX = t.clientX;
+  _ctxMenuState.pressStartY = t.clientY;
+  _ctxMenuState.pressTarget = id;
+
+  cancelPendingLongPress();
+  _ctxMenuState.pressTimer = setTimeout(() => {
+    // Long-press threshold reached without movement → open the menu.
+    // Use the most recent touch coordinates (stored on touchmove if any
+    // tiny movement happened within tolerance).
+    if (_ctxMenuState.pressTarget === id) {
+      openBookingContextMenu(id, _ctxMenuState.pressStartX, _ctxMenuState.pressStartY);
+      // Haptic feedback if supported — gives a satisfying "click" feel
+      // on Android (iOS Safari doesn't expose this).
+      if (navigator.vibrate) {
+        try { navigator.vibrate(15); } catch (_) {}
+      }
+      _ctxMenuState.pressTimer = null;
+      _ctxMenuState.pressTarget = null;
+    }
+  }, CTX_MENU_LONG_PRESS_MS);
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (!_ctxMenuState.pressTimer) return;
+  const t = e.touches[0];
+  if (!t) return;
+  const dx = Math.abs(t.clientX - _ctxMenuState.pressStartX);
+  const dy = Math.abs(t.clientY - _ctxMenuState.pressStartY);
+  if (dx > CTX_MENU_MOVE_TOLERANCE || dy > CTX_MENU_MOVE_TOLERANCE) {
+    // Movement detected — treat as scroll, cancel the long-press
+    cancelPendingLongPress();
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', cancelPendingLongPress, { passive: true });
+document.addEventListener('touchcancel', cancelPendingLongPress, { passive: true });
+
+/* =====================================================================
+   BULK RESEND MODAL
+   =====================================================================
+   Multi-step flow inside one modal:
+     Step 1 — Filter & select
+       • Date range picker (preset chips + custom range)
+       • Filter checkboxes (Booked / Notified — admin picks which statuses)
+       • List of matching bookings, each with a checkbox
+       • Select-all / select-none affordance
+       • Recipient chooser at the bottom (Participant / Moderators)
+     Step 2 — In-progress
+       • Sequential send with a progress bar
+       • Live count of "X of Y sent · Z failed"
+       • Cancel button stops after the current send (doesn't kill in-flight)
+     Step 3 — Results summary
+       • Per-booking result list (success / fail with reason)
+       • "Done" closes the modal
+
+   Sequential (not parallel) sends with a 250ms inter-send delay so we
+   don't hammer the Power Automate email flow. PA's free tier can take
+   30+ rate-limited concurrent calls but the inter-send pause is cheap
+   insurance and lets the admin see the progress meaningfully tick along.
+
+   Designed to be unconditionally available — no minimum eligible-booking
+   threshold. If no bookings match the filter, the list shows an empty
+   state and the Send button is disabled.
+*/
+
+// Module-level state for the bulk resend flow. We hold this on `window`
+// so re-rendering individual sub-views can read/write without passing
+// state through every closure.
+window._bulkResendState = {
+  step:      'filter',          // 'filter' | 'progress' | 'results'
+  rangeMode: 'next7',           // preset name or 'custom'
+  startDate: null,              // YYYY-MM-DD (custom mode only)
+  endDate:   null,
+  statusBooked: true,
+  statusNotified: true,
+  selectedIds: new Set(),       // assignmentIds to send
+  recipients: { participant: true, moderators: true },
+  // Progress / results tracking
+  total: 0,
+  completed: 0,
+  cancelled: false,
+  results: [],                  // [{asgnId, participantName, ok, parts, errors}]
+};
+
+function openBulkResendModal() {
+  // Reset state every time the modal opens — admin shouldn't see stale
+  // selections from a previous session. The state object stays the same
+  // reference so other closures can safely read from it.
+  const s = window._bulkResendState;
+  s.step      = 'filter';
+  s.rangeMode = 'next7';
+  const today = ymd(new Date());
+  s.startDate = today;
+  s.endDate   = ymd(addDays(new Date(), 7));
+  s.statusBooked   = true;
+  s.statusNotified = true;
+  s.selectedIds    = new Set();
+  s.recipients     = { participant: true, moderators: true };
+  s.total = 0; s.completed = 0; s.cancelled = false; s.results = [];
+
+  // Build overlay + modal using the same overlay class as the teammate-
+  // sync modal so we inherit the dim+blur backdrop styling.
+  const overlay = document.createElement('div');
+  overlay.id = 'bulkResendOverlay';
+  overlay.className = 'teammate-sync-overlay';
+  document.body.appendChild(overlay);
+
+  const modal = document.createElement('div');
+  modal.id = 'bulkResendModal';
+  modal.className = 'bulk-resend-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'bulkResendTitle');
+  document.body.appendChild(modal);
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+  });
+
+  const prevFocus = document.activeElement;
+
+  // Centralized close — used by Cancel, Done, Escape, overlay click.
+  // Only allow close from 'filter' or 'results' steps. During 'progress'
+  // the admin must explicitly cancel (which transitions to results).
+  const close = () => {
+    if (s.step === 'progress') return; // soft-block; cancel button handles it
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    document.removeEventListener('keydown', onKey);
+    setTimeout(() => { overlay.remove(); modal.remove(); }, 280);
+    try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+  };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', close);
+
+  // Internal render-the-current-step. Called whenever state changes.
+  // Re-renders the modal body in place rather than re-creating the modal,
+  // so animations and focus state stay clean.
+  const render = () => {
+    if (s.step === 'filter')    renderBulkResendFilterStep(modal, render, close);
+    if (s.step === 'progress')  renderBulkResendProgressStep(modal, render, close);
+    if (s.step === 'results')   renderBulkResendResultsStep(modal, render, close);
+  };
+  render();
+}
+
+// ----- Step 1: Filter & select -----
+function renderBulkResendFilterStep(modal, render, close) {
+  const s = window._bulkResendState;
+  const eligible = getBulkResendEligibleBookings();
+  // If admin's selection set contains IDs that are no longer eligible
+  // (e.g., they refreshed and one got cancelled in another admin's
+  // session), prune them silently — we don't want to send to phantoms.
+  const eligibleIds = new Set(eligible.map(a => a.id));
+  for (const id of [...s.selectedIds]) {
+    if (!eligibleIds.has(id)) s.selectedIds.delete(id);
+  }
+
+  modal.innerHTML = `
+    <div class="bulk-resend-head">
+      <div>
+        <div class="bulk-resend-title" id="bulkResendTitle">Bulk resend emails</div>
+        <div class="bulk-resend-sub">Pick which bookings need a fresh confirmation. Cancelled, unassigned, and completed sessions are excluded.</div>
+      </div>
+      <button class="teammate-sync-modal-close" id="bulkResendCloseBtn" aria-label="Close">×</button>
+    </div>
+
+    <div class="bulk-resend-body">
+      <div class="bulk-resend-section">
+        <div class="bulk-resend-section-label">Date range</div>
+        <div class="bulk-resend-range-chips" role="tablist">
+          ${[
+            { key: 'today',     label: 'Today' },
+            { key: 'next7',     label: 'Next 7 days' },
+            { key: 'next14',    label: 'Next 14 days' },
+            { key: 'thisMonth', label: 'This month' },
+            { key: 'custom',    label: 'Custom…' },
+          ].map(chip => `
+            <button class="bulk-resend-chip ${s.rangeMode === chip.key ? 'active' : ''}"
+                    data-range="${chip.key}" role="tab"
+                    aria-selected="${s.rangeMode === chip.key ? 'true' : 'false'}">${escapeHTML(chip.label)}</button>
+          `).join('')}
+        </div>
+        ${s.rangeMode === 'custom' ? `
+          <div class="bulk-resend-custom-range">
+            <label class="bulk-resend-date-field">
+              <span class="bulk-resend-date-label">From</span>
+              <input type="date" id="bulkResendStart" value="${escapeHTML(s.startDate || '')}">
+            </label>
+            <label class="bulk-resend-date-field">
+              <span class="bulk-resend-date-label">To</span>
+              <input type="date" id="bulkResendEnd" value="${escapeHTML(s.endDate || '')}">
+            </label>
+          </div>` : ''}
+      </div>
+
+      <div class="bulk-resend-section">
+        <div class="bulk-resend-section-label">Status</div>
+        <div class="bulk-resend-status-checks">
+          <label class="checkbox-row" style="padding: 6px 10px;">
+            <input type="checkbox" id="bulkResendStatusBooked" ${s.statusBooked ? 'checked' : ''}>
+            <span class="checkbox-box"></span>
+            <span class="checkbox-label">Booked (not yet notified)</span>
+          </label>
+          <label class="checkbox-row" style="padding: 6px 10px;">
+            <input type="checkbox" id="bulkResendStatusNotified" ${s.statusNotified ? 'checked' : ''}>
+            <span class="checkbox-box"></span>
+            <span class="checkbox-label">Notified (already sent at least once)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="bulk-resend-section">
+        <div class="bulk-resend-section-label-row">
+          <span class="bulk-resend-section-label">Bookings (${eligible.length} match${eligible.length === 1 ? '' : 'es'})</span>
+          ${eligible.length > 0 ? `
+            <div class="bulk-resend-select-toggle">
+              <button class="bulk-resend-link-btn" id="bulkResendSelectAll">Select all</button>
+              <span class="bulk-resend-divider">·</span>
+              <button class="bulk-resend-link-btn" id="bulkResendSelectNone">Clear</button>
+            </div>` : ''}
+        </div>
+        <div class="bulk-resend-list">
+          ${eligible.length === 0
+            ? `<div class="bulk-resend-empty">No bookings match. Try a wider date range or include other statuses.</div>`
+            : eligible.map(a => renderBulkResendRowHTML(a, s.selectedIds.has(a.id))).join('')}
+        </div>
+      </div>
+
+      <div class="bulk-resend-section">
+        <div class="bulk-resend-section-label">Send to</div>
+        <div class="bulk-resend-recipient-chips">
+          <label class="checkbox-row" style="padding: 6px 10px;">
+            <input type="checkbox" id="bulkResendRecipPart" ${s.recipients.participant ? 'checked' : ''}>
+            <span class="checkbox-box"></span>
+            <span class="checkbox-label">Participants</span>
+          </label>
+          <label class="checkbox-row" style="padding: 6px 10px;">
+            <input type="checkbox" id="bulkResendRecipMods" ${s.recipients.moderators ? 'checked' : ''}>
+            <span class="checkbox-box"></span>
+            <span class="checkbox-label">Moderators</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="bulk-resend-foot">
+      <div class="bulk-resend-foot-summary">
+        ${s.selectedIds.size > 0
+          ? `<strong>${s.selectedIds.size}</strong> booking${s.selectedIds.size === 1 ? '' : 's'} selected`
+          : `<span style="color: var(--text3);">No bookings selected</span>`}
+      </div>
+      <div class="bulk-resend-foot-actions">
+        <button class="btn btn-ghost" id="bulkResendCancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="bulkResendStartBtn"
+                ${s.selectedIds.size === 0 || (!s.recipients.participant && !s.recipients.moderators) ? 'disabled' : ''}>
+          Send to selected
+        </button>
+      </div>
+    </div>
+  `;
+
+  // ----- Wire interactions -----
+  modal.querySelector('#bulkResendCloseBtn').addEventListener('click', close);
+  modal.querySelector('#bulkResendCancelBtn').addEventListener('click', close);
+
+  // Range chip selection — switches mode + recomputes the default
+  // start/end dates for preset ranges. For 'custom' we leave whatever
+  // dates were set last (or initialize on first switch).
+  modal.querySelectorAll('.bulk-resend-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const key = chip.dataset.range;
+      s.rangeMode = key;
+      const t = new Date();
+      const tStr = ymd(t);
+      if      (key === 'today')     { s.startDate = tStr; s.endDate = tStr; }
+      else if (key === 'next7')     { s.startDate = tStr; s.endDate = ymd(addDays(t, 7));  }
+      else if (key === 'next14')    { s.startDate = tStr; s.endDate = ymd(addDays(t, 14)); }
+      else if (key === 'thisMonth') {
+        s.startDate = tStr;
+        const eom = new Date(t.getFullYear(), t.getMonth() + 1, 0);
+        s.endDate = ymd(eom);
+      }
+      // custom: keep current dates
+      // Selection set is cleared on range change because the booking
+      // list completely changes — keeping stale selections would be
+      // confusing ("why are 3 selected when none are visible?").
+      s.selectedIds = new Set();
+      render();
+    });
+  });
+
+  // Custom date inputs
+  const startInput = modal.querySelector('#bulkResendStart');
+  const endInput   = modal.querySelector('#bulkResendEnd');
+  if (startInput) startInput.addEventListener('change', () => {
+    s.startDate = startInput.value;
+    s.selectedIds = new Set();
+    render();
+  });
+  if (endInput) endInput.addEventListener('change', () => {
+    s.endDate = endInput.value;
+    s.selectedIds = new Set();
+    render();
+  });
+
+  // Status checkboxes
+  modal.querySelector('#bulkResendStatusBooked').addEventListener('change', (e) => {
+    s.statusBooked = e.target.checked;
+    // Drop any selected bookings that no longer match the filter
+    s.selectedIds = new Set();
+    render();
+  });
+  modal.querySelector('#bulkResendStatusNotified').addEventListener('change', (e) => {
+    s.statusNotified = e.target.checked;
+    s.selectedIds = new Set();
+    render();
+  });
+
+  // Select-all / clear
+  const selAll = modal.querySelector('#bulkResendSelectAll');
+  if (selAll) selAll.addEventListener('click', () => {
+    eligible.forEach(a => s.selectedIds.add(a.id));
+    render();
+  });
+  const selNone = modal.querySelector('#bulkResendSelectNone');
+  if (selNone) selNone.addEventListener('click', () => {
+    s.selectedIds = new Set();
+    render();
+  });
+
+  // Per-row checkboxes — toggle inclusion in the selection set.
+  // Update the row's visual state inline rather than full re-render so
+  // typing or clicking through a long list feels snappy.
+  modal.querySelectorAll('.bulk-resend-row-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.asgnId;
+      if (cb.checked) s.selectedIds.add(id);
+      else            s.selectedIds.delete(id);
+      // Update just the foot summary + send button enabled state so we
+      // don't blow away in-progress scroll position by re-rendering all.
+      const summary = modal.querySelector('.bulk-resend-foot-summary');
+      const startBtn = modal.querySelector('#bulkResendStartBtn');
+      if (summary) {
+        summary.innerHTML = s.selectedIds.size > 0
+          ? `<strong>${s.selectedIds.size}</strong> booking${s.selectedIds.size === 1 ? '' : 's'} selected`
+          : `<span style="color: var(--text3);">No bookings selected</span>`;
+      }
+      if (startBtn) {
+        startBtn.disabled = s.selectedIds.size === 0 || (!s.recipients.participant && !s.recipients.moderators);
+      }
+    });
+  });
+
+  // Recipient checkboxes
+  const recipPart = modal.querySelector('#bulkResendRecipPart');
+  const recipMods = modal.querySelector('#bulkResendRecipMods');
+  const updateStartBtnState = () => {
+    const startBtn = modal.querySelector('#bulkResendStartBtn');
+    if (startBtn) {
+      startBtn.disabled = s.selectedIds.size === 0 || (!s.recipients.participant && !s.recipients.moderators);
+    }
+  };
+  if (recipPart) recipPart.addEventListener('change', (e) => {
+    s.recipients.participant = e.target.checked;
+    updateStartBtnState();
+  });
+  if (recipMods) recipMods.addEventListener('change', (e) => {
+    s.recipients.moderators = e.target.checked;
+    updateStartBtnState();
+  });
+
+  // Start the send
+  const startBtn = modal.querySelector('#bulkResendStartBtn');
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      if (s.selectedIds.size === 0) return;
+      if (!s.recipients.participant && !s.recipients.moderators) return;
+      s.step = 'progress';
+      s.total = s.selectedIds.size;
+      s.completed = 0;
+      s.cancelled = false;
+      s.results = [];
+      render();
+      // Kick off the send loop (async, not awaited — modal stays open
+      // and shows progress updates as each completes).
+      runBulkResendLoop(render).catch(e => {
+        console.error('[Orbit] Bulk resend loop threw:', e);
+      });
+    });
+  }
+}
+
+// Build a single row's HTML for the booking list in step 1.
+function renderBulkResendRowHTML(a, isChecked) {
+  const pd = a.participantData || {};
+  const partName = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'TBD';
+  const team = (adminState.teams || []).find(t => t.id === a.teamId);
+  const teamName = team ? team.name : '—';
+  const status = a.status || 'Booked';
+  const dateLabel = (() => {
+    try {
+      const d = parseYMD(a.date);
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch (_) { return a.date; }
+  })();
+  const timeLabel = (typeof a.startMin === 'number')
+    ? fmtTimeOfDay(a.startMin) + (typeof a.endMin === 'number' ? ' – ' + fmtTimeOfDay(a.endMin) : '')
+    : '';
+  const statusBadge = status === 'Notified'
+    ? `<span class="bulk-resend-row-badge notified">Notified</span>`
+    : `<span class="bulk-resend-row-badge booked">Booked</span>`;
+
+  return `
+    <label class="bulk-resend-row">
+      <input type="checkbox" class="bulk-resend-row-check" data-asgn-id="${escapeHTML(a.id)}" ${isChecked ? 'checked' : ''}>
+      <span class="checkbox-box"></span>
+      <div class="bulk-resend-row-body">
+        <div class="bulk-resend-row-title">${escapeHTML(partName)} <span class="bulk-resend-row-team">· ${escapeHTML(teamName)}</span></div>
+        <div class="bulk-resend-row-meta">${escapeHTML(dateLabel)}${timeLabel ? ' · ' + escapeHTML(timeLabel) : ''} ${statusBadge}</div>
+      </div>
+    </label>
+  `;
+}
+
+// Filter + sort eligible bookings based on the current modal state.
+function getBulkResendEligibleBookings() {
+  const s = window._bulkResendState;
+  const all = adminState.assignments || [];
+  return all
+    .filter(a => {
+      if (!a || !a.date) return false;
+      // Status filter — exclude terminal + completed automatically; admin's
+      // checkboxes additionally narrow to Booked / Notified / both.
+      const st = a.status || 'Booked';
+      if (st === 'Cancelled' || st === 'Unassigned' || st === 'Completed') return false;
+      if (st === 'Booked'   && !s.statusBooked)   return false;
+      if (st === 'Notified' && !s.statusNotified) return false;
+      // Date range filter — inclusive on both ends. Empty start/end is
+      // treated as "no lower/upper bound" so admin can do "everything
+      // before X" or "everything after X" with custom mode.
+      if (s.startDate && a.date < s.startDate) return false;
+      if (s.endDate   && a.date > s.endDate)   return false;
+      // Email reachability — at least ONE of (participant has email)
+      // OR (at least one mod has email) must be true. Otherwise the
+      // resend would do nothing.
+      const pd = a.participantData || {};
+      const partHasEmail = !!(pd.email && pd.email.trim());
+      const modsWithEmail = (a.modSnapshots || []).some(m =>
+        (m.centificEmail || m.personalEmail || '').trim()
+      );
+      if (!partHasEmail && !modsWithEmail) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aKey = (a.date || '') + '_' + String(a.startMin || 0).padStart(4, '0');
+      const bKey = (b.date || '') + '_' + String(b.startMin || 0).padStart(4, '0');
+      return aKey.localeCompare(bKey);
+    });
+}
+
+// ----- Step 2: Progress -----
+function renderBulkResendProgressStep(modal, render, close) {
+  const s = window._bulkResendState;
+  const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+  const failed = s.results.filter(r => !r.ok).length;
+  const succeeded = s.results.filter(r => r.ok).length;
+
+  modal.innerHTML = `
+    <div class="bulk-resend-head">
+      <div>
+        <div class="bulk-resend-title">Sending emails…</div>
+        <div class="bulk-resend-sub">${s.completed} of ${s.total} processed${failed > 0 ? ` · <span style="color: var(--red);">${failed} failed</span>` : ''}</div>
+      </div>
+    </div>
+    <div class="bulk-resend-body bulk-resend-progress-body">
+      <div class="bulk-resend-progress-bar-wrap">
+        <div class="bulk-resend-progress-bar" style="width: ${pct}%;"></div>
+      </div>
+      <div class="bulk-resend-progress-stats">
+        <div class="bulk-resend-stat">
+          <div class="bulk-resend-stat-num">${succeeded}</div>
+          <div class="bulk-resend-stat-label">Sent</div>
+        </div>
+        <div class="bulk-resend-stat">
+          <div class="bulk-resend-stat-num" style="color: ${failed > 0 ? 'var(--red)' : 'var(--text)'};">${failed}</div>
+          <div class="bulk-resend-stat-label">Failed</div>
+        </div>
+        <div class="bulk-resend-stat">
+          <div class="bulk-resend-stat-num">${s.total - s.completed}</div>
+          <div class="bulk-resend-stat-label">Remaining</div>
+        </div>
+      </div>
+    </div>
+    <div class="bulk-resend-foot">
+      <div class="bulk-resend-foot-summary"></div>
+      <div class="bulk-resend-foot-actions">
+        <button class="btn btn-ghost" id="bulkResendCancelInProgressBtn">${s.cancelled ? 'Cancelling…' : 'Cancel remaining'}</button>
+      </div>
+    </div>
+  `;
+  const cancelBtn = modal.querySelector('#bulkResendCancelInProgressBtn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      // Set the flag — the send loop checks it between iterations and
+      // exits early without firing more emails. The current in-flight
+      // send is allowed to complete (cleaner state).
+      s.cancelled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      cancelBtn.disabled = true;
+    });
+  }
+}
+
+// Async loop — sends one email at a time, updates progress between
+// sends, transitions to 'results' when done (or cancelled).
+async function runBulkResendLoop(render) {
+  const s = window._bulkResendState;
+  const ids = [...s.selectedIds];
+  for (const asgnId of ids) {
+    if (s.cancelled) break;
+    const result = await sendOneForBulk(asgnId);
+    s.results.push(result);
+    s.completed++;
+    render();
+    // Small inter-send delay — see comment at the top of this module.
+    // Skipped after the last send so we don't add latency before the
+    // results screen appears.
+    if (s.completed < ids.length && !s.cancelled) {
+      await new Promise(r => setTimeout(r, 250));
+    }
+  }
+  // Transition to results
+  s.step = 'results';
+  render();
+}
+
+// Fire the two send promises for one assignment, wait for them, return
+// a normalized result row for the results list. Mirrors notifyParticipant
+// but without the UI side effects (button label, status update on
+// success). We DO update the assignment's status to Notified when the
+// participant send succeeds, mirroring the single-send behavior so
+// admin's calendar reflects the change immediately.
+async function sendOneForBulk(asgnId) {
+  const s = window._bulkResendState;
+  const idx = adminState.assignments.findIndex(x => x.id === asgnId);
+  if (idx === -1) {
+    return { asgnId, participantName: '?', ok: false, parts: [], errors: ['Booking no longer exists'] };
+  }
+  const a = adminState.assignments[idx];
+  const pd = a.participantData || {};
+  const participantName = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || '—';
+
+  const participantHasEmail = !!(pd.email && pd.email.trim());
+  const participantPromise = !s.recipients.participant
+    ? Promise.resolve({ ok: false, skipped: true, error: 'Not selected by admin' })
+    : (participantHasEmail
+        ? sendBookingEmail(a)
+        : Promise.resolve({ ok: false, skipped: true, error: 'No email on file' }));
+  const modPromise = !s.recipients.moderators
+    ? Promise.resolve({ ok: true, sent: 0, skipped: 0, failed: 0, details: [], _filterSkipped: true })
+    : sendModBookingEmails(a);
+
+  let pr, mr;
+  try {
+    [pr, mr] = await Promise.all([participantPromise, modPromise]);
+  } catch (e) {
+    return { asgnId, participantName, ok: false, parts: [], errors: [e.message || String(e)] };
+  }
+
+  // Update status to Notified if participant landed (same rule as
+  // single-send). This keeps bulk and single flows behaving identically
+  // from the assignment's perspective.
+  if (pr.ok) {
+    const now = new Date().toISOString();
+    adminState.assignments[idx] = {
+      ...a,
+      status: 'Notified',
+      notifiedAt: now,
+      savedAt: now,
+      updatedAt: now,
+    };
+    saveAssignmentData();
+    // Push to Excel
+    if (ASSIGNMENT_PA_WRITE_URL) {
+      const rowsToWrite = buildAssignmentExcelRow(adminState.assignments[idx]);
+      for (const row of rowsToWrite) {
+        fetch(ASSIGNMENT_PA_WRITE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(row),
+        }).catch(() => {});
+      }
+    }
+  }
+
+  // Audit log
+  try {
+    const partLog = s.recipients.participant ? pr : null;
+    const modLog = (!s.recipients.moderators || mr._filterSkipped) ? null : mr;
+    logEmailSendsBatch(a, partLog, modLog, 'bulk_resend');
+  } catch (e) {
+    console.warn('[Orbit] Bulk EmailLog batch threw:', e && e.message);
+  }
+
+  // Normalize a small result summary for the results list
+  const parts = [];
+  const errors = [];
+  if (s.recipients.participant) {
+    if (pr.ok)             parts.push('Participant ✓');
+    else if (pr.skipped)   { parts.push('Participant — skipped'); errors.push(`Participant: ${pr.error || 'skipped'}`); }
+    else                   { parts.push('Participant ✗'); errors.push(`Participant: ${pr.error || 'failed'}`); }
+  }
+  if (s.recipients.moderators && !mr._filterSkipped) {
+    if (mr.sent > 0)       parts.push(`${mr.sent} mod${mr.sent === 1 ? '' : 's'} ✓`);
+    if (mr.failed > 0)     { parts.push(`${mr.failed} mod${mr.failed === 1 ? '' : 's'} ✗`); errors.push(`${mr.failed} moderator email${mr.failed === 1 ? '' : 's'} failed`); }
+    if (mr.skipped > 0)    parts.push(`${mr.skipped} mod${mr.skipped === 1 ? '' : 's'} skipped`);
+    if (mr.sent === 0 && mr.failed === 0 && mr.skipped === 0) {
+      parts.push('No mods on team');
+    }
+  }
+  // Booking is "ok" only if every selected recipient bucket worked.
+  const ok = (s.recipients.participant ? pr.ok : true) &&
+             (s.recipients.moderators  ? (mr.failed === 0 && (mr.sent > 0 || mr._filterSkipped)) : true);
+  return { asgnId, participantName, ok, parts, errors };
+}
+
+// ----- Step 3: Results -----
+function renderBulkResendResultsStep(modal, render, close) {
+  const s = window._bulkResendState;
+  const succeeded = s.results.filter(r => r.ok).length;
+  const failed = s.results.filter(r => !r.ok).length;
+  const remaining = s.total - s.completed;
+
+  modal.innerHTML = `
+    <div class="bulk-resend-head">
+      <div>
+        <div class="bulk-resend-title">${s.cancelled ? 'Cancelled' : 'Done'}</div>
+        <div class="bulk-resend-sub">
+          ${succeeded} sent${failed > 0 ? ` · ${failed} failed` : ''}${remaining > 0 ? ` · ${remaining} not attempted` : ''}
+        </div>
+      </div>
+      <button class="teammate-sync-modal-close" id="bulkResendCloseBtn" aria-label="Close">×</button>
+    </div>
+    <div class="bulk-resend-body">
+      <div class="bulk-resend-results-list">
+        ${s.results.length === 0
+          ? `<div class="bulk-resend-empty">Nothing was sent.</div>`
+          : s.results.map(r => `
+            <div class="bulk-resend-result-row ${r.ok ? 'ok' : 'fail'}">
+              <div class="bulk-resend-result-icon">${r.ok
+                ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+                : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`}</div>
+              <div class="bulk-resend-result-body">
+                <div class="bulk-resend-result-name">${escapeHTML(r.participantName)}</div>
+                <div class="bulk-resend-result-meta">${escapeHTML(r.parts.join(' · '))}${r.errors.length > 0 ? ` <span class="bulk-resend-result-err">${escapeHTML(r.errors.join(' · '))}</span>` : ''}</div>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    <div class="bulk-resend-foot">
+      <div class="bulk-resend-foot-summary"></div>
+      <div class="bulk-resend-foot-actions">
+        <button class="btn btn-primary" id="bulkResendDoneBtn">Done</button>
+      </div>
+    </div>
+  `;
+  modal.querySelector('#bulkResendCloseBtn').addEventListener('click', () => {
+    // Re-render the assignment view so calendar reflects Notified status updates
+    if (typeof renderAssignment === 'function') renderAssignment();
+    close();
+  });
+  modal.querySelector('#bulkResendDoneBtn').addEventListener('click', () => {
+    if (typeof renderAssignment === 'function') renderAssignment();
+    close();
+  });
 }
 
 /* ---------- Complete assignment (moderator-driven) ----------
