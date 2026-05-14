@@ -1457,25 +1457,128 @@ nav {
 .admin-app { display: none; }
 .admin-app.active { display: block; }
 
-.admin-hero {
-  padding: 22px 0 20px;
-  max-width: 1180px;
+/* =================================================================
+   FLUID ADMIN SHELL — Apple-style responsive scaling
+   =================================================================
+   The admin app's content area used to be capped at a hard 1180px,
+   wasting space on monitors larger than ~1400px. This system replaces
+   the cap with a tier-based fluid layout: content stretches to use
+   available width up to comfortable reading limits, then gutters grow
+   instead of the content stretching forever.
+
+   Variables (in --admin-shell-max, --admin-shell-pad-x) follow the
+   same approach Apple uses on apple.com: small base, scaling steps
+   at major breakpoints, generous side gutters that prevent the
+   content from feeling lost on ultra-wide displays.
+
+   Why CSS vars rather than direct values: the variables propagate
+   into nested containers (.admin-hero, .ov-root, .asgn-shell)
+   without each having its own breakpoint logic. Change the var once
+   here, every consumer updates. */
+:root {
+  /* Default mobile/tablet — content fills available width minus a
+     comfortable side gutter. clamp ensures we never go below the
+     comfortable minimum or above the wider-screen ceiling.
+     - min: 16px gutter at narrow viewports
+     - preferred: 4vw scales smoothly with viewport
+     - max: 32px gutter caps so very narrow screens don't get too cramped */
+  --admin-shell-pad-x: clamp(16px, 4vw, 32px);
+  --admin-shell-pad-top: 28px;
+  --admin-shell-pad-bottom: 64px;
+  /* Max content width — capped at 1280px at "normal" desktop sizes
+     so reading-line length stays sane. Larger tiers below relax this. */
+  --admin-shell-max: 1280px;
+}
+/* Tier 2 — wide desktop (1440px+): let content use more horizontal
+   space. Padding stays modest. Most knowledge-worker screens land
+   here, so this is the most-tuned tier. */
+@media (min-width: 1440px) {
+  :root {
+    --admin-shell-max: 1480px;
+    --admin-shell-pad-x: clamp(32px, 4vw, 56px);
+  }
+}
+/* Tier 3 — full-HD and bigger (1920px+): cap content max-width so
+   reading lines don't get absurdly long on 27"+ monitors, and grow
+   the gutters proportionally — this is the "Apple feel" where
+   content sits centered in a calm field of whitespace. */
+@media (min-width: 1920px) {
+  :root {
+    --admin-shell-max: 1680px;
+    --admin-shell-pad-x: clamp(56px, 6vw, 120px);
+  }
+}
+/* Tier 4 — ultra-wide (2560px+, 4K, etc.): firm max-width prevents
+   the layout from spreading across the full panel width, which
+   would force the user to track their eyes across very long
+   horizontal distances. */
+@media (min-width: 2560px) {
+  :root {
+    --admin-shell-max: 1760px;
+  }
+}
+/* Tier 0 — small phones (< 520px): collapse paddings hard so
+   content gets every pixel of available width. */
+@media (max-width: 520px) {
+  :root {
+    --admin-shell-pad-x: 14px;
+    --admin-shell-pad-top: 18px;
+    --admin-shell-pad-bottom: 40px;
+  }
+}
+
+/* Apply the shell variables to the admin content container. This
+   replaces the old inline `style="max-width: 1180px"` from the HTML.
+   The combination of max-width + margin: 0 auto centers the content
+   in the available space; the padding sets the side gutters. */
+.admin-content-shell {
+  max-width: var(--admin-shell-max);
   margin: 0 auto;
+  padding-left: var(--admin-shell-pad-x);
+  padding-right: var(--admin-shell-pad-x);
+  padding-top: var(--admin-shell-pad-top);
+  padding-bottom: var(--admin-shell-pad-bottom);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.admin-hero {
+  /* Hero used to have its own max-width: 1180px + margin: 0 auto.
+     That's now handled at the shell level (.admin-content-shell),
+     so the hero just needs to flow naturally inside it. The shell
+     provides the gutters and the centering. */
+  padding: clamp(16px, 2.4vw, 28px) 0 clamp(14px, 2vw, 22px);
 }
 .admin-hero-eyebrow {
-  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--accent-ink);
-  margin-bottom: 8px;
+  font-size: clamp(11px, 1vw, 12.5px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  margin-bottom: clamp(6px, 0.7vw, 10px);
 }
 .admin-hero-title {
-  font-size: clamp(28px, 4vw, 42px);
-  font-weight: 600; letter-spacing: -0.035em;
-  line-height: 1.07; margin-bottom: 10px;
+  /* Was clamp(28px, 4vw, 42px) — extended upper bound for ultra-wide
+     screens so the page-level hero scales gracefully on 27"+
+     monitors (where 42px starts to look small relative to the rest
+     of the layout). The min stays at 28px for phones. */
+  font-size: clamp(28px, 3.6vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.07;
+  margin-bottom: clamp(8px, 0.8vw, 14px);
 }
 .admin-hero-sub {
-  font-size: 15px; font-weight: 300;
-  color: var(--text2); letter-spacing: -0.005em;
-  line-height: 1.5; max-width: 540px;
+  /* Sub-line gets a slight bump at wider viewports too — keeps the
+     visual hierarchy correct (heading and sub scale together rather
+     than the sub looking marooned beneath a giant title). max-width
+     in ch units keeps reading-line comfortable regardless of viewport. */
+  font-size: clamp(14px, 1.05vw, 17px);
+  font-weight: 300;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  line-height: 1.5;
+  max-width: 64ch;
   margin-bottom: 0;
 }
 
@@ -1905,11 +2008,22 @@ nav {
 /* Two-pane layout: teams left, calendar right */
 .asgn-shell {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
+  /* Teams panel scales from 280px on narrower desktops to 360px on
+     wide ones, giving the team list room to breathe without
+     stealing too much from the calendar. clamp() lets the column
+     grow proportionally with viewport — Apple-style fluid rather
+     than fixed-then-jump-at-breakpoint. */
+  grid-template-columns: clamp(280px, 22vw, 360px) 1fr;
+  gap: clamp(12px, 1.2vw, 22px);
   align-items: start;
 }
-@media (max-width: 1080px) {
+/* Stack the two columns vertically when the viewport gets too narrow
+   for the side-by-side layout to be comfortable. Threshold raised
+   from 1080px to 1100px to align with the page-level shell's
+   "comfortable desktop" tier; below that, the teams panel becomes a
+   full-width section above the calendar instead of competing with
+   it for horizontal space. */
+@media (max-width: 1100px) {
   .asgn-shell { grid-template-columns: 1fr; }
 }
 
@@ -1924,7 +2038,12 @@ nav {
   display: flex; flex-direction: column;
   overflow: hidden;
 }
-@media (max-width: 1080px) {
+@media (max-width: 1100px) {
+  /* Match the asgn-shell stacking breakpoint above. When the layout
+     drops to one column the teams panel becomes a full-width
+     section, which means sticky positioning and viewport-height
+     max-height stop making sense — we let it flow with the document
+     so its full content is visible without an internal scroller. */
   .teams-panel { position: static; max-height: none; }
 }
 .teams-head {
@@ -2394,7 +2513,12 @@ nav {
 .asgn-modal {
   position: fixed; top: 50%; left: 50%;
   transform: translate(-50%, -46%) scale(0.97);
-  width: min(540px, 94vw); max-height: 88vh;
+  /* Modal scales from 540px on standard desktops up to 640px on wide
+     screens — modals stay readable but don't feel undersized when the
+     surrounding app shell is much wider. min(94vw, ...) ensures the
+     modal never exceeds the viewport on phones/tablets. */
+  width: min(94vw, clamp(540px, 38vw, 640px));
+  max-height: 88vh;
   background: var(--card-bg);
   border: 0.5px solid var(--border);
   border-radius: 22px;
@@ -5868,6 +5992,37 @@ nav {
   margin-left: 4px;
   vertical-align: 2px;
 }
+/* Incomplete-profile badge — shown when a mod row in Excel is missing
+   first/last name fields. The card name falls back to the orbit login
+   ID; the badge tells admin WHY and prompts them to fix the row. Amber
+   palette matches the rest of the app's "needs attention but not
+   critical" signaling (e.g., partial availability, missing data hints). */
+.mod-incomplete-badge {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  background: rgba(251, 191, 36, 0.14);
+  color: #d97706;
+  border: 0.5px solid rgba(251, 191, 36, 0.40);
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-left: 6px;
+  vertical-align: 2px;
+  cursor: help;
+}
+[data-theme="dark"] .mod-incomplete-badge {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.45);
+}
+/* Slightly mute the card itself so the eye is drawn to complete entries
+   first, but not so muted that admin can't see the data. The badge does
+   most of the signaling — this is a small additional visual cue. */
+.mod-card.incomplete-profile .mod-name {
+  color: var(--text2);
+  font-style: italic;
+}
 
 /* Assignment-grouped view */
 .mod-asgn-list {
@@ -7454,7 +7609,7 @@ nav {
     </div>
   </nav>
 
-  <main class="content" style="max-width: 1180px; margin: 0 auto;" id="adminContent">
+  <main class="content admin-content-shell" id="adminContent">
     <!-- Rendered by JS -->
   </main>
 </div>
@@ -9182,23 +9337,33 @@ const adminState = {
 // "spaced names" (e.g. "First Name"), and common synonyms.
 function pickField(obj, ...candidates) {
   if (!obj || typeof obj !== 'object') return '';
+  // Helper: treat null, undefined, empty string, and whitespace-only as
+  // "missing." Previously the function returned the first non-null/
+  // non-undefined value, which meant an EMPTY STRING in an early
+  // candidate column would short-circuit the fallback chain — even if
+  // a later candidate had real data. This was a silent failure mode
+  // that hid new moderators behind "Unknown" labels when their Excel
+  // row had (e.g.) `firstName: ''` and `First Name: 'Sarah'` due to
+  // column-header drift between writes.
+  const hasValue = v => {
+    if (v == null) return false;
+    if (typeof v === 'string' && v.trim() === '') return false;
+    return true;
+  };
   for (const cand of candidates) {
-    // Exact match
-    if (obj[cand] !== undefined && obj[cand] !== null) return obj[cand];
+    // Exact match — skip if value is missing-equivalent so we try the
+    // next candidate rather than returning an empty string.
+    if (hasValue(obj[cand])) return obj[cand];
     // Case-insensitive
     const lower = cand.toLowerCase();
     for (const k of Object.keys(obj)) {
-      if (k.toLowerCase() === lower) {
-        const v = obj[k];
-        if (v !== undefined && v !== null) return v;
-      }
+      if (k.toLowerCase() === lower && hasValue(obj[k])) return obj[k];
     }
     // Strip non-alphanumeric and compare
     const stripped = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const k of Object.keys(obj)) {
-      if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === stripped) {
-        const v = obj[k];
-        if (v !== undefined && v !== null) return v;
+      if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === stripped && hasValue(obj[k])) {
+        return obj[k];
       }
     }
   }
@@ -9354,9 +9519,61 @@ function formatDate(v) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 function avatarLetters(first, last) {
-  const a = (first || '').trim().charAt(0).toUpperCase();
-  const b = (last  || '').trim().charAt(0).toUpperCase();
-  return (a + b) || '??';
+  // Build a 2-letter avatar from name parts. Most common case is
+  // first-name field + last-name field, producing the initials of each.
+  //
+  // EDGE CASES this handles:
+  // 1. Multi-word first name ("Akshay Raj") with separate last name ("Margam")
+  //    → take first letter of EACH word's first letter → "AM" (Akshay + Margam).
+  //    Skips middle words to keep avatar to 2 letters.
+  // 2. Whole name in firstName field ("Akshay Raj Margam"), lastName empty
+  //    → split the first-name field by whitespace, take first+last word's
+  //    first letters → "AM". Otherwise we'd return "A?" which loses info.
+  // 3. Single name in firstName, no last name → "A" + "" = "A" (then "?")
+  //    which is acceptable for single-named individuals.
+  // 4. Both empty → "??"
+  const f = String(first || '').trim();
+  const l = String(last  || '').trim();
+  if (l) {
+    // Normal case — first + last fields both populated. Take first letter
+    // of each. If the first-name field itself is multi-word ("Akshay Raj"),
+    // we still just use the very first letter ("A"), since the last-name
+    // letter is more informative for disambiguation.
+    const a = f.charAt(0).toUpperCase();
+    const b = l.charAt(0).toUpperCase();
+    return (a + b) || '??';
+  }
+  if (f) {
+    // No last-name field. If firstName is multi-word, treat the last word
+    // as a surname-equivalent for the second letter. "Akshay Raj Margam"
+    // → A + M. Single word "Akshay" → just "A" + "" = "A".
+    const words = f.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      const a = words[0].charAt(0).toUpperCase();
+      const b = words[words.length - 1].charAt(0).toUpperCase();
+      return a + b;
+    }
+    return words[0].charAt(0).toUpperCase() || '??';
+  }
+  return '??';
+}
+
+// Return just the first word of a name. Used in very compact UI surfaces
+// (team chips, narrow cards) where a multi-word first-name field like
+// "Akshay Raj" would overflow. Falls back to the whole string if there's
+// no whitespace, and to an empty string if input is missing.
+//
+// We extract only the FIRST word — not first name + last initial — because
+// in genuinely tight UI (16px-tall chip with limited horizontal room) even
+// "Akshay R." is too long. Full names live in the detail views; this
+// helper is for "at-a-glance" identifiers.
+function firstWordOf(name) {
+  if (!name) return '';
+  const trimmed = String(name).trim();
+  if (!trimmed) return '';
+  const space = trimmed.search(/\s/);
+  if (space === -1) return trimmed;
+  return trimmed.slice(0, space);
 }
 
 /* ----------- Render shell ----------- */
@@ -10607,8 +10824,13 @@ function formatModDate(v) {
 
 function modCardHTML(m, i, role) {
   const orbitId   = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-  const firstName = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name');
-  const lastName  = pickField(m, 'lastName',  'last_name',  'LastName',  'Last Name');
+  // Added candidates: `name`, `displayName`, `fullName`, `givenName`,
+  // and the un-prefixed `First` / `firstname` so we resolve rows
+  // whose Excel headers don't follow the canonical schema. Strip-
+  // alphanumeric covers most variations, but explicit aliases help
+  // with non-standard headers like "Given Name".
+  const firstName = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName', 'given_name', 'GivenName', 'Given Name', 'firstname', 'First');
+  const lastName  = pickField(m, 'lastName',  'last_name',  'LastName',  'Last Name',  'surname', 'familyName', 'family_name', 'FamilyName', 'Family Name', 'lastname', 'Last');
   const phone     = pickField(m, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone');
   const cEmail    = pickField(m, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email');
   const pEmail    = pickField(m, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email');
@@ -10618,7 +10840,46 @@ function modCardHTML(m, i, role) {
   const carType   = pickField(m, 'carType', 'car_type', 'CarType', 'Car Type', 'vehicleType', 'vehicle_type', 'VehicleType', 'Vehicle Type');
   const smartPhone= pickField(m, 'smartPhone', 'smart_phone', 'SmartPhone', 'Smart Phone');
 
-  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'Unknown';
+  // Last-resort display name resolution. The order is:
+  //   1. First + Last  (the normal case)
+  //   2. Just first or just last (partial data)
+  //   3. A combined `name` / `displayName` / `fullName` column
+  //   4. The orbit login ID itself (always populated — it's the row's
+  //      unique identifier)
+  //   5. Literal 'Unknown' (basically never reaches here — only if the
+  //      row has no orbitId either, in which case it's totally empty)
+  //
+  // Falling back to orbit login ID instead of 'Unknown' gives admin
+  // something actionable: they can see WHICH row needs fixing.
+  // Previously every empty row collapsed to 'Unknown', so 5 incomplete
+  // moderators looked identical in the list.
+  let fullName = [firstName, lastName].filter(Boolean).map(s => String(s).trim()).filter(Boolean).join(' ').trim();
+  if (!fullName) {
+    fullName = pickField(m, 'name', 'fullName', 'full_name', 'FullName', 'Full Name', 'displayName', 'display_name', 'DisplayName', 'Display Name');
+  }
+  // hasResolvedName: did we get a real human name, or are we showing
+  // the orbit login ID as a placeholder? Used to render an
+  // "incomplete profile" hint so admin knows to fix the Excel row.
+  const hasResolvedName = !!fullName;
+  if (!fullName) fullName = orbitId || 'Unknown';
+  // Diagnostic: log when we fail to resolve a mod's name. Dumps the
+  // actual column keys PA returned so admin can copy-paste them and
+  // see what's different about the row. We rate-limit to one warn
+  // per session per orbitId so the console doesn't get flooded if
+  // the list has many incomplete rows.
+  if (!hasResolvedName) {
+    window._orbitLoggedIncompleteMods = window._orbitLoggedIncompleteMods || new Set();
+    const dedupKey = String(orbitId || `idx${i}`);
+    if (!window._orbitLoggedIncompleteMods.has(dedupKey)) {
+      window._orbitLoggedIncompleteMods.add(dedupKey);
+      console.warn(
+        `[Orbit] Moderator name unresolved for ${dedupKey} — showing orbit login ID instead. ` +
+        `Excel row columns: ${Object.keys(m || {}).join(', ')}. ` +
+        `Check that firstName / lastName columns exist and are populated for this row.`
+      );
+    }
+  }
+
   const isExpanded = !!adminState.expandedMods[i];
 
   const rows = [
@@ -10637,11 +10898,13 @@ function modCardHTML(m, i, role) {
   ];
 
   return `
-    <div class="mod-card ${isExpanded ? 'expanded' : ''}" data-idx="${i}">
+    <div class="mod-card ${isExpanded ? 'expanded' : ''} ${hasResolvedName ? '' : 'incomplete-profile'}" data-idx="${i}">
       <div class="mod-card-head" tabindex="0" role="button" aria-expanded="${isExpanded}">
         <div class="mod-avatar">${escapeHTML(avatarLetters(firstName, lastName))}</div>
         <div class="mod-name-block">
-          <div class="mod-name">${escapeHTML(fullName)}${role === 'backup' ? ' <span class="mod-role-badge">BU</span>' : ''}</div>
+          <div class="mod-name">
+            ${escapeHTML(fullName)}${role === 'backup' ? ' <span class="mod-role-badge">BU</span>' : ''}${hasResolvedName ? '' : ' <span class="mod-incomplete-badge" title="No first/last name found in Excel for this moderator — showing orbit login ID instead. Add the name columns to the row to fix.">Incomplete</span>'}
+          </div>
           <div class="mod-id">${escapeHTML(orbitId || '—')}</div>
         </div>
         <span class="mod-card-chevron">
@@ -13017,53 +13280,67 @@ async function fetchAssignmentsFromPA() {
       };
       grouped.set(groupKey, g);
     } else {
-      // Cancelled-sticky safety net. Even if timestamps are equal (legacy
-      // data where savedAt wasn't bumped on cancel), if ANY row for this
-      // group says Cancelled, the whole group is Cancelled. Once cancelled,
-      // always cancelled — matches admin's expectation that cancellation
-      // is monotonic, and protects against future timestamp ambiguity.
+      // ===================================================================
+      // STATUS RESOLUTION — strict latest-timestamp-wins
+      // ===================================================================
+      // Rows are sorted newest-first by lastActive (see the sort above).
+      // The FIRST row processed for each group establishes the group's
+      // status (via the if-branch). Subsequent (older) rows would
+      // previously OVERRIDE the newer status via a "sticky" priority
+      // system (Cancelled > Unassigned > Completed > ...), which caused
+      // a real bug in multi-admin use:
       //
-      // Precedence (highest priority wins regardless of timestamp ties):
-      //   Cancelled > Unassigned > Completed > Notified > Booked
+      //   T=10am  Admin A: cancels booking → Cancelled row written
+      //   T=11am  Admin B: edits + revives → Booked row written
+      //   On next fetch: rows sort newest-first → Booked is first,
+      //                  sets g.status = 'Booked' (correct!)
+      //   Then the OLDER Cancelled row processed second → the old
+      //   override fires → g.status flips back to Cancelled ❌
+      //   Result: the revival silently fails on every refresh.
       //
-      // Why this order:
-      //   - Cancelled is the strongest "this didn't happen" signal and is
-      //     applied first.
-      //   - Unassigned is a weaker "team removed" terminal state — if
-      //     admin first unassigned then later cancelled, the cancellation
-      //     wins because it's a stronger statement about the booking's
-      //     fate.
-      //   - Completed represents successful work that happened — beats
-      //     forward-looking statuses (Notified, Booked) since rewinding
-      //     completion is destructive.
-      //   - Notified > Booked is the normal forward flow.
-      if (r.status === 'Cancelled' && g.status !== 'Cancelled') {
-        g.status = 'Cancelled';
-        if (r.comment) g.comment = r.comment;
+      // New rule: ONLY use the priority tie-breaker when timestamps are
+      // STRICTLY EQUAL (e.g., same write batch — saveAssignment emits N
+      // rows with identical lastActive, one per mod). When the older row
+      // has a strictly earlier timestamp, it's HISTORY — the user's most
+      // recent action stands. This matches what admin actually expects:
+      // "the last thing I did is what's saved."
+      //
+      // The previous priority order is preserved AS A TIE-BREAKER only.
+      // For genuine concurrent writes (e.g., two admins clicking save
+      // at the same exact instant), the priority resolves the ambiguity
+      // deterministically: Cancelled > Unassigned > Completed > Notified > Booked.
+      const groupTs = g._latestActive || '';
+      const rowTs   = r.lastActive   || '';
+      if (rowTs && groupTs && rowTs === groupTs) {
+        // Same-batch tie. Apply the legacy priority cascade.
+        const priorityRank = s => {
+          if (s === 'Cancelled')  return 5;
+          if (s === 'Unassigned') return 4;
+          if (s === 'Completed')  return 3;
+          if (s === 'Notified')   return 2;
+          if (s === 'Booked')     return 1;
+          return 0;
+        };
+        if (priorityRank(r.status) > priorityRank(g.status)) {
+          g.status = r.status;
+          if (r.comment) g.comment = r.comment;
+        }
       }
-      // Unassigned-sticky safety net. Same defense-in-depth as Cancelled
-      // but lower priority. Once a team is removed from an assignment,
-      // we don't want a stale Booked row in Excel (from a previous team
-      // write) to silently un-unassign it on next read-back.
-      if (r.status === 'Unassigned' && g.status !== 'Cancelled' && g.status !== 'Unassigned') {
-        g.status = 'Unassigned';
-      }
-      // Completed-sticky safety net — same defense-in-depth logic as
-      // Cancelled. Order of precedence: Cancelled > Unassigned >
-      // Completed > Notified > Booked. If any row says Completed and the
-      // group isn't already Cancelled or Unassigned, the group is
-      // Completed (the work happened — no later edit should silently
-      // rewind that fact, even if timestamps tie).
-      if (r.status === 'Completed' && g.status !== 'Cancelled' && g.status !== 'Unassigned' && g.status !== 'Completed') {
-        g.status = 'Completed';
-      }
-      // Recover completion metadata even when reconstruction came from
-      // a different admin's writes. Excel doesn't have dedicated
-      // completedAt/completedBy columns — we derive them from the
-      // Completed row's lastActive (= time the row was written) and
-      // the moderator name fields on the row (= whoever's session it
-      // was). Use the EARLIEST Completed-row timestamp; if a row was
-      // re-written, the first-completion time is the truth.
+      // STRICTLY OLDER rows (rowTs < groupTs): they're historical, do
+      // NOT touch g.status. Their mods might still be useful below if
+      // they're from the same write batch as the group's newest row —
+      // the modSnapshots filter checks _latestActive to decide.
+
+      // Recover completion metadata from any Completed row in history.
+      // Excel doesn't have dedicated completedAt/completedBy columns —
+      // we derive them from the Completed row's lastActive (= time the
+      // row was written) and the moderator name fields (= whoever's
+      // session it was). Use the EARLIEST Completed-row timestamp; if
+      // a row was re-written, the first-completion time is the truth.
+      // This metadata recovery happens regardless of whether the group's
+      // current status is Completed — we record completion history even
+      // if the booking was later un-completed (e.g., revived for a
+      // re-do).
       if (r.status === 'Completed' && r.lastActive) {
         if (!g.completedAt || r.lastActive < g.completedAt) {
           g.completedAt = r.lastActive;
@@ -13213,20 +13490,53 @@ async function fetchAssignmentsFromPA() {
     // until an explicit edit-revive (saveAssignment) clears it. Without
     // this, terminal-state assignments could silently revert to Booked
     // on the next refresh.
-    if (a._terminalLock) {
-      console.log('[Orbit] Keeping local terminal-state', a.id, '(status:', a.status, ')— terminal lock active');
-      return true;
+    // PRIMARY: time-bounded terminal-action lock. Set by cancelAssignment,
+    // completeAssignment, and unassignTeamFromAssignment when admin
+    // takes a terminal action directly. This is an ACTION-based signal
+    // that protects the local terminal state from being clobbered by
+    // a stale remote row during Excel's propagation window.
+    //
+    // CHANGE FROM PRIOR BUILDS: the lock now EXPIRES. Previously it was
+    // a boolean that stayed true until edit-revive cleared it — which
+    // meant a different admin's later action could NEVER take effect on
+    // a locked browser. Bad in multi-admin use: admin A cancels at 10am,
+    // admin B revives at 11am, admin A's browser stayed Cancelled
+    // forever even on refresh.
+    //
+    // New form: _terminalLockUntil holds an ISO timestamp. The lock is
+    // active only while NOW < _terminalLockUntil. The window is 90s,
+    // which comfortably covers PA write (~2-5s) + read (~1-3s) + poll
+    // interval (60s). After the window, normal latest-timestamp-wins
+    // semantics resume — admin B's later write can override.
+    //
+    // Backwards compat: legacy boolean _terminalLock: true rows (from
+    // pre-time-bound builds) are treated as IMMEDIATELY EXPIRED. They
+    // were set before this fix, so the propagation window has long
+    // since passed — keeping them locked would re-create the original
+    // cross-admin bug. Falling back to timestamp comparison is correct.
+    const lockUntil = a._terminalLockUntil;
+    if (lockUntil) {
+      const now = new Date().toISOString();
+      if (now < lockUntil) {
+        console.log('[Orbit] Keeping local terminal-state', a.id, '(status:', a.status, ')— terminal lock active until', lockUntil);
+        return true;
+      }
+      // Expired lock — fall through to timestamp comparison below.
     }
     // Secondary: savedAt timestamp comparison. Catches the
     // standard race-condition case where local saved newer than what
     // PA has returned yet.
     if (a.savedAt && r.savedAt && a.savedAt > r.savedAt) return true;
     // Tertiary belt: terminal-state local vs non-terminal remote, no
-    // lock present. Same defensive idea as the lock but weaker — kept
-    // for backward compatibility with locally-cached terminal states
-    // that pre-date the lock (e.g., from a previous build).
+    // active lock and timestamps tie/inverted. This last belt is kept
+    // narrow — only fires when local is terminal AND remote is not,
+    // which is the specific failure pattern where stale Booked rows in
+    // PA pagination drop the newer Cancelled rows. If both states are
+    // non-terminal or both are terminal, we trust the timestamps fully.
     const terminal = s => s === 'Completed' || s === 'Cancelled' || s === 'Unassigned';
-    if (terminal(a.status) && !terminal(r.status)) return true;
+    if (terminal(a.status) && !terminal(r.status) && a.savedAt && r.savedAt && a.savedAt >= r.savedAt) {
+      return true;
+    }
     return false;
   });
   const droppedStale = (local.assignments || []).filter(a =>
@@ -13523,9 +13833,31 @@ function fmtDurationHours(totalMin) {
 function startOfWeek(d) {
   const x = new Date(d);
   x.setHours(0,0,0,0);
-  x.setDate(x.getDate() - x.getDay());  // Sunday = 0
+  // Shift to Monday-as-first-day-of-week. Sun=0, Mon=1, ..., Sat=6.
+  // Map to Mon=0 with (getDay() + 6) % 7 so subtracting that offset
+  // lands on Monday. Earlier this function used Sunday-as-first; the
+  // admin calendar's week view now starts on Monday for parity with
+  // how the rest of the app (mod calendar, availability, team-create
+  // modal) already presents weeks.
+  const dow = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - dow);
   return x;
 }
+
+// Time-bounded terminal-action lock. When admin (or mod) takes a
+// terminal action — cancel, complete, unassign — we want the local
+// state to stick through Excel's eventual-consistency window without
+// being clobbered by stale data from a background fetch. But we also
+// don't want the lock to last forever, because that prevents a
+// DIFFERENT admin's later edit from overriding it. 90 seconds covers
+// the typical PA write (~2-5s) + read (~1-3s) + poll interval (60s)
+// with a comfortable margin. After the window, normal latest-wins
+// semantics resume.
+function terminalLockUntil() {
+  const ms = 90 * 1000;
+  return new Date(Date.now() + ms).toISOString();
+}
+
 function addDays(d, n) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
@@ -13551,6 +13883,34 @@ function getModeratorDisplayName(orbitId) {
   const fn = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name');
   const ln = pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name');
   return [fn, ln].filter(Boolean).join(' ').trim() || orbitId;
+}
+// Compact-display variant — first word of the first-name field only.
+// Used in tight UI surfaces (team chips, narrow cards) where the full
+// name would overflow. "Akshay Raj Margam" displays as "Akshay" so
+// the chip stays in the same visual lane as single-word names.
+//
+// Why first WORD instead of first NAME field: the firstName field
+// itself can be multi-word for many international names ("Akshay Raj",
+// "Maria Elena"). Taking the first word gives a consistent compact
+// form regardless of whether the multi-word name is in firstName,
+// split across firstName/lastName, or sitting in a single `name` column.
+//
+// Fallback chain mirrors getModeratorDisplayName:
+//   1. First word of firstName field
+//   2. First word of lastName field (when firstName is empty)
+//   3. orbit login ID
+function getModeratorShortName(orbitId) {
+  const m = getModeratorByOrbitId(orbitId);
+  if (!m) return orbitId || '—';
+  const fn = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName', 'given_name', 'GivenName', 'Given Name', 'firstname', 'First');
+  const firstWord = firstWordOf(fn);
+  if (firstWord) return firstWord;
+  // No first name — try first word of last name as a fallback so the
+  // chip still shows SOMETHING beyond "—".
+  const ln = pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name', 'surname', 'familyName', 'family_name');
+  const lastWord = firstWordOf(ln);
+  if (lastWord) return lastWord;
+  return orbitId || '—';
 }
 function getModeratorAvatarLetters(orbitId) {
   const m = getModeratorByOrbitId(orbitId);
@@ -14609,16 +14969,16 @@ function teamCardHTML(team) {
         ${primaries.length === 0
           ? '<span class="team-empty-roster">No moderators assigned</span>'
           : primaries.map(id => `
-              <span class="team-mod-chip">
+              <span class="team-mod-chip" title="${escapeHTML(getModeratorDisplayName(id))}">
                 <span class="team-mod-chip-avatar">${escapeHTML(getModeratorAvatarLetters(id))}</span>
-                ${escapeHTML(getModeratorDisplayName(id))}
+                ${escapeHTML(getModeratorShortName(id))}
               </span>
             `).join('')
         }
         ${backups.map(id => `
-          <span class="team-mod-chip backup" title="Backup moderator">
+          <span class="team-mod-chip backup" title="Backup moderator — ${escapeHTML(getModeratorDisplayName(id))}">
             <span class="team-mod-chip-avatar">${escapeHTML(getModeratorAvatarLetters(id))}</span>
-            ${escapeHTML(getModeratorDisplayName(id))}
+            ${escapeHTML(getModeratorShortName(id))}
           </span>
         `).join('')}
       </div>
@@ -14798,13 +15158,25 @@ function renderTeamGridHTML(days) {
   // One row per team — sticky team-name on the left, day cells to the right.
   let rowsHTML = '';
   teams.forEach(team => {
+    // Compact name list for the team meta row beneath the team name.
+    // Uses first-word-only display so multi-word names like
+    // "Akshay Raj Margam" appear as "Akshay" — keeps the line readable
+    // in the narrow sticky-left column without ellipsis truncation.
+    // Full names are still visible in the team-card chips' title
+    // tooltips and in the mod card detail views.
     const teamModNames = (team.primaryIds || [])
-      .map(id => getModeratorDisplayName(id))
+      .map(id => getModeratorShortName(id))
       .filter(Boolean)
       .join(' · ') || '(no mods)';
+    // Title tooltip carries the full names so admins can see the
+    // complete roster on hover without leaving the calendar.
+    const teamModFullNames = (team.primaryIds || [])
+      .map(id => getModeratorDisplayName(id))
+      .filter(Boolean)
+      .join(', ');
 
     let cellsHTML = `
-      <div class="tg-team-name">
+      <div class="tg-team-name" title="${escapeHTML(teamModFullNames)}">
         <div class="tg-team-title">${escapeHTML(team.name)}</div>
         <div class="tg-team-meta">${escapeHTML(teamModNames)}</div>
       </div>`;
@@ -17669,9 +18041,14 @@ async function saveAssignment() {
       // The lock was set by cancelAssignment / unassignTeamFromAssignment
       // to prevent background fetches from reverting the terminal state;
       // an explicit edit-revive is the ONE action that legitimately
-      // clears it. Without this, the revived assignment would be locked
-      // into whatever state it had before the edit, even though admin
-      // just explicitly transitioned it to Booked.
+      // clears it. We clear BOTH the new time-bounded form and the
+      // legacy boolean form so old-build cache entries also get
+      // cleaned up. Without this, the revived assignment would be
+      // locked into whatever state it had before the edit, even
+      // though admin just explicitly transitioned it to Booked.
+      _terminalLockUntil: (existing.status === 'Cancelled' || existing.status === 'Unassigned')
+        ? null
+        : existing._terminalLockUntil,
       _terminalLock: (existing.status === 'Cancelled' || existing.status === 'Unassigned')
         ? false
         : existing._terminalLock,
@@ -18211,12 +18588,13 @@ async function completeAssignment(asgnId, opts) {
     // than the previous Booked/Notified row. Without this, read-back's
     // newest-first sort can't pick this row as the current state.
     savedAt: now,
-    // Terminal-action lock — same protection as cancelAssignment. Once a
-    // mod has marked a session Completed, a background fetch must NEVER
-    // revert that to Booked, even if PA returns stale rows or its
-    // timestamps got reformatted. The lock is only cleared by explicit
-    // edit-revive in saveAssignment.
-    _terminalLock: true,
+    // Terminal-action lock — protects this local Completed state from
+    // being reverted by a background fetch during Excel's propagation
+    // window. The lock is TIME-BOUNDED (90 seconds) so cross-admin
+    // updates after the window can still take effect; previously it
+    // was a permanent boolean that locked the local row forever, which
+    // broke admin B's later edits in admin A's browser.
+    _terminalLockUntil: terminalLockUntil(),
   };
   saveAssignmentData();
 
@@ -18267,28 +18645,11 @@ async function cancelAssignment(asgnId, comment) {
     // distinguish them. With this bump, the cancelled row is unambiguously
     // newer than the booked row in Excel.
     savedAt: now,
-    // Terminal-action lock: marks this local copy as the product of a
-    // direct admin action that MUST NOT be reverted by a background fetch.
-    // The fetch's merge logic checks this flag and keeps the local copy
-    // regardless of timestamps or remote state.
-    //
-    // The previous protection relied entirely on savedAt being strictly
-    // greater than remote.savedAt — which fails under three real conditions
-    // observed in production:
-    //   1. PA pagination ceiling (256 rows) drops newer Cancelled rows
-    //      from the read response, leaving only stale Booked rows whose
-    //      lastActive is later than expected.
-    //   2. Excel auto-converts the lastActive column from Text to Date,
-    //      rewriting timestamps on write/read so local and remote end up
-    //      with the same value.
-    //   3. PA's "Add a row" action drops empty fields (like empty
-    //      orbitLoginId on marker rows), causing the status='Cancelled'
-    //      to be silently lost from a cancellation-marker row.
-    // Each of these can produce a refresh-after-cancel revert. The lock
-    // bypasses all three by making the cancel decision durable in
-    // localStorage — only an explicit user action (edit-to-revive in
-    // saveAssignment) can clear it.
-    _terminalLock: true,
+    // Terminal-action lock: protects local Cancelled state from a stale
+    // remote row during Excel's propagation window. TIME-BOUNDED — see
+    // terminalLockUntil() for the rationale. Previously a permanent
+    // boolean that prevented cross-admin overrides indefinitely.
+    _terminalLockUntil: terminalLockUntil(),
   };
   saveAssignmentData();
   closeAsgnModal();
@@ -18389,11 +18750,11 @@ async function unassignTeamFromAssignment(asgnId, opts) {
     // than the previous Booked/Notified row. Without this, read-back's
     // newest-first sort can't pick this row as the current state.
     savedAt: now,
-    // Terminal-action lock — same protection as cancelAssignment. The
-    // local Unassigned state must survive any background refresh, even
-    // if PA returns stale Booked rows or its timestamps don't compare
-    // cleanly. Only an explicit edit-revive (saveAssignment) can clear it.
-    _terminalLock: true,
+    // Terminal-action lock — protects local Unassigned state during
+    // Excel's propagation window. TIME-BOUNDED so a different admin
+    // editing the row later (with a fresh team selection) can still
+    // override after the window.
+    _terminalLockUntil: terminalLockUntil(),
   };
   saveAssignmentData();
 
