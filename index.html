@@ -8195,7 +8195,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051435';
+const APP_VERSION = '1.2.051436';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -21013,6 +21013,125 @@ function stopSessionStatePolling() {
 
 // Returns ALL assignments for the operator, sorted: soonest upcoming first,
 // then past assignments most-recent first. Used by the swipeable carousel.
+/* =====================================================================
+   MOD APP — CLOUD-FIRST ASSIGNMENT DATA
+   =====================================================================
+   The mod app's view of "my schedule" / "my next session" used to read
+   ONLY from localStorage (via loadAssignmentData), which was populated
+   by the admin app on the same device. On a fresh device where the
+   mod has never opened the admin app, localStorage was empty → the
+   mod saw "no booked session" even when they HAD bookings, and the
+   My Calendar tab was empty, and the next-session welcome modal showed
+   the wrong variant.
+
+   This module fixes that by treating the cloud (PA → Excel) as the
+   source of truth and localStorage as a fallback for offline use.
+
+   Refresh paths:
+     - On operator login (before showing the welcome modal)
+     - On nav refresh button click
+     - On opening My Calendar
+     - On visibility return when last fetch was >90s ago
+     - On a 3-minute polling interval while the operator app is visible
+
+   Concurrency guards: a single in-flight promise (`_modAsgnFetchPromise`)
+   prevents stacking parallel fetches. A throttle (`_modAsgnLastFetchAt`)
+   limits how often "stale-check refreshes" actually hit the network
+   (otherwise a chatty visibility-change event could spam PA). */
+
+const MOD_ASGN_REFRESH_INTERVAL_MS = 180_000;   // 3 minutes — periodic
+const MOD_ASGN_STALE_THRESHOLD_MS  = 90_000;    // 90s — visibility refresh
+let _modAsgnFetchPromise = null;                // dedupe in-flight fetch
+let _modAsgnLastFetchAt  = 0;                   // ms epoch of last success
+let _modAsgnRefreshTimer = null;                // setInterval handle
+
+// Fetch assignments from cloud and re-render any visible mod UI that
+// depends on them. Re-uses fetchAssignmentsFromPA() (the same function
+// the admin app calls) — it does merge, persist to localStorage,
+// and update adminState. We just trigger UI updates afterward.
+//
+// opts.silent: when true, skip toast/banner UI updates. Used by
+// background polling so the user isn't pestered every 3 minutes.
+// opts.force: bypass the in-flight-dedupe (rare — only the manual
+// refresh button uses this so the user always feels a "live" fetch).
+async function refreshModAssignments(opts) {
+  opts = opts || {};
+
+  if (typeof fetchAssignmentsFromPA !== 'function') return null;
+
+  // Dedupe in-flight fetches. If a fetch is already running, return
+  // its promise so callers wait for the same result instead of firing
+  // a parallel request. This is critical at startup where the welcome
+  // check, the entry-bar render, and the nav-chip render all might
+  // call refresh in the same tick.
+  if (_modAsgnFetchPromise && !opts.force) {
+    return _modAsgnFetchPromise;
+  }
+
+  _modAsgnFetchPromise = (async () => {
+    try {
+      await fetchAssignmentsFromPA();
+      _modAsgnLastFetchAt = Date.now();
+      // Re-render the operator-visible UI: nav chip (team), entry bar
+      // (participant fields), welcome screen (next session). The mod
+      // calendar's schedule tab also depends on this, but we only
+      // re-render it if the calendar is currently OPEN.
+      try {
+        applyAssignmentToEntryFields();
+        if (typeof renderApp === 'function') renderApp();
+        const calOverlay = document.getElementById('modCalOverlay');
+        if (calOverlay && calOverlay.classList.contains('open')
+            && typeof renderModCalBody === 'function') {
+          renderModCalBody();
+        }
+      } catch (e) {
+        console.warn('[Orbit] mod-asgn re-render error:', e && e.message);
+      }
+      return true;
+    } catch (e) {
+      console.warn('[Orbit] mod-asgn refresh failed:', e && e.message);
+      return false;
+    } finally {
+      _modAsgnFetchPromise = null;
+    }
+  })();
+  return _modAsgnFetchPromise;
+}
+
+// Periodic background refresh while the operator app is visible. We
+// don't fetch when the tab is hidden — saves bandwidth + avoids
+// hammering PA flows when the device is in the user's pocket.
+function startModAssignmentRefresh() {
+  if (_modAsgnRefreshTimer) return;
+  _modAsgnRefreshTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    const app = document.getElementById('app');
+    if (!app || app.style.display === 'none') return;
+    refreshModAssignments({ silent: true });
+  }, MOD_ASGN_REFRESH_INTERVAL_MS);
+
+  // Visibility-return refresh — if the tab was backgrounded for a
+  // while, check whether our cache is stale and refresh if so. This
+  // catches the common pattern of a mod locking their phone, walking
+  // somewhere, and unlocking to find new schedule changes.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const app = document.getElementById('app');
+    if (!app || app.style.display === 'none') return;
+    const age = Date.now() - _modAsgnLastFetchAt;
+    if (age > MOD_ASGN_STALE_THRESHOLD_MS) {
+      refreshModAssignments({ silent: true });
+    }
+  });
+}
+
+function stopModAssignmentRefresh() {
+  if (_modAsgnRefreshTimer) {
+    clearInterval(_modAsgnRefreshTimer);
+    _modAsgnRefreshTimer = null;
+  }
+}
+
 function getOperatorAssignments() {
   if (!state.modProfile || !state.modProfile.orbitLoginId) return [];
   if (!adminState._asgnLoaded) {
@@ -21904,6 +22023,7 @@ function logoutAndClearOperatorState() {
   }
   if (typeof stopSessionStatePolling === 'function') stopSessionStatePolling();
   if (typeof stopMidnightWatcher === 'function') stopMidnightWatcher();
+  if (typeof stopModAssignmentRefresh === 'function') stopModAssignmentRefresh();
   if (window._mySessionCarouselIdx) window._mySessionCarouselIdx = 0;
   // Force adminState reload on next access
   adminState._asgnLoaded = false;
@@ -22141,6 +22261,15 @@ function openModCalendar() {
   if (typeof closeMenu === 'function') closeMenu();
   document.body.style.overflow = 'hidden';
   renderModCalBody();
+
+  // Pull fresh assignment data from cloud so the My Schedule tab
+  // reflects admin's latest changes. Background fetch — body renders
+  // immediately from cache, then re-renders once cloud data lands.
+  // The refreshModAssignments helper handles its own re-render call,
+  // so the calendar's schedule tab updates automatically when ready.
+  if (typeof refreshModAssignments === 'function') {
+    refreshModAssignments({ silent: true });
+  }
 
   // Pull fresh data in the background; if still on the availability tab and
   // the user hasn't started editing (state still matches what hydration set),
@@ -23352,6 +23481,22 @@ function startApp() {
   document.documentElement.setAttribute('data-theme', state.theme || 'dark');
   document.getElementById('themeDesc').textContent = (state.theme === 'light') ? 'Currently light' : 'Currently dark';
   renderApp();
+  // CLOUD-FIRST FETCH at startup. Previously the mod app relied on
+  // adminState.assignments being populated from localStorage — which
+  // only worked if the admin had ALSO opened the admin app on the
+  // same device. On any fresh device the mod's "next assignment" was
+  // empty until they manually opened the admin app, defeating the
+  // welcome modal and the My Calendar tab.
+  //
+  // We kick the fetch off immediately (not awaited at this scope so
+  // the app remains interactive while it runs). The teammate-sync
+  // and welcome-modal timers below intentionally fire AFTER the fetch
+  // typically resolves (~600-900ms for a normal PA call) so they get
+  // fresh data; if the fetch is slow, they fall back to whatever was
+  // in localStorage, which is no worse than the old behavior.
+  const _initialAsgnRefresh = (typeof refreshModAssignments === 'function')
+    ? refreshModAssignments({ silent: true })
+    : Promise.resolve();
   // Check for teammate's session progress on the current assignment.
   // Runs ~1s after paint so the operator sees their app first; the
   // teammate-sync banner appears non-modally if a teammate has progress.
@@ -23371,6 +23516,16 @@ function startApp() {
   // operator sees their next-session or no-session prompt for the
   // new day automatically.
   if (typeof startMidnightWatcher === 'function') startMidnightWatcher();
+  // Background assignment refresh — every 3 minutes + on visibility
+  // return — so a mod working in the app sees newly-added bookings
+  // and admin edits without needing to log out / refresh / use the
+  // nav refresh button.
+  if (typeof startModAssignmentRefresh === 'function') startModAssignmentRefresh();
+  // Expose the initial-fetch promise so the welcome-modal trigger
+  // (registered in doLogin) can await it before deciding which
+  // variant to show. Stored on window so it's reachable from the
+  // setTimeout callback in doLogin without changing function signatures.
+  window._orbitInitialAsgnRefresh = _initialAsgnRefresh;
 }
 
 // Look for teammate SessionState on the current assignment. If found
@@ -24322,11 +24477,30 @@ async function doLogin() {
     // (~1200ms) so the welcome decision happens first; if welcome
     // shows a "today completed" or "next session" modal, the teammate
     // sync check skips (its own dedupe sees the welcome overlay).
-    setTimeout(() => {
-      if (_loginWelcomePending) {
-        _loginWelcomePending = false;
-        try { checkLoginWelcome(); }
-        catch (e) { console.warn('[Orbit] Welcome check error:', e && e.message); }
+    //
+    // CRITICAL: we AWAIT the initial assignment fetch before deciding
+    // which welcome variant to show. Otherwise a fresh-device mod
+    // would always see "no_session" because their local cache is
+    // empty before the fetch lands. The fetch resolves typically in
+    // 400-800ms; we cap the wait at 2.5s so a flaky network doesn't
+    // block the welcome forever (fallback: show whatever local cache
+    // has, same as the old behavior).
+    setTimeout(async () => {
+      if (!_loginWelcomePending) return;
+      _loginWelcomePending = false;
+      try {
+        const initial = window._orbitInitialAsgnRefresh;
+        if (initial && typeof initial.then === 'function') {
+          await Promise.race([
+            initial,
+            new Promise(resolve => setTimeout(resolve, 2500)),  // safety timeout
+          ]);
+        }
+        checkLoginWelcome();
+      } catch (e) {
+        console.warn('[Orbit] Welcome check error:', e && e.message);
+        // Still try the welcome check with whatever state we have
+        try { checkLoginWelcome(); } catch (_) {}
       }
     }, 900);
   } catch (e) {
@@ -24424,18 +24598,23 @@ function init() {
     renderApp();
     toast('Session reset');
   });
-  // Refresh button — re-read assignment cache + pull latest worklog
+  // Refresh button — pulls fresh data from cloud (PA → Excel).
+  // Previously this just re-read localStorage, which was a no-op if
+  // localStorage was already loaded. Now it actually hits the network
+  // so a mod can pull admin's latest schedule edits + new bookings
+  // without logging out.
   const navRefreshBtn = document.getElementById('navRefreshBtn');
   if (navRefreshBtn) {
     navRefreshBtn.addEventListener('click', async () => {
       navRefreshBtn.classList.add('refreshing');
       try {
-        // Force re-read of the assignment cache from localStorage
-        const stored = loadAssignmentData();
-        adminState.teams = stored.teams;
-        adminState.assignments = stored.assignments;
-        adminState._asgnLoaded = true;
-        // Pull latest worklog rows from PA (if read URL configured)
+        // Fresh cloud fetch — overrides cache. force:true bypasses the
+        // in-flight dedupe so manual refresh always feels live.
+        if (typeof refreshModAssignments === 'function') {
+          await refreshModAssignments({ silent: false, force: true });
+        }
+        // Pull latest worklog rows from PA (if read URL configured) —
+        // ensures status badges (in-progress, complete) are up-to-date.
         if (typeof fetchWorklogFromPA === 'function') {
           await fetchWorklogFromPA();
         }
