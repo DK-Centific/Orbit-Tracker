@@ -258,6 +258,22 @@ nav {
 }
 .icon-btn:hover { background: var(--bg4); }
 .icon-btn:active { transform: scale(0.95); }
+/* Anchor-tagged icon buttons (e.g., #navLakituBtn) need text-decoration
+   reset to look identical to their <button> siblings in the nav. Without
+   this they pick up the default underline-on-hover treatment from <a>.
+   Color inheritance handled via the global a {color: inherit} rule — but
+   safer to be explicit here so this rule stands alone if anything else
+   changes around it. */
+a.icon-btn {
+  text-decoration: none;
+  color: var(--text);
+}
+a.icon-btn:hover { text-decoration: none; color: var(--text); }
+a.icon-btn:focus { outline: none; }
+a.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 /* When the button has class .refreshing, spin its inner SVG icon — used by
    the admin nav-bar Refresh button to give visual feedback while fetches run */
 .icon-btn.refreshing svg {
@@ -1794,6 +1810,24 @@ nav {
   transition: background 0.18s ease;
 }
 .menu-row:hover { background: var(--bg3); }
+/* Menu-row variant for external-link rows (e.g., Lakitu). Anchor-tagged
+   rows need text-decoration:none and color inheritance reset so they look
+   identical to their <div>-tagged siblings. We also subtly indicate the
+   external nature by replacing the right chevron with an outbound arrow
+   in the markup; this CSS just makes sure the link styles don't bleed
+   through. */
+a.menu-row, a.menu-row-link {
+  text-decoration: none;
+  color: inherit;
+}
+a.menu-row:hover, a.menu-row-link:hover {
+  text-decoration: none;
+  color: inherit;
+}
+a.menu-row:focus-visible, a.menu-row-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
 .menu-row .label { display: flex; align-items: center; gap: 12px; }
 .menu-row .label .ic {
   width: 30px; height: 30px; flex-shrink: 0;
@@ -8345,6 +8379,25 @@ nav {
         <div class="avatar" id="userAvatar">??</div>
         <span class="who" id="userName">Operator</span>
       </div>
+      <!-- Lakitu quick link — opens Amazon's session console in a new tab.
+           Placed before the Refresh button so it sits in a predictable
+           "external action" zone alongside other utility buttons. The
+           rel="noopener noreferrer" pair is the standard security hardening
+           for any target="_blank" link: prevents the destination page from
+           accessing window.opener (which could otherwise navigate this tab
+           or read its origin). target="_blank" is what opens the new tab. -->
+      <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+         class="icon-btn nav-lakitu-btn" id="navLakituBtn"
+         aria-label="Open Lakitu in a new tab"
+         title="Open Lakitu (sessions)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <!-- Stylized "external link" glyph: a small window with an
+               outbound arrow at the top-right. Clean, recognizable,
+               matches the visual weight of the sibling refresh/menu icons. -->
+          <path d="M3 3.5h6.5M3 3.5v9h9V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 8l5-5M9 3h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
       <button class="icon-btn" id="navRefreshBtn" aria-label="Refresh schedule" title="Refresh next-session queue">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M2.5 6a5.5 5.5 0 0 1 9.5-2.5L13.5 5M13.5 10A5.5 5.5 0 0 1 4 12.5L2.5 11M2.5 2.5V5h2.5M13.5 13.5V11h-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8491,6 +8544,32 @@ nav {
       </div>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
+
+    <!-- Quick links section — for external tools the moderator needs during
+         a session. Lakitu is Amazon's session console; opens in a new tab
+         so the moderator never loses their place in this app. Add more
+         entries here as the toolchain grows. The chevron is replaced with
+         an outbound-arrow glyph so the moderator can tell at a glance
+         which menu rows leave the app vs. navigate within it. -->
+    <div class="menu-section-label">Quick Links</div>
+    <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+       class="menu-row menu-row-link" id="lakituRow">
+      <div class="label">
+        <span class="ic" style="color:var(--accent-ink)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 3.5h6.5M3 3.5v9h9V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 8l5-5M9 3h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <div class="text">Lakitu</div>
+          <div class="desc">Open Amazon's session console in a new tab</div>
+        </div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="opacity: 0.55;">
+        <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
 
     <div class="menu-section-label">Session</div>
     <div class="menu-row" id="exportRow">
@@ -8643,7 +8722,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051438';
+const APP_VERSION = '1.2.051441';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -12419,6 +12498,17 @@ async function loadParticipants(force = false) {
       renderAssignment();
     } else {
       renderParticipants();
+    }
+    // If the View Assignment modal is currently open, re-render it so
+    // the now-enriched participantData (with email) lands in the UI
+    // without the admin having to close and re-open the booking.
+    // This covers the timing race where admin clicked a booking before
+    // participants finished loading — the modal showed "No email on
+    // file" stale, and now self-heals.
+    if (adminState._viewingAsgnId
+        && document.getElementById('asgnModal')
+        && document.getElementById('asgnModal').classList.contains('open')) {
+      try { openViewAssignmentModal(adminState._viewingAsgnId); } catch (_) {}
     }
   }
 }
@@ -19797,6 +19887,10 @@ async function saveAssignment() {
 function openViewAssignmentModal(asgnId) {
   const a = adminState.assignments.find(x => x.id === asgnId);
   if (!a) return;
+  // Track which assignment is being viewed so post-fetch hooks (e.g.,
+  // loadParticipants completing after the modal opened) can refresh the
+  // open modal with newly available data. Cleared in closeAsgnModal.
+  adminState._viewingAsgnId = asgnId;
   // Display-time fallback: if the assignment fetch ran before the
   // participants list was loaded, the bulk enrichment in
   // fetchAssignmentsFromPA would have been a no-op. Run a single-row
@@ -20152,19 +20246,56 @@ function getLiveParticipantByAssignmentId(participantOrbitId) {
   return null;
 }
 
+// Fall-back matcher: when participantOrbitId is missing or doesn't link
+// to anyone in the live list, try to find the participant by firstName
+// + lastName from the assignment's stored snapshot. This catches:
+//   - Legacy assignments saved before the participantOrbitId column existed
+//   - Remote rebuilds where r.participantOrbitId came back empty/null
+//   - The case where the participant's email changed after booking, so
+//     the picker's email-based stableId no longer matches
+// Match is case-insensitive on trimmed first+last. If multiple
+// participants match (rare — duplicate names), returns the first one.
+function getLiveParticipantByName(firstName, lastName) {
+  if (!adminState.participants) return null;
+  const f = String(firstName || '').trim().toLowerCase();
+  const l = String(lastName  || '').trim().toLowerCase();
+  if (!f && !l) return null;
+  const normalized = (typeof normalizeParticipants === 'function')
+    ? normalizeParticipants()
+    : [];
+  for (const p of normalized) {
+    const pf = String(p.firstName || '').trim().toLowerCase();
+    const pl = String(p.lastName  || '').trim().toLowerCase();
+    // Match when BOTH parts match, OR when only one part is provided
+    // on the assignment side and that part matches.
+    const firstOk = !f || pf === f;
+    const lastOk  = !l || pl === l;
+    if (firstOk && lastOk && (pf === f || pl === l)) return p;
+  }
+  return null;
+}
+
 function enrichOneAssignmentParticipantData(a) {
   // Mutates assignment in place to fill missing participantData fields.
   // Returns the same assignment for chaining. Safe to call multiple
   // times on the same row.
   if (!a) return a;
-  if (!a.participantOrbitId) return a;        // no link to participant record
-  const live = getLiveParticipantByAssignmentId(a.participantOrbitId);
-  if (!live) return a;                         // participant not in live list
-  // Build a baseline participantData if none exists
   if (!a.participantData) a.participantData = {};
+  // Try ID-based match first (the strict path); fall back to name-based
+  // match when ID is missing or doesn't resolve. Name-based matching
+  // covers legacy assignment rows that predate the participantOrbitId
+  // column AND remote rebuilds where Excel didn't carry the ID.
+  let live = null;
+  if (a.participantOrbitId) {
+    live = getLiveParticipantByAssignmentId(a.participantOrbitId);
+  }
+  if (!live) {
+    const pd = a.participantData;
+    live = getLiveParticipantByName(pd.firstName, pd.lastName);
+  }
+  if (!live) return a;
   const pd = a.participantData;
   // Fill ONLY missing fields — don't overwrite existing values.
-  // hasValue treats null/undefined/empty/whitespace as missing.
   const has = (v) => v !== null && v !== undefined && String(v).trim() !== '';
   if (!has(pd.firstName) && has(live.firstName)) pd.firstName = live.firstName;
   if (!has(pd.lastName)  && has(live.lastName))  pd.lastName  = live.lastName;
@@ -20173,6 +20304,15 @@ function enrichOneAssignmentParticipantData(a) {
   if (!has(pd.address)   && has(live.address))   pd.address   = live.address;
   if (!has(pd.state)     && has(live.state))     pd.state     = live.state;
   if (!has(pd.zipCode)   && has(live.zipCode))   pd.zipCode   = live.zipCode;
+  // Backfill participantOrbitId on the assignment when missing so
+  // future enrichments use the fast ID-based match. This also helps
+  // the email-flow code paths that key off participantOrbitId.
+  if (!a.participantOrbitId) {
+    const liveId = pickField(live.raw, 'orbitId', 'orbitLoginId', 'orbit_login_id', 'id', 'email')
+                || live.email
+                || (live.firstName + live.lastName);
+    if (liveId) a.participantOrbitId = liveId;
+  }
   return a;
 }
 
@@ -20184,7 +20324,11 @@ function enrichAssignmentsWithParticipants(arr) {
   if (!Array.isArray(arr)) return arr;
   if (!adminState.participants) return arr;
   let enrichedCount = 0;
+  let emailAddedCount = 0;
   for (const a of arr) {
+    const hadEmail = !!(a.participantData
+                      && a.participantData.email
+                      && String(a.participantData.email).trim());
     const before = a.participantData ? Object.keys(a.participantData).filter(k => {
       const v = a.participantData[k];
       return v !== null && v !== undefined && String(v).trim() !== '';
@@ -20194,10 +20338,14 @@ function enrichAssignmentsWithParticipants(arr) {
       const v = a.participantData[k];
       return v !== null && v !== undefined && String(v).trim() !== '';
     }).length : 0;
+    const hasEmailNow = !!(a.participantData
+                         && a.participantData.email
+                         && String(a.participantData.email).trim());
     if (after > before) enrichedCount++;
+    if (!hadEmail && hasEmailNow) emailAddedCount++;
   }
   if (enrichedCount > 0) {
-    console.log(`[Orbit] Enriched participantData on ${enrichedCount} assignment${enrichedCount === 1 ? '' : 's'} from live participants list`);
+    console.log(`[Orbit] Enriched participantData on ${enrichedCount} assignment${enrichedCount === 1 ? '' : 's'} from live participants list (${emailAddedCount} got an email address)`);
   }
   return arr;
 }
@@ -21804,6 +21952,7 @@ function closeAsgnModal() {
   document.getElementById('asgnModalOverlay').classList.remove('open');
   document.getElementById('asgnModal').classList.remove('open');
   adminState.modal = null;
+  adminState._viewingAsgnId = null;
 }
 
 /* ===================================================================
@@ -22569,12 +22718,20 @@ const STATION_KEY_TO_STATUS = {
 };
 
 // Wrap-up checklist items shown after Station 3 Submit. Edit freely.
+// Revised 5/14/2026: the previous list was oriented around physical device
+// handling (Device A / Device B / cellphone selfie / equipment reset).
+// Workflow has shifted to a Lakitu-centric upload flow — these items
+// reflect what the moderator needs to verify ONCE files have already been
+// uploaded via the Lakitu Ring app, before the session can be marked
+// complete. The "Update Delivery trackers" item is the final hand-off to
+// the production/device tracking spreadsheets that downstream teams
+// depend on.
 const WRAPUP_CHECKLIST = [
-  'Confirm all 12 tasks are recorded on Device A',
-  'Confirm registration captured on Device B and Cellphone',
-  'Upload cellphone selfie video to laptop and rename as PID_PhoneModel_session.mp4',
-  'Verify Participant ID is consistent across all devices and tasks',
-  'Reset devices and room setup for next participant, or return equipment',
+  'Files uploaded via Lakitu Ring app',
+  'Upload completeness verified',
+  'File naming conventions validated',
+  'Data integrity check (no corrupted/missing files)',
+  'Update all Delivery trackers (Production/Device)',
 ];
 
 // ---------- Storage helpers ----------
@@ -26544,6 +26701,22 @@ function init() {
   // activates for touch devices in landscape).
   applyOrientationLock();
   document.getElementById('exportRow').addEventListener('click', () => { closeMenu(); exportExcel(); });
+  // Lakitu quick link — the <a> tag handles the actual navigation
+  // (target=_blank opens a new tab). We just need to close the drawer
+  // so when the moderator returns to this tab, they see a clean app
+  // state rather than a still-open menu drawer. Note: we don't
+  // preventDefault() — the navigation MUST happen as the browser's
+  // default behavior, otherwise the new tab won't open.
+  const lakituRow = document.getElementById('lakituRow');
+  if (lakituRow) {
+    lakituRow.addEventListener('click', () => {
+      // Tiny delay so closeMenu's transition doesn't fight with the
+      // tab-open. In practice modern browsers handle this fine even
+      // without the delay, but the visual order looks better:
+      // drawer fades closed THEN focus shifts to the new tab.
+      setTimeout(() => { try { closeMenu(); } catch (_) {} }, 10);
+    });
+  }
   document.getElementById('resetRow').addEventListener('click', async () => {
     const ok = await appConfirm({
       title:        'Reset session data?',
