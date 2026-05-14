@@ -64,6 +64,18 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --card-bg: #1a1a18;
   --nav-bg: rgba(15,15,14,0.88);
   --sidebar-bg: #1a1a18;
+  /* Frosted-glass background tokens for the sidebar and menu drawer.
+     70% opacity over the page color, combined with a strong backdrop
+     blur, gives a translucent panel that hints at content behind it
+     without being distracting. Inspired by iOS Control Center and
+     macOS sheets. Reading text on top stays legible because the
+     opacity is high enough (≥70%) to mute most underlying detail.
+     The base color matches the page (--bg) rather than a slightly
+     lighter shade — using bg with 70% opacity over the dimmed
+     overlay produces a uniformly muted appearance instead of a
+     two-tone band where the drawer ends. */
+  --sidebar-glass-bg: rgba(15, 15, 14, 0.70);
+  --menu-glass-bg:    rgba(15, 15, 14, 0.70);
   --shadow-sm: 0 2px 12px rgba(0,0,0,0.4);
   --shadow-md: 0 8px 40px rgba(0,0,0,0.5);
   --shadow-lg: 0 20px 60px rgba(0,0,0,0.6);
@@ -84,6 +96,12 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --card-bg: #ffffff;
   --nav-bg: rgba(245,245,247,0.88);
   --sidebar-bg: #ffffff;
+  /* Light-theme glass tokens. Same 70% opacity principle but
+     anchored to the light page background. Backdrop blur still
+     applies, giving the panel a softly diffused feel against the
+     content beneath it. */
+  --sidebar-glass-bg: rgba(245, 245, 247, 0.70);
+  --menu-glass-bg:    rgba(245, 245, 247, 0.70);
   --shadow-sm: 0 2px 12px rgba(0,0,0,0.06);
   --shadow-md: 0 8px 40px rgba(0,0,0,0.10);
   --shadow-lg: 0 20px 60px rgba(0,0,0,0.12);
@@ -122,8 +140,18 @@ nav {
 
      Horizontal insets (left/right) handle iPhone landscape rotation
      where the notch sits on one side — content otherwise gets clipped
-     by the rounded corner / sensor housing. */
+     by the rounded corner / sensor housing.
+
+     CRITICAL: align-items must be `flex-end` (bottom), NOT `center`.
+     With `center`, the icons sit in the vertical middle of the full
+     nav height (which includes the safe-area inset padding) — which
+     on iPhones with Dynamic Island puts them BEHIND or overlapping
+     the Island, making them visually obscured (Amz chip got cut in
+     half) and hard to tap. Aligning to bottom places the icons in
+     the visible 52px portion below the status bar / Dynamic Island
+     where they're fully tappable. */
   padding-top: env(safe-area-inset-top);
+  padding-bottom: 0;
   padding-left: calc(16px + env(safe-area-inset-left));
   padding-right: calc(16px + env(safe-area-inset-right));
   height: calc(52px + env(safe-area-inset-top));
@@ -132,10 +160,20 @@ nav {
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 0.5px solid var(--border);
-  display: flex; align-items: center;
+  display: flex;
+  align-items: flex-end;
+  /* The 52px visible bar height — children get this much vertical
+     space below the safe-area inset. Without it, children would
+     stretch to fill the entire nav height (including safe-area),
+     putting buttons back into the Dynamic Island zone. */
 }
-.nav-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
-.nav-right { display: flex; align-items: center; gap: 8px; }
+.nav-left, .nav-right {
+  height: 52px;
+  display: flex;
+  align-items: center;
+}
+.nav-left  { gap: 14px; flex: 1; min-width: 0; }
+.nav-right { gap: 8px; }
 
 .menu-toggle {
   width: 32px; height: 32px;
@@ -1247,8 +1285,18 @@ nav {
    ========================================================= */
 .menu-overlay {
   position: fixed; inset: 0; z-index: 400;
-  background: rgba(0,0,0,0.4);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  /* Heavy iOS-style background blur + dim. The drawer (sidebar or
+     menu) stays sharp and fully opaque; the rest of the page goes
+     soft-and-dark behind it. This is the Apple Control Center
+     approach — focal panel stays crisp, peripheral content blurs
+     into a calm backdrop so the user's eye is drawn to the panel
+     without losing all sense of place.
+     The earlier inverse approach (translucent drawer over a thin
+     overlay) made the drawer harder to read, which was the opposite
+     of the user's intent. */
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: saturate(160%) blur(22px);
+  -webkit-backdrop-filter: saturate(160%) blur(22px);
   opacity: 0; pointer-events: none;
   transition: opacity 0.3s ease;
 }
@@ -1257,6 +1305,11 @@ nav {
 .menu-drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 401;
   width: min(360px, 90vw);
+  /* Drawer is fully opaque again — text and rows need to be crisp
+     and readable. The visual "frosted glass" effect is now produced
+     by the OVERLAY behind the drawer (which blurs the page content)
+     rather than by translucency on the drawer itself. This matches
+     iOS Control Center: focal panel is sharp, backdrop is hazy. */
   background: var(--bg2);
   border-left: 0.5px solid var(--border);
   box-shadow: -8px 0 48px rgba(0,0,0,0.30);
@@ -1323,12 +1376,98 @@ nav {
 }
 [data-theme="dark"] .theme-toggle { background: var(--accent); }
 [data-theme="dark"] .theme-toggle::after { transform: translateX(18px); }
+/* Generic .on state for theme-toggle widgets used as on/off switches
+   outside the theme context. The orientation lock toggle reuses the
+   same visual but is controlled by its own boolean preference. */
+.theme-toggle.on { background: var(--accent); }
+.theme-toggle.on::after { transform: translateX(18px); }
 
 .menu-section-label {
   font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text3);
   padding: 14px 14px 8px;
   margin-top: 8px;
+}
+
+/* =========================================================
+   ORIENTATION LOCK overlay
+   =========================================================
+   Shown when the user has enabled portrait lock AND the device is
+   currently in landscape orientation. On Android Chrome the
+   Screen Orientation API enforces this at the OS level, so the
+   overlay is rarely seen. On iOS Safari (where the API is
+   restricted to PWA contexts), this overlay IS the lock mechanism —
+   it covers the entire app and prompts the user to rotate.
+
+   Note: this is a UX guard, not an OS enforcement on iOS Safari tabs.
+   If the user adds Orbit to their home screen (PWA install), the
+   real API lock activates and this overlay becomes unnecessary. */
+.orientation-overlay {
+  position: fixed; inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  text-align: center;
+}
+.orientation-overlay.active { display: flex; }
+.orientation-overlay-inner {
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.orientation-overlay-icon {
+  width: 88px; height: 88px;
+  color: var(--accent);
+  animation: rotateHint 2.4s ease-in-out infinite;
+}
+@keyframes rotateHint {
+  0%, 35% { transform: rotate(-90deg); }
+  50%, 75% { transform: rotate(0deg); }
+  100% { transform: rotate(-90deg); }
+}
+.orientation-overlay-title {
+  font-size: 22px; font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.orientation-overlay-sub {
+  font-size: 14.5px; line-height: 1.5;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+}
+.orientation-overlay-btn {
+  margin-top: 8px;
+  padding: 10px 22px;
+  font-size: 13.5px; font-weight: 500;
+  background: transparent;
+  color: var(--text2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.orientation-overlay-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+/* During an active swipe-drag of a drawer, the transform is set
+   inline via JS to follow the finger. Disable the CSS transition
+   while dragging so the drawer tracks the finger 1:1 rather than
+   easing toward each new position (which would feel laggy). The
+   .dragging class is added on touchstart and removed on touchend. */
+.sidebar.dragging,
+.menu-drawer.dragging {
+  transition: none !important;
+}
+.sidebar-overlay.dragging,
+.menu-overlay.dragging {
+  transition: none !important;
 }
 
 /* =========================================================
@@ -1396,6 +1535,22 @@ nav {
 @media (max-width: 760px) {
   nav { padding: 0 12px; }
   .menu-toggle { display: flex; }
+  /* Larger mobile tap targets for nav icons. iOS Human Interface
+     Guidelines recommend ≥44×44px for comfortable touch interaction —
+     the desktop 32-34px buttons are too small to hit reliably with a
+     thumb, especially in the corners of a 6.1" iPhone screen.
+     Increasing height to 40px keeps the nav looking tight (52px bar)
+     while giving thumbs more room to land. */
+  .menu-toggle,
+  nav .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  /* Slightly smaller icons inside the larger button so the visual
+     proportions stay correct (icon doesn't fill the whole button). */
+  nav .icon-btn svg {
+    width: 18px; height: 18px;
+  }
   .brand-text { display: none; }
   .brand-sub { display: none; }
   .user-chip .who { display: none; }
@@ -1406,19 +1561,56 @@ nav {
     grid-template-columns: 1fr;
   }
   .sidebar {
-    position: fixed; top: 52px; left: 0; bottom: 0;
+    position: fixed;
+    /* Sit below the full nav height — nav is 52px + safe-area-inset-top,
+       so the sidebar starts at the same offset. Previously we used a
+       static 52px, which on iPhones with Dynamic Island (inset ~59px)
+       meant the nav extended 59px BELOW where the sidebar started,
+       overlapping the top of the sidebar's content (booking queue,
+       moderator chip, etc.). Adding the safe-area-inset-top here
+       aligns the sidebar's top with the nav's bottom border. */
+    top: calc(52px + env(safe-area-inset-top));
+    left: 0;
+    /* Honor bottom safe-area (home indicator). Without this, the last
+       sidebar item disappears behind the iPhone's home-indicator bar. */
+    bottom: env(safe-area-inset-bottom);
+    /* Honor left safe-area for landscape rotation where the notch may
+       sit on the left side. */
+    padding-left: env(safe-area-inset-left);
     width: 88vw; max-width: 320px;
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
     z-index: 150;
     box-shadow: 8px 0 32px rgba(0,0,0,0.30);
+    /* Drawer is fully opaque so its text and rows stay crisp.
+       The "frosted glass" effect users associate with iOS Control
+       Center actually comes from blurring the BACKDROP (the page
+       behind the drawer), not the drawer itself. That blur is now
+       on .sidebar-overlay below. */
+    background: var(--sidebar-bg);
+    /* Allow the sidebar's internal content to scroll within the visible
+       region. Without overflow-y: auto, long content (many bookings)
+       gets clipped at the bottom safe-area boundary. */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay {
     display: block;
-    position: fixed; inset: 52px 0 0 0;
-    background: rgba(0,0,0,0.4);
-    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    position: fixed;
+    /* Match sidebar top so the overlay doesn't cover the nav (user
+       can still tap the hamburger to close, and the nav stays the
+       visual anchor while the overlay dims everything below). */
+    top: calc(52px + env(safe-area-inset-top));
+    right: 0; bottom: 0; left: 0;
+    /* Heavy iOS-style blur + dim on the page content behind the
+       open drawer. The page becomes a soft, dim backdrop while the
+       sidebar itself stays sharp and easy to read. Larger blur
+       value (22px) than the previous 4px to match the visual
+       weight of Apple's Control Center frosted backdrop. */
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: saturate(160%) blur(22px);
+    -webkit-backdrop-filter: saturate(160%) blur(22px);
     z-index: 140;
     opacity: 0; pointer-events: none;
     transition: opacity 0.3s ease;
@@ -6024,6 +6216,159 @@ nav {
   font-style: italic;
 }
 
+/* Teammate-sync MODAL — surfaces when a logged-in moderator's
+   teammate has session progress on their shared assignment.
+   Previously a banner at the top of the page; now a centered modal
+   with dim overlay so the prompt is impossible to miss. The user
+   has to make an explicit decision before continuing to other UI.
+
+   Reuses the same overlay+focus-trap pattern as appConfirm so it
+   feels consistent with the rest of the app's confirmation dialogs.
+   The richer two-line summary (stations + scenarios + time ago)
+   doesn't fit appConfirm's simple message field cleanly, hence its
+   own purpose-specific layout. */
+.teammate-sync-overlay {
+  position: fixed; inset: 0;
+  z-index: 700;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+.teammate-sync-overlay.open {
+  opacity: 1; pointer-events: all;
+}
+.teammate-sync-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -46%) scale(0.97);
+  width: min(92vw, 460px);
+  max-height: 88vh;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.35);
+  z-index: 701;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  padding: 26px 26px 22px;
+}
+.teammate-sync-modal.open {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1; pointer-events: all;
+}
+.teammate-sync-modal-icon {
+  flex-shrink: 0;
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.22), rgba(0, 240, 255, 0.08));
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 18px;
+}
+.teammate-sync-modal-title {
+  font-size: 19px; font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  line-height: 1.32;
+  margin-bottom: 8px;
+}
+.teammate-sync-modal-sub {
+  font-size: 14px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  line-height: 1.48;
+  margin-bottom: 18px;
+}
+/* Stats row — small panels showing teammate's progress at a glance.
+   Two side-by-side cards (stations + scenarios) help admin see the
+   actual scope of the merge before committing. */
+.teammate-sync-modal-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.teammate-sync-stat {
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.teammate-sync-stat-label {
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.teammate-sync-stat-value {
+  font-size: 18px; font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.teammate-sync-modal-meta {
+  font-size: 12.5px;
+  color: var(--text3);
+  letter-spacing: 0;
+  margin-bottom: 22px;
+  display: flex; align-items: center; gap: 6px;
+}
+.teammate-sync-modal-meta::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green-text, #22c55e);
+  flex-shrink: 0;
+}
+/* Action buttons — full-width primary on top, ghost decline below.
+   Vertically stacked rather than side-by-side because each label is
+   longer than a typical button label ("Continue from their progress"
+   doesn't fit comfortably next to "Start fresh" at modal widths). */
+.teammate-sync-modal-actions {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.teammate-sync-modal-actions .btn {
+  width: 100%;
+  justify-content: center;
+  padding: 11px 18px;
+  font-size: 14.5px;
+}
+/* Dismiss × in the corner — soft dismiss only, doesn't mark as
+   declined. The two main buttons handle the actual decisions. */
+.teammate-sync-modal-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 20px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.teammate-sync-modal-close:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+/* Mobile — slightly tighter padding, full-width modal feels OK at
+   phone sizes since the content is meant to dominate attention. */
+@media (max-width: 480px) {
+  .teammate-sync-modal {
+    padding: 22px 20px 18px;
+    border-radius: 18px;
+  }
+  .teammate-sync-modal-title {
+    font-size: 17px;
+  }
+}
+
 /* Assignment-grouped view */
 .mod-asgn-list {
   display: flex; flex-direction: column; gap: 10px;
@@ -7615,6 +7960,25 @@ nav {
 </div>
 
 <!-- MENU DRAWER -->
+<!-- Orientation lock overlay — shown when user has portrait-lock
+     enabled AND the device is rotated to landscape. Acts as a UX
+     guard (NOT an OS-level enforcement on iOS Safari). Includes a
+     "Disable lock" escape hatch so users aren't trapped if they
+     genuinely want landscape view. -->
+<div class="orientation-overlay" id="orientationOverlay">
+  <div class="orientation-overlay-inner">
+    <svg class="orientation-overlay-icon" viewBox="0 0 24 24" fill="none">
+      <rect x="7" y="2" width="10" height="20" rx="2" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="12" cy="18.5" r="0.9" fill="currentColor"/>
+    </svg>
+    <div>
+      <div class="orientation-overlay-title">Rotate to portrait</div>
+      <div class="orientation-overlay-sub">Project Orbit works best in portrait orientation on mobile. Rotate your phone vertically to continue.</div>
+    </div>
+    <button class="orientation-overlay-btn" id="orientationOverlayDismiss">Disable lock instead</button>
+  </div>
+</div>
+
 <div class="menu-overlay" id="menuOverlay"></div>
 <div class="menu-drawer" id="menuDrawer">
   <div class="menu-head">
@@ -7690,6 +8054,22 @@ nav {
       <span class="theme-toggle" id="themeToggle"></span>
     </div>
 
+    <div class="menu-row" id="orientationRow">
+      <div class="label">
+        <span class="ic">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="4.5" y="1.5" width="7" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="8" cy="12" r="0.7" fill="currentColor"/>
+          </svg>
+        </span>
+        <div>
+          <div class="text">Lock portrait orientation</div>
+          <div class="desc" id="orientationDesc">Prevent landscape rotation</div>
+        </div>
+      </div>
+      <span class="theme-toggle" id="orientationToggle"></span>
+    </div>
+
     <div class="menu-section-label">Account</div>
     <div class="menu-row" id="logoutRow">
       <div class="label">
@@ -7745,7 +8125,31 @@ nav {
    PROJECT ORBIT — APP LOGIC
    ===================================================================== */
 
+// Legacy single-bucket key — preserved for read-only backwards compat
+// during the migration to per-username keys (see sessionKeyFor below).
+// Once a user logs in after this build, their state moves to their
+// per-username slot and the legacy key is cleared. New writes never
+// touch this key.
 const LS_KEY = 'centific_orbit_progress_v1';
+
+// Per-username session key. Returns the localStorage key where a
+// specific user's operator session state should be stored. The change
+// from a single global LS_KEY to per-username keys lets us:
+//   1. Preserve session-resume across logout/login (logoutAndClearOperatorState
+//      no longer needs to delete state — login restores the user's slot)
+//   2. Support multiple operators sharing one device without collision
+//      (Sarah's progress doesn't overwrite Marcus's when they swap)
+//   3. Lay groundwork for cross-device sync (Option B): we'll later
+//      sync state from this same per-user shape into Excel via PA.
+//
+// Username is lowercased + stripped to alphanumerics to produce a safe
+// storage key. "Sarah-K.O" and "sarah.k.o" hash to the same slot.
+function sessionKeyFor(username) {
+  if (!username) return null;
+  const safe = String(username).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!safe) return null;
+  return `centific_orbit_session_${safe}`;
+}
 // Version scheme: MAJOR.MINOR.MMDDYY
 //   MAJOR.MINOR — bumped ONLY when explicitly requested.
 //   MMDDYY      — the build date in US calendar format. Updated on
@@ -7755,7 +8159,7 @@ const LS_KEY = 'centific_orbit_progress_v1';
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051326';
+const APP_VERSION = '1.2.051434';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -7951,32 +8355,117 @@ function todayPretty() {
 /* =====================================================================
    PERSISTENCE
    ===================================================================== */
-function saveState() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
-  catch (e) { console.warn('Save failed', e); }
-}
-function loadState() {
+// Pointer to the most-recently logged-in user. Required because the
+// per-username session keys (sessionKeyFor) don't tell us WHICH user
+// to auto-resume on page reload — we need a separate hint pointing
+// at the right slot. Updated on every successful login (admin or
+// operator) and read on init() to drive auto-resume.
+const LAST_LOGIN_KEY = 'centific_orbit_last_login_v1';
+function setLastLoginUsername(username) {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    // Version compatibility: match on MAJOR.MINOR only — the trailing
-    // MMDDYY build-date changes on every code change but doesn't affect
-    // state shape. Without this relaxation, every build would discard
-    // existing users' saved progress, which would be deeply user-hostile.
-    // We only invalidate when the explicit MAJOR.MINOR has been bumped,
-    // signalling an incompatible state shape.
-    const isCompatibleVersion = (v) => {
-      if (!v) return false;
-      const stored = String(v).split('.').slice(0, 2).join('.');
-      const current = APP_VERSION.split('.').slice(0, 2).join('.');
-      return stored === current;
-    };
-    if (parsed && isCompatibleVersion(parsed.version)) {
-      return migrateState(parsed);
+    if (username) localStorage.setItem(LAST_LOGIN_KEY, username);
+  } catch (e) {}
+}
+function getLastLoginUsername() {
+  try { return localStorage.getItem(LAST_LOGIN_KEY) || null; }
+  catch (e) { return null; }
+}
+
+function saveState() {
+  try {
+    // Persist to the per-username slot when we know who's signed in.
+    // This is the path the operator app takes after login: state.username
+    // is set, so the user's session lives at sessionKeyFor(state.username).
+    // No-username case (e.g., before login completes) writes nothing —
+    // there's no meaningful session to persist without an owner.
+    const key = sessionKeyFor(state.username);
+    if (key) {
+      localStorage.setItem(key, JSON.stringify(state));
     }
-  } catch (e) { console.warn('Load failed', e); }
+  } catch (e) {
+    console.warn('Save failed', e);
+  }
+  // Cloud sync (SessionState) — debounced, fire-and-forget. Only fires
+  // for operator users (the helper checks for state.modProfile and an
+  // active assignment); admin saves never trigger it. Safe to call even
+  // when SessionState isn't configured — schedule is a no-op then.
+  try {
+    if (typeof scheduleSessionStateSync === 'function') {
+      scheduleSessionStateSync();
+    }
+  } catch (e) {
+    // Defensive — never let cloud-sync errors break local save.
+    console.warn('[Orbit] scheduleSessionStateSync error:', e && e.message);
+  }
+}
+// Load state for a specific username (operator login flow) or the
+// legacy global key (admin login flow, where username isn't known
+// up-front because admins can pick any of the allowed admin names).
+//
+// Backwards-compat: if the per-username slot is empty but the legacy
+// LS_KEY has data and its stored username matches the one requested,
+// we migrate the data into the new slot and return it. This handles
+// the first login after this build cleanly — the user's previous
+// session is preserved, just relocated to its new home.
+function loadState(forUsername) {
+  try {
+    // Try per-username slot first when we have a name to look up.
+    if (forUsername) {
+      const key = sessionKeyFor(forUsername);
+      if (key) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && isCompatibleStateVersion(parsed.version)) {
+            return migrateState(parsed);
+          }
+        }
+      }
+    }
+    // Fallback: read the legacy single-bucket key. If forUsername was
+    // provided, only return the legacy data if its stored username
+    // matches — otherwise we'd hand admin A's session to admin B who
+    // happened to log in next. If forUsername wasn't provided (init/
+    // resume flow before login), return whatever's there for the
+    // auto-resume logic to inspect.
+    const rawLegacy = localStorage.getItem(LS_KEY);
+    if (!rawLegacy) return null;
+    const parsed = JSON.parse(rawLegacy);
+    if (!parsed || !isCompatibleStateVersion(parsed.version)) return null;
+    if (forUsername) {
+      const legacyUser = String(parsed.username || '').toLowerCase();
+      const requested = String(forUsername).toLowerCase();
+      if (legacyUser !== requested) return null;
+      // Migrate forward: copy the legacy data into the per-username slot,
+      // then clear the legacy key so subsequent saves go to the new home.
+      const newKey = sessionKeyFor(forUsername);
+      if (newKey) {
+        try {
+          localStorage.setItem(newKey, rawLegacy);
+          localStorage.removeItem(LS_KEY);
+          console.log('[Orbit] Migrated legacy session state for', forUsername, '→', newKey);
+        } catch (e) {
+          console.warn('[Orbit] Failed to migrate legacy session state:', e);
+        }
+      }
+    }
+    return migrateState(parsed);
+  } catch (e) {
+    console.warn('Load failed', e);
+  }
   return null;
+}
+// Version compatibility: match on MAJOR.MINOR only — the trailing
+// MMDDYY build-date changes on every code change but doesn't affect
+// state shape. Without this relaxation, every build would discard
+// existing users' saved progress, which would be deeply user-hostile.
+// We only invalidate when the explicit MAJOR.MINOR has been bumped,
+// signalling an incompatible state shape.
+function isCompatibleStateVersion(v) {
+  if (!v) return false;
+  const stored = String(v).split('.').slice(0, 2).join('.');
+  const current = APP_VERSION.split('.').slice(0, 2).join('.');
+  return stored === current;
 }
 
 // Ensures the loaded state has every expected key, even if it was
@@ -9172,6 +9661,398 @@ function openSidebarMobile() {
 function closeSidebarMobile() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
+}
+
+/* =====================================================================
+   ORIENTATION LOCK
+   =====================================================================
+   Lets the user pin Orbit to portrait orientation on mobile. The lock
+   has two layers:
+
+   1. Screen Orientation API (the real lock). Works on Android Chrome
+      and on iOS in PWA / home-screen-installed contexts. The device
+      physically won't rotate when toggled on.
+
+   2. CSS overlay fallback. On iOS Safari tabs (where Apple disables
+      the API), the device WILL still rotate visually — but our overlay
+      detects landscape and covers the app with a "Rotate to portrait"
+      message. It's a UX guard, not an OS enforcement.
+
+   Preference is persisted to localStorage under ORIENTATION_LOCK_KEY
+   so the choice survives logouts and reloads. Default = locked ON for
+   touch devices; ignored on desktops (no rotation to worry about). */
+
+const ORIENTATION_LOCK_KEY = 'centific_orbit_orientation_lock_v1';
+
+function isTouchDevice() {
+  // Simple capability check. The orientation feature only makes
+  // sense on devices that can actually rotate — desktops with a
+  // keyboard and mouse don't benefit and shouldn't see the toggle.
+  // Touch-points detection is more reliable than UA sniffing.
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+}
+
+function getOrientationLockEnabled() {
+  // Default to ON for touch devices (the common case where this is
+  // useful), OFF for non-touch. Once the user explicitly toggles,
+  // their stored choice wins on every subsequent load.
+  try {
+    const raw = localStorage.getItem(ORIENTATION_LOCK_KEY);
+    if (raw === null) return isTouchDevice();
+    return raw === '1';
+  } catch (e) { return isTouchDevice(); }
+}
+
+function setOrientationLockEnabled(enabled) {
+  try { localStorage.setItem(ORIENTATION_LOCK_KEY, enabled ? '1' : '0'); } catch (e) {}
+  applyOrientationLock();
+}
+
+// Try the real Screen Orientation API lock. Returns true on success,
+// false if the browser doesn't support it or rejects the lock (iOS
+// Safari outside PWA, very old browsers). We don't treat rejection
+// as an error — the CSS overlay handles those cases gracefully.
+async function tryNativeOrientationLock(lock) {
+  if (!screen || !screen.orientation) return false;
+  try {
+    if (lock) {
+      // 'portrait' may not be supported on all platforms — try the
+      // primary form first, fall back to 'portrait-primary' which
+      // is the older spec name still required by some Androids.
+      if (typeof screen.orientation.lock === 'function') {
+        try {
+          await screen.orientation.lock('portrait');
+        } catch (e) {
+          await screen.orientation.lock('portrait-primary');
+        }
+        return true;
+      }
+    } else {
+      if (typeof screen.orientation.unlock === 'function') {
+        screen.orientation.unlock();
+        return true;
+      }
+    }
+  } catch (e) {
+    // Most common: iOS Safari throws NotSupportedError. That's fine —
+    // we fall through to the CSS overlay layer.
+    return false;
+  }
+  return false;
+}
+
+// Apply current lock state — runs on startup AND every time the user
+// toggles. Handles both the native API attempt AND showing/hiding
+// the overlay based on current orientation.
+async function applyOrientationLock() {
+  const enabled = getOrientationLockEnabled();
+  // Update the toggle UI to reflect current state
+  const tog = document.getElementById('orientationToggle');
+  if (tog) tog.classList.toggle('on', enabled);
+  const desc = document.getElementById('orientationDesc');
+  if (desc) {
+    desc.textContent = enabled
+      ? 'Locked to portrait — landscape blocked'
+      : 'Portrait & landscape both allowed';
+  }
+
+  // Try the native lock first (only works in PWA / supported browsers)
+  await tryNativeOrientationLock(enabled);
+
+  // Always also check the overlay condition — if native lock didn't
+  // engage (iOS Safari) AND user is in landscape AND lock is enabled,
+  // show the overlay. If lock is disabled, hide it regardless.
+  updateOrientationOverlay();
+}
+
+function updateOrientationOverlay() {
+  const overlay = document.getElementById('orientationOverlay');
+  if (!overlay) return;
+  const enabled = getOrientationLockEnabled();
+  if (!enabled) {
+    overlay.classList.remove('active');
+    return;
+  }
+  // Detect landscape via matchMedia — robust across devices and
+  // doesn't require listening to deprecated orientationchange events.
+  // The desktop case (where window may be wider than tall but isn't
+  // really "rotated") is excluded by the touch-device check, so this
+  // only activates on actual mobile rotation.
+  if (!isTouchDevice()) {
+    overlay.classList.remove('active');
+    return;
+  }
+  const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+  overlay.classList.toggle('active', isLandscape);
+}
+
+// Re-check overlay condition whenever the device's orientation
+// changes. matchMedia event is the modern, reliable signal —
+// orientationchange is deprecated and unreliable across browsers.
+if (window.matchMedia) {
+  const mql = window.matchMedia('(orientation: landscape)');
+  // Some Safari versions only support the deprecated addListener
+  // (instead of addEventListener) on MediaQueryList. Try the new
+  // API first, fall back to the old one for compat.
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', updateOrientationOverlay);
+  } else if (typeof mql.addListener === 'function') {
+    mql.addListener(updateOrientationOverlay);
+  }
+}
+
+/* =====================================================================
+   SWIPE GESTURES — edge-swipe to open drawers, swipe to dismiss
+   =====================================================================
+   Two modes:
+     1. Open: touchstart within EDGE_THRESHOLD px of the left/right
+        screen edge → start tracking → drawer translates with finger →
+        touchend snaps open if past threshold (or quick flick), else
+        snaps closed.
+     2. Close: touchstart anywhere ON an open drawer → drag toward its
+        edge → drawer translates with finger → touchend snaps closed if
+        past threshold or flicked, else snaps re-open.
+
+   Design rules:
+   - Only activates on touch devices (no behavior on desktop).
+   - Only the LEFT 24px and RIGHT 24px of the viewport count as "open
+     edges" — prevents conflicts with horizontal-scrolling content
+     inside the page (calendar grid, carousel, etc.).
+   - Velocity flick: > 0.4 px/ms in the open direction = always opens,
+     even if absolute distance is small. Mirrors iOS/Android behavior.
+   - Distance threshold: > 40% of drawer width = commits to the
+     direction the user was moving. Below that, snaps back. */
+
+const EDGE_THRESHOLD_PX = 24;       // distance from screen edge that counts as an "edge swipe"
+const COMMIT_THRESHOLD_RATIO = 0.4; // fraction of drawer width to commit (open/close)
+const FLICK_VELOCITY_PX_MS = 0.4;   // velocity (px/ms) that always commits regardless of distance
+
+const _swipeState = {
+  active: false,
+  target: null,        // 'sidebar' | 'menu'
+  direction: null,     // 'open' | 'close'
+  startX: 0,
+  startY: 0,
+  startTime: 0,
+  lastX: 0,
+  lastTime: 0,
+  drawerWidth: 0,
+  // Reusable element refs cached at touchstart
+  drawerEl: null,
+  overlayEl: null,
+};
+
+// Determine which drawer is currently open, if any. Returns null when
+// none, or the drawer name ('sidebar' / 'menu') when one is open. Used
+// to route close-swipes to the right element.
+function getOpenDrawer() {
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar && sidebar.classList.contains('open')) return 'sidebar';
+  const menu = document.getElementById('menuDrawer');
+  if (menu && menu.classList.contains('open')) return 'menu';
+  return null;
+}
+
+// Pick which drawer can be opened from a given touchstart X position.
+// Left edge → sidebar (operator app only — admin doesn't have a
+// sidebar). Right edge → menu drawer (both apps). Returns null when
+// the touchstart is outside any edge zone.
+function getOpenableDrawerForTouch(touchX) {
+  const w = window.innerWidth;
+  if (touchX <= EDGE_THRESHOLD_PX) {
+    // Left edge — only valid if the operator app is visible (admin
+    // app has no left sidebar — the layout collapses to a single
+    // column on mobile, so opening it would be a confusing no-op).
+    const appEl = document.getElementById('app');
+    if (appEl && appEl.style.display !== 'none') return 'sidebar';
+    return null;
+  }
+  if (touchX >= w - EDGE_THRESHOLD_PX) {
+    return 'menu';
+  }
+  return null;
+}
+
+document.addEventListener('touchstart', (e) => {
+  if (!isTouchDevice()) return;
+  if (e.touches.length !== 1) return;        // ignore multi-touch (pinch, etc.)
+  const t = e.touches[0];
+  const startX = t.clientX;
+  const startY = t.clientY;
+
+  // First check: is a drawer already open? If yes, we may be starting
+  // a close-swipe (touchstart anywhere on the drawer, drag toward its
+  // edge to dismiss).
+  const opened = getOpenDrawer();
+  if (opened) {
+    const drawerEl = document.getElementById(opened === 'sidebar' ? 'sidebar' : 'menuDrawer');
+    const rect = drawerEl.getBoundingClientRect();
+    // Touch must START inside the open drawer's visible bounds. This
+    // avoids hijacking touches on the dim overlay (which already has
+    // its own click-to-close handler).
+    if (startX >= rect.left && startX <= rect.right && startY >= rect.top && startY <= rect.bottom) {
+      _swipeState.active = true;
+      _swipeState.target = opened;
+      _swipeState.direction = 'close';
+      _swipeState.startX = startX;
+      _swipeState.startY = startY;
+      _swipeState.startTime = Date.now();
+      _swipeState.lastX = startX;
+      _swipeState.lastTime = Date.now();
+      _swipeState.drawerEl = drawerEl;
+      _swipeState.overlayEl = document.getElementById(opened === 'sidebar' ? 'sidebarOverlay' : 'menuOverlay');
+      _swipeState.drawerWidth = rect.width;
+      return;
+    }
+  }
+
+  // No drawer open — check for an edge-swipe to open one
+  const openable = getOpenableDrawerForTouch(startX);
+  if (!openable) return;
+  _swipeState.active = true;
+  _swipeState.target = openable;
+  _swipeState.direction = 'open';
+  _swipeState.startX = startX;
+  _swipeState.startY = startY;
+  _swipeState.startTime = Date.now();
+  _swipeState.lastX = startX;
+  _swipeState.lastTime = Date.now();
+  _swipeState.drawerEl = document.getElementById(openable === 'sidebar' ? 'sidebar' : 'menuDrawer');
+  _swipeState.overlayEl = document.getElementById(openable === 'sidebar' ? 'sidebarOverlay' : 'menuOverlay');
+  // Use a reasonable estimate for drawer width before it's visible —
+  // mirrors the CSS max-widths (sidebar 320px max, menu 360px max).
+  // Once we read the actual rect during the drag we'll use that.
+  _swipeState.drawerWidth = openable === 'sidebar' ? 320 : 360;
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (!_swipeState.active) return;
+  const t = e.touches[0];
+  const dx = t.clientX - _swipeState.startX;
+  const dy = t.clientY - _swipeState.startY;
+
+  // Cancel the swipe if it's clearly vertical (>1.5x ratio of Y to X).
+  // Lets users still scroll the page even when their thumb starts
+  // near the edge.
+  if (Math.abs(dy) > Math.abs(dx) * 1.5 && Math.abs(dy) > 12) {
+    cancelSwipe();
+    return;
+  }
+
+  _swipeState.lastX = t.clientX;
+  _swipeState.lastTime = Date.now();
+
+  const isMenu = _swipeState.target === 'menu';
+  const w = _swipeState.drawerWidth;
+  const drawerEl = _swipeState.drawerEl;
+  const overlayEl = _swipeState.overlayEl;
+  if (!drawerEl) return;
+
+  // Add .dragging class to suspend CSS transitions for direct
+  // finger-following. Done lazily (only when we know it's a real
+  // swipe) so brief touches don't flicker.
+  if (!drawerEl.classList.contains('dragging')) {
+    drawerEl.classList.add('dragging');
+    if (overlayEl) overlayEl.classList.add('dragging');
+  }
+
+  let progress; // 0..1 where 1 = fully open
+  if (_swipeState.direction === 'open') {
+    // Opening: finger moves inward from edge. Sidebar opens rightward
+    // (dx>0 = opening); menu opens leftward (dx<0 = opening).
+    progress = isMenu ? Math.max(0, Math.min(1, -dx / w))
+                      : Math.max(0, Math.min(1,  dx / w));
+  } else {
+    // Closing: drawer slides BACK toward its origin edge. Sidebar
+    // closes leftward (dx<0 = closing); menu closes rightward (dx>0).
+    progress = isMenu ? Math.max(0, Math.min(1, 1 - (dx / w)))
+                      : Math.max(0, Math.min(1, 1 - (-dx / w)));
+  }
+
+  // Apply transform — translate the drawer based on progress, dim
+  // the overlay opacity proportionally (0 → no dim, 1 → full dim).
+  const translateX = isMenu
+    ? `${(1 - progress) * 100}%`     // menu is on right: 0% = open, 100% = closed
+    : `${-(1 - progress) * 100}%`;   // sidebar is on left: 0% = open, -100% = closed
+  drawerEl.style.transform = `translateX(${translateX})`;
+  if (overlayEl) {
+    overlayEl.style.opacity = progress * 1;
+    overlayEl.style.pointerEvents = progress > 0.05 ? 'all' : 'none';
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  if (!_swipeState.active) return;
+  const dx = _swipeState.lastX - _swipeState.startX;
+  const dt = Math.max(1, _swipeState.lastTime - _swipeState.startTime);
+  const velocity = Math.abs(dx) / dt;       // px/ms
+  const isMenu = _swipeState.target === 'menu';
+  const w = _swipeState.drawerWidth;
+
+  // Determine if the gesture should commit. Two ways to commit:
+  //   1. Distance: dx exceeds COMMIT_THRESHOLD_RATIO of drawer width
+  //      in the gesture's intended direction.
+  //   2. Velocity: dx is moving fast enough in the intended direction
+  //      (a "flick" — short distance, high speed, still commits).
+  let shouldCommit;
+  if (_swipeState.direction === 'open') {
+    const movingInOpenDir = isMenu ? dx < 0 : dx > 0;
+    const distOk = Math.abs(dx) / w >= COMMIT_THRESHOLD_RATIO;
+    const flickOk = velocity >= FLICK_VELOCITY_PX_MS && movingInOpenDir;
+    shouldCommit = movingInOpenDir && (distOk || flickOk);
+  } else {
+    const movingInCloseDir = isMenu ? dx > 0 : dx < 0;
+    const distOk = Math.abs(dx) / w >= COMMIT_THRESHOLD_RATIO;
+    const flickOk = velocity >= FLICK_VELOCITY_PX_MS && movingInCloseDir;
+    shouldCommit = movingInCloseDir && (distOk || flickOk);
+  }
+
+  finishSwipe(shouldCommit);
+}, { passive: true });
+
+document.addEventListener('touchcancel', cancelSwipe, { passive: true });
+
+function cancelSwipe() {
+  if (!_swipeState.active) return;
+  // Snap back to whatever the drawer was before the gesture
+  finishSwipe(false);
+}
+
+function finishSwipe(commit) {
+  const drawerEl = _swipeState.drawerEl;
+  const overlayEl = _swipeState.overlayEl;
+  const target = _swipeState.target;
+  const direction = _swipeState.direction;
+  // Reset state immediately so re-entry is safe
+  _swipeState.active = false;
+  _swipeState.target = null;
+  _swipeState.direction = null;
+  _swipeState.drawerEl = null;
+  _swipeState.overlayEl = null;
+  if (!drawerEl) return;
+
+  // Clear inline styles so CSS classes resume control. The .dragging
+  // class is removed so transitions re-enable for the snap-to-final.
+  drawerEl.style.transform = '';
+  drawerEl.classList.remove('dragging');
+  if (overlayEl) {
+    overlayEl.style.opacity = '';
+    overlayEl.style.pointerEvents = '';
+    overlayEl.classList.remove('dragging');
+  }
+
+  // Decide the final open/closed state based on direction + commit
+  const shouldBeOpen = direction === 'open' ? commit : !commit;
+  // Route through the existing open/close functions so any side
+  // effects (focus management, route updates, etc.) run identically
+  // to a tap-driven open/close.
+  if (target === 'sidebar') {
+    if (shouldBeOpen) openSidebarMobile();
+    else              closeSidebarMobile();
+  } else {
+    if (shouldBeOpen) openMenu();
+    else              closeMenu();
+  }
 }
 
 function toggleTheme() {
@@ -19315,6 +20196,307 @@ const WORKLOG_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.e
 // see follow-up #1 in the response to this turn.
 const WORKLOG_PA_READ_URL = '';
 
+/* =====================================================================
+   SESSIONSTATE — cloud sync for cross-user / cross-device session resume
+   =====================================================================
+   Powers two scenarios that pure localStorage can't:
+     1. Option B — same mod on a different device picks up their session
+     2. Option C — teammate sees the original mod's in-progress work
+
+   Architecture:
+     - Each mod writes their session state to the SessionState Excel table
+       every ~5 seconds when state changes (debounced). The row key is
+       deterministic per (orbitLoginId, assignmentId) but PA appends not
+       updates, so multiple rows accumulate over time. We pick the newest
+       by lastActive on read.
+     - On login, we fetch SessionState rows matching the user's upcoming
+       assignments. If a teammate has session progress on a shared
+       assignment, we surface a "Continue from teammate's progress?"
+       prompt. The merge is EXPLICIT (user clicks Yes) — never silent —
+       to avoid clobbering in-progress local edits.
+
+   Defensive design:
+     - All network calls wrapped in try/catch — sync failure = silent
+       no-op + console.warn. Operator never sees errors related to sync.
+     - When URLs are empty, the module no-ops gracefully — the app keeps
+       working exactly as it did before, with localStorage-only sync.
+     - Read response shape mirrors existing read flows (List rows present
+       in a table → unwrapped array via Response.Body = value).
+
+   Future hooks:
+     - Admin live monitoring reads the same table (filter by orbitId or
+       assignmentId), no schema change needed.
+     - Abandoned-session detection: filter by lastActive within last N
+       minutes, status != 'session_done'. */
+
+const SESSIONSTATE_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2df48d7fd8e844b49496d626bb49db61/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=QMfifDLshKjEw2Vpto85Qsu9SnQc6tVIXeRwPW_AmdU';
+const SESSIONSTATE_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/0c5d3ab19b7443c598a18136830a32bc/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=eDKkJNTraDxG47g0RnzLCW7ineUS4YuwpZsCnC0Cmmw';
+
+// Debounce window for cloud writes. Local saves are instant; cloud syncs
+// wait this long after the last state change to batch rapid edits into
+// one PA call. 5000ms is a compromise: short enough that teammate sees
+// recent progress within ~30s + 5s = 35s worst case (poll interval +
+// debounce), long enough that typing scenario notes doesn't trigger
+// a flurry of PA calls. PA rate limits accept ~6000 calls/24h/user, and
+// at 5s debounce a mod doing 8-hour active editing maxes out at ~5760
+// calls — comfortably under.
+const SESSIONSTATE_DEBOUNCE_MS = 5000;
+
+// Returns the syncable subset of state — the data that's MEANINGFUL to
+// share with a teammate. Excludes per-user UI preferences (theme,
+// equipmentCollapsed) and per-user identity (username, modProfile).
+// The stations object IS included since it carries scenario progress,
+// notes, and camera confirmations — the actual "work done" payload.
+function extractSyncableState(s) {
+  if (!s) return {};
+  return {
+    participantId:      s.participantId      || '',
+    participantName:    s.participantName    || '',
+    participantAddress: s.participantAddress || '',
+    sessionDate:        s.sessionDate        || '',
+    equipment:          s.equipment          || {},
+    stations:           s.stations           || {},
+  };
+}
+
+// In-flight debounce state. _timer holds the pending setTimeout handle;
+// _pending tracks whether a write was requested while one was in
+// progress (so we don't drop edits made during a slow PA call).
+const _sessionStateSyncState = {
+  timer:        null,
+  inflight:     false,
+  pendingAgain: false,
+};
+
+// Schedule a debounced cloud write. Called from saveState() whenever
+// the operator's state changes. Multiple rapid calls within
+// SESSIONSTATE_DEBOUNCE_MS coalesce into one PA call — the debounce
+// timer resets on each call so we only sync after a quiet period.
+function scheduleSessionStateSync() {
+  if (!SESSIONSTATE_PA_WRITE_URL) return;         // not configured
+  if (!state || !state.username) return;          // no logged-in user
+  if (!state.modProfile || !state.modProfile.orbitLoginId) return;  // admin doesn't sync
+  // Only sync when there's a current assignment context — without an
+  // assignmentId, the row would be orphaned and useless to teammates.
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (!asgn || !asgn.id) return;
+
+  if (_sessionStateSyncState.timer) {
+    clearTimeout(_sessionStateSyncState.timer);
+  }
+  _sessionStateSyncState.timer = setTimeout(() => {
+    _sessionStateSyncState.timer = null;
+    flushSessionStateSync();
+  }, SESSIONSTATE_DEBOUNCE_MS);
+}
+
+// Immediately write current state to cloud. Called from the debounce
+// timer, from page-unload, and from explicit user actions where the
+// operator would want their progress flushed RIGHT NOW (e.g., before
+// closing the wrap-up modal).
+async function flushSessionStateSync() {
+  if (!SESSIONSTATE_PA_WRITE_URL) return;
+  if (!state || !state.username || !state.modProfile) return;
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (!asgn || !asgn.id) return;
+
+  // Re-entry guard: if a write is already in flight, mark pending and
+  // let the in-flight one finish first. After it resolves, it checks
+  // pendingAgain and schedules an immediate follow-up if there's been
+  // intervening activity.
+  if (_sessionStateSyncState.inflight) {
+    _sessionStateSyncState.pendingAgain = true;
+    return;
+  }
+  _sessionStateSyncState.inflight = true;
+
+  try {
+    const orbitId  = state.modProfile.orbitLoginId;
+    const team     = (adminState.teams || []).find(t => t.id === asgn.teamId);
+    const teamId   = team ? team.id : (asgn.teamId || '');
+    const syncable = extractSyncableState(state);
+    const payload = {
+      // Deterministic-ish ID using a fresh timestamp suffix so each
+      // write produces a new row (PA "Add a row" doesn't update). The
+      // prefix (orbitId + assignmentId) helps with debugging — admin
+      // looking at Excel can see who wrote what for which assignment
+      // without parsing stateJson. The Date.now() suffix guarantees
+      // uniqueness within a session.
+      sessionStateId: `ss_${orbitId}_${asgn.id}_${Date.now()}`,
+      assignmentId:   String(asgn.id),
+      teamId:         String(teamId),
+      orbitLoginId:   String(orbitId),
+      stateJson:      JSON.stringify(syncable),
+      lastActive:     new Date().toISOString(),
+      appVersion:     APP_VERSION,
+    };
+
+    const res = await fetch(SESSIONSTATE_PA_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.warn('[Orbit] SessionState write failed:', res.status);
+    }
+  } catch (e) {
+    console.warn('[Orbit] SessionState write error:', e && e.message);
+  } finally {
+    _sessionStateSyncState.inflight = false;
+    if (_sessionStateSyncState.pendingAgain) {
+      _sessionStateSyncState.pendingAgain = false;
+      // One more cycle to capture intervening edits. Use the debounce
+      // so we batch any subsequent rapid edits with this final flush.
+      scheduleSessionStateSync();
+    }
+  }
+}
+
+// Fetch SessionState rows from the cloud. Returns an array (possibly
+// empty) of {sessionStateId, assignmentId, teamId, orbitLoginId,
+// stateJson, lastActive, appVersion}. Returns null on error so callers
+// can distinguish "no data" from "couldn't reach the server."
+async function fetchSessionStateRows() {
+  if (!SESSIONSTATE_PA_READ_URL) return null;
+  try {
+    const res = await fetch(SESSIONSTATE_PA_READ_URL, { method: 'GET' });
+    if (!res.ok) {
+      console.warn('[Orbit] SessionState read failed:', res.status);
+      return null;
+    }
+    const text = await res.text();
+    const parsed = JSON.parse(text);
+    // The read flow's Response action returns `value` directly — should
+    // be an array. Some PA configurations wrap it in {value: [...]}, so
+    // tolerate both shapes for robustness.
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.value)) return parsed.value;
+    return [];
+  } catch (e) {
+    console.warn('[Orbit] SessionState read error:', e && e.message);
+    return null;
+  }
+}
+
+// Return the newest SessionState row per (orbitLoginId, assignmentId)
+// from the full rows array. PA "Add a row" appends, so over time the
+// table accumulates one row per state change — we collapse to the
+// latest per user-per-assignment via timestamp comparison.
+function newestSessionStatePerUser(rows) {
+  if (!Array.isArray(rows)) return [];
+  const newest = new Map();  // key: `${orbitId}|${asgnId}` → row
+  for (const r of rows) {
+    if (!r || !r.orbitLoginId || !r.assignmentId) continue;
+    const key = `${String(r.orbitLoginId).toLowerCase()}|${String(r.assignmentId)}`;
+    const prev = newest.get(key);
+    if (!prev || (r.lastActive || '') > (prev.lastActive || '')) {
+      newest.set(key, r);
+    }
+  }
+  return [...newest.values()];
+}
+
+// Find a teammate's SessionState for the current user's active
+// assignment. Returns the row + parsed state if found, else null.
+// Used at login and when entering the operator app to decide whether
+// to surface the "continue from teammate?" prompt.
+async function findTeammateSessionState() {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return null;
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (!asgn || !asgn.id) return null;
+
+  const rows = await fetchSessionStateRows();
+  if (!rows) return null;
+
+  const myIdLower = String(state.modProfile.orbitLoginId).toLowerCase();
+  const matching = newestSessionStatePerUser(rows).filter(r =>
+    String(r.assignmentId) === String(asgn.id) &&
+    String(r.orbitLoginId || '').toLowerCase() !== myIdLower
+  );
+  if (matching.length === 0) return null;
+
+  // Pick the most-recently-touched teammate row (in case multiple
+  // teammates have written — rare but possible for 3+ person teams).
+  matching.sort((a, b) => (b.lastActive || '').localeCompare(a.lastActive || ''));
+  const winner = matching[0];
+
+  let parsedState = null;
+  try { parsedState = JSON.parse(winner.stateJson || '{}'); }
+  catch (e) {
+    console.warn('[Orbit] Failed to parse teammate stateJson:', e && e.message);
+    return null;
+  }
+  return { row: winner, syncableState: parsedState };
+}
+
+// Apply teammate's state to local state. Merges the syncable subset
+// into the current state — preserves THIS user's identity (username,
+// modProfile, theme) and overlays teammate's work payload (participant
+// info, equipment, stations). Triggers an immediate cloud write so
+// the merged state becomes visible to other teammates without waiting
+// for debounce.
+function mergeTeammateState(syncableState) {
+  if (!syncableState || typeof syncableState !== 'object') return;
+  // Overlay each syncable field. Keep our identity fields untouched.
+  if (syncableState.participantId)      state.participantId      = syncableState.participantId;
+  if (syncableState.participantName)    state.participantName    = syncableState.participantName;
+  if (syncableState.participantAddress) state.participantAddress = syncableState.participantAddress;
+  if (syncableState.sessionDate)        state.sessionDate        = syncableState.sessionDate;
+  if (syncableState.equipment)          state.equipment          = { ...state.equipment, ...syncableState.equipment };
+  if (syncableState.stations) {
+    // Deep merge stations — for each station, overlay scenarios + cameras.
+    state.stations = state.stations || {};
+    for (const k of Object.keys(syncableState.stations)) {
+      const cloudStation = syncableState.stations[k];
+      const localStation = state.stations[k] || { cameras: {}, scenarios: {} };
+      state.stations[k] = {
+        cameras:   { ...(localStation.cameras   || {}), ...(cloudStation.cameras   || {}) },
+        scenarios: { ...(localStation.scenarios || {}), ...(cloudStation.scenarios || {}) },
+      };
+    }
+  }
+  saveState();
+  // Immediate cloud-flush so the teammate's view picks this up on
+  // their next poll (no debounce wait). Fire-and-forget.
+  flushSessionStateSync();
+}
+
+// Page-unload handler — ensures any pending debounced sync flushes
+// before the tab closes. Uses navigator.sendBeacon when available
+// (survives the unload event reliably) and falls back to a synchronous
+// fetch otherwise. The localStorage save already happened on every
+// state change, so this only protects the cloud sync.
+window.addEventListener('beforeunload', () => {
+  if (_sessionStateSyncState.timer) {
+    clearTimeout(_sessionStateSyncState.timer);
+    _sessionStateSyncState.timer = null;
+  }
+  // If there's no in-flight write but there was a pending debounce, we
+  // want to fire one last write. Construct the payload inline to avoid
+  // depending on async fetch which beforeunload kills mid-flight.
+  if (!SESSIONSTATE_PA_WRITE_URL) return;
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (!asgn || !asgn.id) return;
+  try {
+    const payload = {
+      sessionStateId: `ss_${state.modProfile.orbitLoginId}_${asgn.id}_${Date.now()}`,
+      assignmentId:   String(asgn.id),
+      teamId:         String(asgn.teamId || ''),
+      orbitLoginId:   String(state.modProfile.orbitLoginId),
+      stateJson:      JSON.stringify(extractSyncableState(state)),
+      lastActive:     new Date().toISOString(),
+      appVersion:     APP_VERSION,
+    };
+    // sendBeacon is fire-and-forget but reliably delivered even during
+    // page unload. The browser queues it and sends it post-unload.
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
+  } catch (e) {
+    // Best-effort — nothing we can do if it fails during unload.
+  }
+});
+
 const WORKLOG_STATUS_LABELS = {
   arrived:           'Check-in',
   station_0a_done:   'In session',
@@ -19707,6 +20889,38 @@ function stopWorklogPolling() {
   if (_worklogPollInterval) {
     clearInterval(_worklogPollInterval);
     _worklogPollInterval = null;
+  }
+}
+
+// ---------- Operator SessionState polling ----------
+// Polls SessionState every 45 seconds while the operator app is open
+// so teammate updates appear during active work (not just at login).
+// 45s gives a comfortable tradeoff: teammate sees updates within
+// 45s + 5s debounce = 50s worst case, while keeping PA call volume low.
+//
+// The polling DOES NOT auto-merge — it only triggers the banner check.
+// User remains in control of when to merge teammate's state. This is
+// critical: silent auto-merge during active editing would clobber the
+// operator's in-progress work.
+let _sessionStatePollInterval = null;
+function startSessionStatePolling() {
+  if (_sessionStatePollInterval) return;
+  if (!SESSIONSTATE_PA_READ_URL) return;
+  // Don't immediately re-check — the post-login check has already
+  // run. First scheduled poll fires 45s in.
+  _sessionStatePollInterval = setInterval(() => {
+    // Only check if the operator app is visible AND there's no banner
+    // already showing (don't stack prompts).
+    const app = document.getElementById('app');
+    if (!app || app.style.display === 'none') return;
+    if (document.getElementById('teammateSyncOverlay')) return;
+    checkAndOfferTeammateSync().catch(() => { /* silent */ });
+  }, 45000);
+}
+function stopSessionStatePolling() {
+  if (_sessionStatePollInterval) {
+    clearInterval(_sessionStatePollInterval);
+    _sessionStatePollInterval = null;
   }
 }
 
@@ -20560,14 +21774,35 @@ function resetOperatorSessionState(opts) {
 // cache, the worklog cache, and the worklog sync queue — those are records
 // that survive a session boundary.
 function logoutAndClearOperatorState() {
-  // Clear operator-specific localStorage entries
-  try {
-    localStorage.removeItem(LS_KEY);                          // session/equipment/scenario state
-    // Worklog cache + queue + per-assignment session map intentionally preserved
-    // so admins still see records and pending writes still flush.
-  } catch (e) {}
+  // Session state preservation (Option A — same-device resume):
+  //
+  // Previously this function deleted LS_KEY on every logout, which
+  // forced the user to re-enter participant ID, re-tick equipment, and
+  // re-mark scenario progress on next login. That's exactly the
+  // "continue where I left off" pain admin reported.
+  //
+  // After this change, session state lives at sessionKeyFor(username)
+  // and is NOT deleted on logout. On next login, the user's slot is
+  // automatically restored (see the operator-login branch in doLogin).
+  //
+  // Worklog cache + queue + per-assignment session map were already
+  // preserved (admin records survive); the only thing we changed is
+  // not nuking the operator's progress.
+  //
+  // Two safety constraints worth knowing:
+  //   1. Each user has their OWN per-username key, so this preservation
+  //      doesn't leak one user's session into another's view if they
+  //      share a device. Mod A's progress sits at
+  //      centific_orbit_session_sarahk; Mod B's at
+  //      centific_orbit_session_marcuso. Logout doesn't touch either.
+  //   2. State versioning still applies — if MAJOR.MINOR bumps in a
+  //      future release, the stored slot is treated as invalid and a
+  //      fresh defaultState() is created on login.
 
-  // Reset the in-memory state to defaults (no modProfile, no username)
+  // Reset the in-memory state to defaults so the login screen renders
+  // cleanly (no leftover username highlighting, no equipment chips
+  // showing through). The localStorage slot is untouched and will be
+  // re-loaded on the next login.
   state = defaultState();
   currentStationKey = null;
 
@@ -20576,6 +21811,7 @@ function logoutAndClearOperatorState() {
     clearInterval(window._worklogTickInterval);
     window._worklogTickInterval = null;
   }
+  if (typeof stopSessionStatePolling === 'function') stopSessionStatePolling();
   if (window._mySessionCarouselIdx) window._mySessionCarouselIdx = 0;
   // Force adminState reload on next access
   adminState._asgnLoaded = false;
@@ -22024,6 +23260,332 @@ function startApp() {
   document.documentElement.setAttribute('data-theme', state.theme || 'dark');
   document.getElementById('themeDesc').textContent = (state.theme === 'light') ? 'Currently light' : 'Currently dark';
   renderApp();
+  // Check for teammate's session progress on the current assignment.
+  // Runs ~1s after paint so the operator sees their app first; the
+  // teammate-sync banner appears non-modally if a teammate has progress.
+  // Slight delay also gives adminState.teams + .assignments time to
+  // load if they were stale (needed for getOperatorAssignment).
+  setTimeout(() => {
+    checkAndOfferTeammateSync().catch(e =>
+      console.warn('[Orbit] Teammate sync check failed:', e && e.message)
+    );
+  }, 1200);
+  // Begin periodic polling so teammate's mid-session updates land
+  // without requiring a login. Started here (not at app init) so it
+  // only runs in the operator context — admin app doesn't need this.
+  if (typeof startSessionStatePolling === 'function') startSessionStatePolling();
+}
+
+// Look for teammate SessionState on the current assignment. If found
+// and meaningful (has stations data, not just an empty initial state),
+// surface a banner asking whether to merge teammate's progress.
+//
+// "Meaningful" check: at least one scenario in the teammate's state
+// isn't "Not Started" — otherwise it's just an empty default state
+// they wrote without doing any work. Don't prompt for empty merges.
+async function checkAndOfferTeammateSync() {
+  if (!SESSIONSTATE_PA_READ_URL) return;
+  const result = await findTeammateSessionState();
+  if (!result || !result.syncableState) return;
+  const cloud = result.syncableState;
+
+  // Has the teammate actually done work? Look for any scenario marked
+  // anything but the default "Not Started" status, any non-zero
+  // iteration count, any equipment checked, or a participant ID
+  // filled in. Iterations matter because a mod might increment them
+  // (recording attempts) before formally marking the scenario's
+  // status — that's still real work worth surfacing.
+  let hasWork = false;
+  if (cloud.participantId && cloud.participantId.trim()) hasWork = true;
+  if (!hasWork && cloud.equipment) {
+    for (const k of Object.keys(cloud.equipment)) {
+      if (cloud.equipment[k]) { hasWork = true; break; }
+    }
+  }
+  if (!hasWork && cloud.stations) {
+    outer: for (const stKey of Object.keys(cloud.stations)) {
+      const stationData = cloud.stations[stKey] || {};
+      // Camera confirmations count as work too — a teammate who
+      // unpacked and confirmed cameras has clearly started.
+      const cams = stationData.cameras || {};
+      for (const c of Object.keys(cams)) {
+        if (cams[c]) { hasWork = true; break outer; }
+      }
+      const sc = stationData.scenarios || {};
+      for (const num of Object.keys(sc)) {
+        const row = sc[num];
+        if (!row) continue;
+        if (row.status && row.status !== 'Not Started') {
+          hasWork = true;
+          break outer;
+        }
+        if ((row.iterations || 0) > 0) {
+          hasWork = true;
+          break outer;
+        }
+        if (row.notes && String(row.notes).trim().length > 0) {
+          hasWork = true;
+          break outer;
+        }
+      }
+    }
+  }
+  if (!hasWork) return;
+
+  // Also skip if the teammate's lastActive is older than our own local
+  // state — means we've already worked past them and shouldn't be
+  // asked to "merge in" their older snapshot. This protects against
+  // the case where local already moved forward but the cloud still
+  // has the teammate's earlier work.
+  const teammateAt = result.row.lastActive || '';
+  const localAt = state._lastSyncMergeAt || '';
+  if (teammateAt && localAt && teammateAt <= localAt) {
+    return;
+  }
+
+  showTeammateSyncModal(result);
+}
+
+// Render a non-blocking banner at the top of the operator app offering
+// the merge. User can dismiss (X), accept (Continue), or decline
+// (Start fresh — which keeps local state and just dismisses the banner;
+// teammate's cloud row is left intact so other teammates can still
+// merge from it).
+// Render a modal at the center of the screen offering the merge.
+// Replaces the previous slide-in banner. Modal is preferred because:
+//   1. The session-handoff decision is consequential — accepting will
+//      overwrite the operator's current local state with the teammate's.
+//      A modal forces an explicit choice rather than letting the user
+//      ignore a banner while clicking into other UI.
+//   2. The full-screen dim + center placement matches the visual weight
+//      of the action (it's not a minor notification — it changes what
+//      the operator sees throughout the app).
+//   3. Reusing the appConfirm-style overlay+focus pattern keeps the
+//      app feeling consistent.
+//
+// User can dismiss (×), accept (Continue), or decline (Start fresh).
+// Same persistence semantics as before — Continue + Decline both
+// stamp _lastSyncMergeAt so the polling loop doesn't re-prompt; the
+// × is a soft dismiss that allows re-prompt on next poll.
+function showTeammateSyncModal(result) {
+  // Avoid duplicate modals on rapid re-render
+  if (document.getElementById('teammateSyncOverlay')) return;
+
+  const cloud = result.syncableState;
+  const teammateId = result.row.orbitLoginId;
+  const teammateName = (typeof getModeratorDisplayName === 'function')
+    ? getModeratorDisplayName(teammateId)
+    : teammateId;
+
+  // Build a short summary of teammate's work.
+  //
+  // BUG FIX: the original counting logic checked scenario.status against
+  // 'Complete', 'Partial', 'Skip' — but those aren't the actual status
+  // strings the app uses. The real values (defined as constants near
+  // the top of the file) are:
+  //   - COMPLETE_VALUES = ['All Recorded', 'Uploaded', 'Calibrated']
+  //   - PROGRESS_VALUES = ['Partially Recorded']
+  //   - SKIPPED_STATUS  = 'Skipped'
+  // PLUS: a scenario isn't truly "done" by status alone — it also needs
+  // iterations >= ITERATION_TARGET (3). And a station isn't "done" until
+  // every scenario is complete AND (for capture stations) all cameras
+  // are confirmed. The original logic ignored both rules, which is why
+  // teammates' real progress was showing as 0/5 / 0/51 in the modal.
+  //
+  // The fix reuses the canonical helpers (isScenarioComplete) and
+  // mirrors getStationStatus's logic so the modal shows the same counts
+  // the operator sees elsewhere in the app (the per-station progress
+  // pill, the overall progress chip, the Excel export "X / Y complete"
+  // column). One source of truth, no drift between surfaces.
+  let stationsDoneCount = 0;
+  let stationsTotal = 0;
+  let scenariosDone = 0;
+  let scenariosTotal = 0;
+  if (cloud.stations && Array.isArray(STATIONS)) {
+    // Iterate the canonical STATIONS list rather than Object.keys of
+    // cloud.stations. This is more robust: ensures we account for any
+    // station the schema knows about (and skip any junk keys the cloud
+    // payload might have from an older or experimental build).
+    for (const st of STATIONS) {
+      stationsTotal++;
+      const stationData = cloud.stations[st.key];
+      if (!stationData) continue;
+      const scenarios = stationData.scenarios || {};
+      // Iterate scenario objects, count completed ones via the same
+      // helper the rest of the app uses. Empty scenarios object is
+      // valid — just means this station has no work logged yet.
+      const scenarioObjs = Object.values(scenarios);
+      scenariosTotal += scenarioObjs.length;
+      const completeInStation = scenarioObjs.filter(s => isScenarioComplete(s)).length;
+      scenariosDone += completeInStation;
+      // Station-level "done" check — mirrors getStationStatus.
+      // 1. Every scenario must be complete (completeInStation === total)
+      // 2. For capture stations, every camera must be confirmed
+      // 3. If no scenarios exist yet, treat as not-done (avoids
+      //    counting an empty station as auto-complete)
+      const allScenariosDone = scenarioObjs.length > 0 && completeInStation === scenarioObjs.length;
+      let camerasOk = true;
+      if (st.requiresCameras) {
+        const cams = stationData.cameras || {};
+        camerasOk = (typeof CAMERAS !== 'undefined' && Array.isArray(CAMERAS))
+          ? CAMERAS.every(c => !!cams[c])
+          : true;  // if CAMERAS list isn't available for some reason, don't block the station
+      }
+      if (allScenariosDone && camerasOk) stationsDoneCount++;
+    }
+  }
+  // Diagnostic log so anyone debugging can see exactly what numbers
+  // were computed and from what payload. Helps distinguish "cloud
+  // data was wrong" vs "counting logic was wrong" the next time
+  // something looks off.
+  console.log(
+    '[Orbit] Teammate progress summary —',
+    'stations:', stationsDoneCount, '/', stationsTotal,
+    '· scenarios:', scenariosDone, '/', scenariosTotal,
+    '(from teammate:', teammateId, ')'
+  );
+  const partLabel = cloud.participantName
+    ? cloud.participantName
+    : (cloud.participantId ? `participant ${cloud.participantId}` : 'your shared participant');
+  const timeAgo = (() => {
+    try {
+      const t = new Date(result.row.lastActive).getTime();
+      const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins} min ago`;
+      const hrs = Math.round(mins / 60);
+      return `${hrs} hr ago`;
+    } catch (e) { return ''; }
+  })();
+
+  // Build the overlay + modal DOM. We append both to document.body
+  // so the modal isn't constrained by parent stacking contexts (the
+  // sticky nav had z-index 200, modal must outrank it — modal z-index
+  // is 701, overlay 700).
+  const overlay = document.createElement('div');
+  overlay.id = 'teammateSyncOverlay';
+  overlay.className = 'teammate-sync-overlay';
+  document.body.appendChild(overlay);
+
+  const modal = document.createElement('div');
+  modal.id = 'teammateSyncModal';
+  modal.className = 'teammate-sync-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'teammateSyncModalTitle');
+  modal.innerHTML = `
+    <button class="teammate-sync-modal-close" id="teammateSyncCloseBtn" aria-label="Dismiss for now">×</button>
+    <div class="teammate-sync-modal-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <path d="M16 19a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M8 11a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M16 13v-2a4 4 0 00-4-4M8 11v2a4 4 0 004 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="teammate-sync-modal-title" id="teammateSyncModalTitle">
+      ${escapeHTML(teammateName)} has session progress
+    </div>
+    <div class="teammate-sync-modal-sub">
+      They've been working on ${escapeHTML(partLabel)}. You can pick up where they left off, or start fresh.
+    </div>
+    <div class="teammate-sync-modal-stats">
+      <div class="teammate-sync-stat">
+        <div class="teammate-sync-stat-label">Stations</div>
+        <div class="teammate-sync-stat-value">${stationsDoneCount} / ${stationsTotal}</div>
+      </div>
+      <div class="teammate-sync-stat">
+        <div class="teammate-sync-stat-label">Scenarios</div>
+        <div class="teammate-sync-stat-value">${scenariosDone} / ${scenariosTotal}</div>
+      </div>
+    </div>
+    <div class="teammate-sync-modal-meta">Updated ${escapeHTML(timeAgo)}</div>
+    <div class="teammate-sync-modal-actions">
+      <button class="btn btn-primary" id="teammateSyncAcceptBtn">Continue from their progress</button>
+      <button class="btn btn-ghost"   id="teammateSyncDeclineBtn">Start fresh</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Trigger the open animation on the next frame so the transition
+  // actually animates (an element added to the DOM with .open already
+  // applied skips the transition).
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+  });
+
+  // Cleanup helper — animates out then removes from DOM. Used by all
+  // three dismiss paths (accept, decline, ×, overlay-click, Escape).
+  const close = () => {
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    document.removeEventListener('keydown', onKey);
+    // Wait for the transition to finish before removing nodes so the
+    // user sees a smooth fade-out instead of an abrupt disappear.
+    setTimeout(() => {
+      overlay.remove();
+      modal.remove();
+    }, 300);
+  };
+
+  // Save focus so we can restore it after close (a11y best practice)
+  const prevFocus = document.activeElement;
+  // Auto-focus the primary action button when the modal opens so:
+  //   1. Enter immediately commits to "Continue from their progress"
+  //      (most common choice — teammate has work the user wants to see)
+  //   2. Keyboard users can navigate with Tab from a known starting point
+  //   3. Screen readers announce the dialog's primary action
+  setTimeout(() => {
+    try { document.getElementById('teammateSyncAcceptBtn').focus(); } catch (_) {}
+  }, 80);
+
+  // Keyboard handler — Escape soft-dismisses (same as ×), Enter
+  // commits to the primary action (Continue). No Tab trap; the
+  // modal only has three buttons so it's natural to tab through.
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      // Restore focus to whatever had it before the modal opened
+      try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+    }
+  };
+  document.addEventListener('keydown', onKey);
+
+  // Overlay click — soft dismiss (don't mark as declined; re-prompt
+  // on next poll if teammate has newer state)
+  overlay.addEventListener('click', () => {
+    close();
+    try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+  });
+
+  // Wire the three explicit buttons
+  document.getElementById('teammateSyncAcceptBtn').addEventListener('click', () => {
+    mergeTeammateState(result.syncableState);
+    state._lastSyncMergeAt = result.row.lastActive || new Date().toISOString();
+    saveState();
+    close();
+    if (typeof showToast === 'function') {
+      showToast(`Merged ${teammateName}'s progress`, 'success', 4000);
+    }
+    // Re-render to reflect the merged state immediately
+    if (typeof renderApp === 'function') renderApp();
+    if (typeof applyAssignmentToEntryFields === 'function') applyAssignmentToEntryFields();
+  });
+  document.getElementById('teammateSyncDeclineBtn').addEventListener('click', () => {
+    // Mark this teammate snapshot as "seen and declined" so we don't
+    // re-prompt on every poll. Stored in local state, NOT cloud — each
+    // teammate makes their own decline decision independently.
+    state._lastSyncMergeAt = result.row.lastActive || new Date().toISOString();
+    saveState();
+    close();
+    try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+  });
+  document.getElementById('teammateSyncCloseBtn').addEventListener('click', () => {
+    // Soft dismiss — don't mark as seen, so re-prompt next time.
+    close();
+    try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+  });
 }
 
 function shakeLoginCard() {
@@ -22082,20 +23644,23 @@ async function doLogin() {
   // of truth and admin-specific separation isn't a data concept here.
   if (isAdminUsername(v)) {
     const enteredAdminName = canonicalAdminUsername(v);
-    const saved = loadState();
+    // Admin login uses the same per-username slot pattern as operators.
+    // Each admin (Admin-orbit, Ritu-Orbit, John-Orbit) has their own
+    // localStorage slot keyed by their username. Admins primarily read
+    // data from the cloud (Excel via PA), so the slot contents are
+    // small — mostly UI state like which tab they had open. Per-user
+    // slots prevent admin A's tab choice from leaking into admin B's
+    // session when they swap on the same device.
+    const saved = loadState(enteredAdminName);
     if (saved && saved.username && isAdminUsername(saved.username)) {
-      // Restore prior admin session, BUT update the username field to
-      // whoever just signed in. Without this update, "Ritu-Orbit"
-      // signing in after a prior "Admin-orbit" session would still
-      // render as "Admin-orbit" in the header.
       state = saved;
       state.username = enteredAdminName;
-      saveState();
     } else {
       state = defaultState();
       state.username = enteredAdminName;
-      saveState();
     }
+    saveState();
+    setLastLoginUsername(enteredAdminName);
     startAdminApp();
     return;
   }
@@ -22132,19 +23697,43 @@ async function doLogin() {
       orbitLoginId: orbitId, firstName: fName, lastName: lName, phoneNumber: phone, centificEmail: cEmail,
     };
 
-    // Try to restore saved state for the same user, else default
-    const saved = loadState();
+    // Try to restore saved state for THIS specific user. Pass orbitId
+    // so loadState() looks in the per-username slot
+    // (centific_orbit_session_<orbitId>) rather than the legacy global
+    // key. If the user has prior session data, it's returned here —
+    // their participant ID, equipment checklist, scenario progress,
+    // and notes all come back intact.
+    const saved = loadState(orbitId);
+    let resumed = false;
     if (saved && saved.username && saved.username.toLowerCase() === orbitId.toLowerCase()) {
       state = saved;
       state.username = orbitId; // canonicalize casing
+      resumed = true;
     } else {
       state = defaultState();
       state.username = orbitId;
     }
     state.modProfile = profile;
     saveState();
+    setLastLoginUsername(orbitId);
     setLoginLoading(false);
     startApp();
+    // After the app paints, surface a non-intrusive toast confirming
+    // the resume happened — gives the operator visual confirmation
+    // that their progress was preserved (vs silently restoring, which
+    // could feel unsettling if they expected a fresh slate). The toast
+    // includes the participant name if known so they can verify it's
+    // the right session before continuing.
+    if (resumed && state.participantId) {
+      setTimeout(() => {
+        if (typeof showToast === 'function') {
+          const partLabel = state.participantName
+            ? state.participantName
+            : (state.participantId ? `participant ${state.participantId}` : 'your session');
+          showToast(`Resumed where you left off — ${partLabel}`, 'success', 4500);
+        }
+      }, 500);
+    }
   } catch (e) {
     setLoginLoading(false);
     setLoginError("Couldn't reach the moderator directory. Check your connection and try again.");
@@ -22165,15 +23754,15 @@ function init() {
   const sidebarVer = document.getElementById('sidebarVersionLabel');
   if (sidebarVer) sidebarVer.textContent = `Centific Data Collection — Project Orbit · v${APP_VERSION}`;
 
-  // Try to auto-resume if saved state has a username
-  const saved = loadState();
+  // Try to auto-resume if a previous login was recorded. We look up
+  // the most-recently logged-in username (kept at LAST_LOGIN_KEY) and
+  // load that user's per-username session slot. Falls back to the
+  // legacy single-bucket key if no pointer exists (first run after
+  // this build's deploy — see backwards-compat handling in loadState).
+  const lastUser = getLastLoginUsername();
+  let saved = lastUser ? loadState(lastUser) : loadState();
   if (saved && saved.username) {
     state = saved;
-    // Resume into the admin app if the saved username matches ANY of
-    // the allowed admin accounts (case-insensitive). Previously this
-    // only matched the single legacy ADMIN_USERNAME, so Ritu-Orbit
-    // and John-Orbit sessions would fall through to startApp() (the
-    // operator app) on reload — broken for new admin accounts.
     if (isAdminUsername(state.username)) {
       startAdminApp();
     } else {
@@ -22194,6 +23783,31 @@ function init() {
   document.getElementById('menuClose').addEventListener('click', closeMenu);
   document.getElementById('menuOverlay').addEventListener('click', closeMenu);
   document.getElementById('themeRow').addEventListener('click', toggleTheme);
+  // Orientation lock — toggle row + the "Disable lock instead" escape
+  // hatch in the overlay. Both flip the same preference.
+  const orientationRow = document.getElementById('orientationRow');
+  if (orientationRow) {
+    orientationRow.addEventListener('click', () => {
+      setOrientationLockEnabled(!getOrientationLockEnabled());
+    });
+  }
+  // Hide the orientation row entirely on non-touch devices — there's
+  // no rotation behavior to control on a desktop, so the toggle would
+  // be pointless clutter. We hide rather than omit at render time so
+  // the same drawer HTML works for both operator and admin views.
+  if (orientationRow && !isTouchDevice()) {
+    orientationRow.style.display = 'none';
+  }
+  const orientationDismiss = document.getElementById('orientationOverlayDismiss');
+  if (orientationDismiss) {
+    orientationDismiss.addEventListener('click', () => {
+      setOrientationLockEnabled(false);
+    });
+  }
+  // Apply the current orientation preference on startup. Runs even
+  // on desktop (where it'll be a no-op since the overlay only
+  // activates for touch devices in landscape).
+  applyOrientationLock();
   document.getElementById('exportRow').addEventListener('click', () => { closeMenu(); exportExcel(); });
   document.getElementById('resetRow').addEventListener('click', async () => {
     const ok = await appConfirm({
