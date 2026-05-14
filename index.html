@@ -8722,7 +8722,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051441';
+const APP_VERSION = '1.2.051442';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -9756,8 +9756,8 @@ function scenarioStatusButtonsHTML(station, sd, scenarioNum) {
         ${skipped ? '↺ Unskip' : 'Skip'}
       </button>
     </div>
-    ${partialMissingNote ? `<div class="scenario-note-required">⚠️ Note required for Partial</div>` : ''}
-    ${skipMissingNote ? `<div class="scenario-note-required">⚠️ Note required for Skip</div>` : ''}
+    ${partialMissingNote ? `<div class="scenario-note-required" data-kind="partial">⚠️ Note required for Partial</div>` : ''}
+    ${skipMissingNote ? `<div class="scenario-note-required" data-kind="skip">⚠️ Note required for Skip</div>` : ''}
   `;
 }
 
@@ -9983,20 +9983,131 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
 
   // Bind notes — also re-renders when "Partial" or "Skip" status is set, so
   // the "Note required" warning clears and the Submit button unlocks.
+  // === Notes input handler ===
+  // Why this is more elaborate than a typical input listener:
+  //
+  // Old behavior (the bug): on every keystroke, if the missing-note state
+  // changed (true→false on the FIRST keystroke into an empty Partial/Skip
+  // scenario, or false→true on backspacing the last character), the code
+  // called `setTimeout(renderApp, 0)`. That nuked the entire DOM including
+  // the input the user was actively typing in. The browser then created a
+  // brand-new input element without focus, kicking the user out mid-word.
+  //
+  // The re-render was needed to clear THREE things that depend on the
+  // missing-note state:
+  //   (a) The inline "⚠️ Note required for Partial/Skip" warning row
+  //       directly under the status buttons
+  //   (b) The "X partials need notes" pill in the station footer
+  //   (c) The Submit button's disabled state + tooltip
+  //
+  // New behavior: surgically toggle (a) inline without a full re-render
+  // (it's a sibling of the input's container, easy to find + remove/add),
+  // then debounce a full re-render for (b) and (c) by 400ms — long enough
+  // that typing is never interrupted, short enough that the footer pill
+  // catches up by the time the user looks away from the input.
+  //
+  // The debounce timer is keyed per-input via a Map so concurrent typing
+  // in different note fields doesn't cancel each other. Practically
+  // unlikely on a phone but cheap insurance for desktop multi-field use.
+  const _notesDebounceTimers = new WeakMap();
+  const NOTES_DEBOUNCE_MS = 400;
+
   c.querySelectorAll('.scenario-notes').forEach(inp => {
     inp.addEventListener('input', e => {
       const num = e.target.dataset.num;
       const k = e.target.dataset.key;
       const sc = state.stations[k].scenarios[num];
-      const wasMissing = isScenarioPartialMissingNote(sc) || isScenarioSkipMissingNote(sc);
       sc.notes = e.target.value;
       saveState();
-      // Re-render only when the missing-note state actually changes (avoids
-      // unnecessary re-renders + cursor jumps on every keystroke)
-      const isMissing = isScenarioPartialMissingNote(sc) || isScenarioSkipMissingNote(sc);
-      if (wasMissing !== isMissing) {
-        // Defer so the operator's typing flow isn't interrupted mid-keystroke
-        setTimeout(() => renderApp(), 0);
+
+      // --- (a) Surgically toggle the inline "Note required" warning ---
+      // The warning row(s) live as siblings of the .scenario-status-group
+      // inside the same scenario row (desktop: <td>; mobile: .scenario-
+      // card-controls). Find the container, then check whether each kind
+      // of warning is needed and add/remove the corresponding element.
+      //
+      // We scope the search to the input's containing row/card so we
+      // never accidentally touch warnings on OTHER scenarios that happen
+      // to share the same station — each scenario has its own
+      // .scenario-status-group.
+      const container = e.target.closest('tr') || e.target.closest('.scenario-card');
+      if (container) {
+        const partialMissing = isScenarioPartialMissingNote(sc);
+        const skipMissing    = isScenarioSkipMissingNote(sc);
+
+        // Find existing warning rows in this container. We tag them with
+        // data-kind so we can independently add/remove partial vs skip.
+        const existingWarnings = container.querySelectorAll('.scenario-note-required');
+        const existing = { partial: null, skip: null };
+        existingWarnings.forEach(w => {
+          if (w.dataset.kind === 'partial') existing.partial = w;
+          else if (w.dataset.kind === 'skip') existing.skip = w;
+        });
+
+        // Find the insertion point — directly after the scenario-status-
+        // group (which is a sibling, since both are emitted at the same
+        // level inside the scenario row).
+        const statusGroup = container.querySelector('.scenario-status-group');
+
+        // Partial warning
+        if (partialMissing && !existing.partial && statusGroup) {
+          const w = document.createElement('div');
+          w.className = 'scenario-note-required';
+          w.dataset.kind = 'partial';
+          w.textContent = '⚠️ Note required for Partial';
+          statusGroup.insertAdjacentElement('afterend', w);
+        } else if (!partialMissing && existing.partial) {
+          existing.partial.remove();
+        }
+
+        // Skip warning
+        if (skipMissing && !existing.skip && statusGroup) {
+          const w = document.createElement('div');
+          w.className = 'scenario-note-required';
+          w.dataset.kind = 'skip';
+          w.textContent = '⚠️ Note required for Skip';
+          // Insert AFTER the partial warning if it exists, else right
+          // after the status group, so order matches the rendered HTML
+          // (partial first, then skip).
+          const anchor = existing.partial || (partialMissing ? statusGroup.nextElementSibling : statusGroup);
+          if (anchor) anchor.insertAdjacentElement('afterend', w);
+        } else if (!skipMissing && existing.skip) {
+          existing.skip.remove();
+        }
+      }
+
+      // --- (b) + (c) Debounced full re-render ---
+      // The station footer's "X partials need notes" pill and the Submit
+      // button's enabled/disabled state both depend on a count across all
+      // scenarios. Updating those inline would require touching multiple
+      // DOM nodes outside the current row and re-running the count logic
+      // here — more brittle than just letting renderApp() do it. So we
+      // schedule a full re-render for AFTER the user stops typing. The
+      // 400ms window is small enough that the footer feels live, large
+      // enough that no keystroke is dropped.
+      //
+      // We reset the timer on each keystroke, so it only fires once when
+      // the user pauses. The blur handler below also flushes it on focus
+      // loss, so the footer state is always correct by the time the user
+      // looks elsewhere.
+      const existingTimer = _notesDebounceTimers.get(e.target);
+      if (existingTimer) clearTimeout(existingTimer);
+      _notesDebounceTimers.set(e.target, setTimeout(() => {
+        _notesDebounceTimers.delete(e.target);
+        renderApp();
+      }, NOTES_DEBOUNCE_MS));
+    });
+
+    // Flush the pending debounced render on blur so when the user
+    // leaves the field (tabs away, taps elsewhere), the footer pill
+    // and Submit button update immediately instead of waiting the
+    // remainder of the 400ms window.
+    inp.addEventListener('blur', e => {
+      const pending = _notesDebounceTimers.get(e.target);
+      if (pending) {
+        clearTimeout(pending);
+        _notesDebounceTimers.delete(e.target);
+        renderApp();
       }
     });
   });
