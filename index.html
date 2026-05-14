@@ -6310,6 +6310,42 @@ nav {
   letter-spacing: -0.02em;
   color: var(--text);
 }
+/* Login welcome modal — summary block for the next-session variant.
+   Stacked rows of "label: value" displaying participant + team + time
+   so the operator has at-a-glance context before confirming. Reuses
+   the same modal shell as the teammate-sync modal — these are just
+   the inner layout pieces. */
+.login-welcome-summary {
+  margin-bottom: 18px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.login-welcome-summary-rows {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.login-welcome-summary-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+.login-welcome-summary-label {
+  color: var(--text3);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.login-welcome-summary-value {
+  color: var(--text);
+  font-weight: 500;
+  text-align: right;
+  /* Wrap long addresses naturally instead of overflowing the modal */
+  word-break: break-word;
+}
 .teammate-sync-modal-meta {
   font-size: 12.5px;
   color: var(--text3);
@@ -8159,7 +8195,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051434';
+const APP_VERSION = '1.2.051435';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -8346,6 +8382,33 @@ function todayISO() {
   const mm = String(d.getMonth()+1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+// Returns today's date in Pacific Time as a YYYY-MM-DD string. We use
+// PST/PDT (America/Los_Angeles) explicitly rather than the user's local
+// timezone for two reasons:
+//   1. The team is concentrated in the US west coast — using a shared
+//      reference time keeps "today" consistent across moderators in
+//      different timezones.
+//   2. The PST-midnight auto-transition the user asked for needs a
+//      stable reference — letting each device use its OWN local
+//      midnight would mean an Asia-based moderator's "midnight"
+//      happens 15 hours before a Portland moderator's.
+//
+// Uses Intl.DateTimeFormat which auto-handles DST shifts (PST <-> PDT).
+function getPSTDateString() {
+  try {
+    // 'en-CA' produces YYYY-MM-DD format directly via formatToParts.
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    return fmt.format(new Date());
+  } catch (e) {
+    // Fallback: local timezone. Better than crashing — most users are
+    // in PST anyway, the function only matters at the day boundary.
+    return todayISO();
+  }
 }
 function todayPretty() {
   const d = new Date();
@@ -20256,6 +20319,12 @@ function extractSyncableState(s) {
     sessionDate:        s.sessionDate        || '',
     equipment:          s.equipment          || {},
     stations:           s.stations           || {},
+    // Completion marker — when wrap-up checklist is confirmed we
+    // stamp this with an ISO timestamp. Sync'd to cloud so other
+    // devices / teammates know the session is finished without
+    // re-deriving it from station states. Used by the login welcome
+    // modal to show the "Today's session is completed" prompt.
+    sessionCompletedAt: s.sessionCompletedAt || null,
   };
 }
 
@@ -20442,6 +20511,16 @@ function mergeTeammateState(syncableState) {
   if (syncableState.participantName)    state.participantName    = syncableState.participantName;
   if (syncableState.participantAddress) state.participantAddress = syncableState.participantAddress;
   if (syncableState.sessionDate)        state.sessionDate        = syncableState.sessionDate;
+  // Carry the completion marker forward if it's NEWER than ours.
+  // Newest wins — once any device marks the session complete, all
+  // other devices should reflect that.
+  if (syncableState.sessionCompletedAt) {
+    const incoming = String(syncableState.sessionCompletedAt);
+    const current  = String(state.sessionCompletedAt || '');
+    if (!current || incoming > current) {
+      state.sessionCompletedAt = incoming;
+    }
+  }
   if (syncableState.equipment)          state.equipment          = { ...state.equipment, ...syncableState.equipment };
   if (syncableState.stations) {
     // Deep merge stations — for each station, overlay scenarios + cameras.
@@ -20914,6 +20993,10 @@ function startSessionStatePolling() {
     const app = document.getElementById('app');
     if (!app || app.style.display === 'none') return;
     if (document.getElementById('teammateSyncOverlay')) return;
+    // Skip if the login welcome modal is showing — don't stack prompts.
+    // The welcome modal is the higher-priority message (session state
+    // for THIS user), teammate sync is secondary.
+    if (document.getElementById('loginWelcomeOverlay')) return;
     checkAndOfferTeammateSync().catch(() => { /* silent */ });
   }, 45000);
 }
@@ -21542,6 +21625,14 @@ function openWrapUpModal(asgn) {
       confirmBtn.addEventListener('click', () => {
         close();
         pushWorklogStatus(asgn, 'session_done', { notes: 'Wrap-up checklist complete' });
+        // Stamp the local completion marker so the login welcome modal
+        // recognizes "today's session is done" on next login or after
+        // PST midnight. This field is included in extractSyncableState
+        // so cross-device + teammate views see it too. Stamping ISO
+        // string instead of a boolean lets us compare timestamps when
+        // merging cloud state (newest completion wins).
+        state.sessionCompletedAt = new Date().toISOString();
+        saveState();
         // Send back to welcome (locked state)
         currentStationKey = null;
         renderApp();
@@ -21812,6 +21903,7 @@ function logoutAndClearOperatorState() {
     window._worklogTickInterval = null;
   }
   if (typeof stopSessionStatePolling === 'function') stopSessionStatePolling();
+  if (typeof stopMidnightWatcher === 'function') stopMidnightWatcher();
   if (window._mySessionCarouselIdx) window._mySessionCarouselIdx = 0;
   // Force adminState reload on next access
   adminState._asgnLoaded = false;
@@ -23274,6 +23366,11 @@ function startApp() {
   // without requiring a login. Started here (not at app init) so it
   // only runs in the operator context — admin app doesn't need this.
   if (typeof startSessionStatePolling === 'function') startSessionStatePolling();
+  // PST midnight watcher — resets a completed yesterday's session
+  // when the day changes, then re-runs the welcome check so the
+  // operator sees their next-session or no-session prompt for the
+  // new day automatically.
+  if (typeof startMidnightWatcher === 'function') startMidnightWatcher();
 }
 
 // Look for teammate SessionState on the current assignment. If found
@@ -23285,6 +23382,13 @@ function startApp() {
 // they wrote without doing any work. Don't prompt for empty merges.
 async function checkAndOfferTeammateSync() {
   if (!SESSIONSTATE_PA_READ_URL) return;
+  // Skip if the user's own session is already complete for today.
+  // Their work is done; merging a teammate's in-progress snapshot
+  // would just undo their completion. Once midnight passes (state
+  // resets via midnight watcher), this guard releases automatically.
+  if (state.sessionCompletedAt && state.sessionDate === getPSTDateString()) {
+    return;
+  }
   const result = await findTeammateSessionState();
   if (!result || !result.syncableState) return;
   const cloud = result.syncableState;
@@ -23588,6 +23692,480 @@ function showTeammateSyncModal(result) {
   });
 }
 
+/* =====================================================================
+   LOGIN WELCOME MODAL — session-state-aware greeting
+   =====================================================================
+   Three variants depending on what the operator was doing last:
+
+     1. today_completed — "Today's session is complete." Three actions:
+        Review the session, Start a new session, Sign out. Shown when
+        state.sessionCompletedAt is set AND state.sessionDate matches
+        today's PST date.
+
+     2. next_session — "You have a booked session [date]" with a brief
+        summary of participant + team. One action: Got it. Shown when
+        operator has an upcoming assignment (today or future) and no
+        active in-progress local work.
+
+     3. no_session — "No booked session." One action: Continue.
+        Shown when no upcoming assignments exist.
+
+   Triggered on:
+     - Fresh operator login (NOT auto-resume on page refresh — that
+       would re-prompt every time the user reloads)
+     - PST midnight transition (state was completed yesterday; reset
+       and show next-session or no-session variant)
+
+   Reuses the teammate-sync overlay/modal CSS so all session-related
+   prompts feel visually consistent. */
+
+// Module-level flag that distinguishes "fresh login" from "auto-resume."
+// Set true at the end of a successful doLogin call, then consumed by
+// checkLoginWelcome and reset. Without this, refreshing the page would
+// trigger the welcome modal on every load, which is annoying.
+let _loginWelcomePending = false;
+
+// Track the last seen PST date for the midnight watcher. Initialized
+// at app startup and updated on every tick that detects a change.
+let _lastSeenPSTDate = null;
+
+// Generic modal builder. Caller supplies icon SVG, title, subtitle,
+// optional summary block, and a list of actions. The first action is
+// auto-focused so Enter activates it (most common path).
+//
+// actions: [
+//   { label: 'Review the session', kind: 'primary' | 'secondary' | 'ghost' | 'danger', onClick: fn },
+//   ...
+// ]
+function showLoginWelcomeModal(opts) {
+  if (document.getElementById('loginWelcomeOverlay')) return; // dedupe
+  opts = opts || {};
+
+  const overlay = document.createElement('div');
+  overlay.id = 'loginWelcomeOverlay';
+  overlay.className = 'teammate-sync-overlay';
+  document.body.appendChild(overlay);
+
+  const modal = document.createElement('div');
+  modal.id = 'loginWelcomeModal';
+  modal.className = 'teammate-sync-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'loginWelcomeTitle');
+
+  // Action buttons HTML. Kind maps to the existing btn classes:
+  //   primary → btn btn-primary (teal solid)
+  //   ghost   → btn btn-ghost   (outline)
+  //   danger  → btn btn-danger  (red — used for "Sign out")
+  const actionsHtml = (opts.actions || []).map((a, idx) => {
+    const kind = a.kind || 'primary';
+    const cls  = kind === 'primary' ? 'btn btn-primary'
+               : kind === 'danger'  ? 'btn btn-danger'
+               : kind === 'ghost'   ? 'btn btn-ghost'
+               : 'btn btn-primary';
+    return `<button class="${cls}" data-welcome-action-idx="${idx}">${escapeHTML(a.label)}</button>`;
+  }).join('');
+
+  modal.innerHTML = `
+    ${opts.dismissable === false ? '' : '<button class="teammate-sync-modal-close" id="loginWelcomeCloseBtn" aria-label="Dismiss">×</button>'}
+    <div class="teammate-sync-modal-icon">${opts.iconSvg || ''}</div>
+    <div class="teammate-sync-modal-title" id="loginWelcomeTitle">${escapeHTML(opts.title || '')}</div>
+    <div class="teammate-sync-modal-sub">${opts.subHtml ? opts.subHtml : escapeHTML(opts.sub || '')}</div>
+    ${opts.summaryHtml ? `<div class="login-welcome-summary">${opts.summaryHtml}</div>` : ''}
+    <div class="teammate-sync-modal-actions">
+      ${actionsHtml}
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+  });
+
+  const prevFocus = document.activeElement;
+  const close = () => {
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    document.removeEventListener('keydown', onKey);
+    setTimeout(() => {
+      overlay.remove();
+      modal.remove();
+    }, 300);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      // Escape only soft-dismisses if dismissable. Welcome modals are
+      // dismissable by default; pass dismissable: false to make them
+      // sticky (rare — for now everything supports Escape).
+      if (opts.dismissable !== false) {
+        e.preventDefault();
+        close();
+        try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+      }
+    }
+  };
+  document.addEventListener('keydown', onKey);
+
+  // Overlay-click soft dismiss (same as Escape). The welcome modal
+  // shouldn't be a hard "you can't leave" — there's always an action
+  // button that's the "right" path forward, but if the user already
+  // knows their state they can click outside to dismiss.
+  if (opts.dismissable !== false) {
+    overlay.addEventListener('click', () => {
+      close();
+      try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+    });
+    const closeBtn = document.getElementById('loginWelcomeCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        close();
+        try { if (prevFocus) prevFocus.focus(); } catch (_) {}
+      });
+    }
+  }
+
+  // Wire action buttons. We use data-attributes + delegation so
+  // adding/removing actions doesn't require re-wiring listeners.
+  modal.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-welcome-action-idx]');
+    if (!btn) return;
+    const idx = parseInt(btn.getAttribute('data-welcome-action-idx'), 10);
+    const action = (opts.actions || [])[idx];
+    if (!action) return;
+    // Most actions want the modal to close before doing their thing
+    // (so the action's UI changes are visible). Action can suppress
+    // this by setting keepOpen: true.
+    if (!action.keepOpen) close();
+    try { action.onClick && action.onClick(); }
+    catch (e) { console.warn('[Orbit] Welcome action error:', e && e.message); }
+  });
+
+  // Auto-focus the primary action (first action by convention)
+  setTimeout(() => {
+    try {
+      const first = modal.querySelector('button[data-welcome-action-idx="0"]');
+      if (first) first.focus();
+    } catch (_) {}
+  }, 80);
+}
+
+// Decide which welcome variant (if any) to show based on current
+// local state + assignments. Returns an object {kind, ...} or null.
+function determineWelcomeState() {
+  // Guard: only operators see welcome modals (not admins).
+  if (!state.modProfile || !state.modProfile.orbitLoginId) return null;
+  const today = getPSTDateString();
+
+  // === Variant 1: today_completed ===
+  // sessionCompletedAt is set AND the session belongs to today.
+  const completedAt = state.sessionCompletedAt;
+  const sessionDate = state.sessionDate || '';
+  if (completedAt && sessionDate === today) {
+    return { kind: 'today_completed', sessionDate, completedAt };
+  }
+
+  // === Stale completion check (midnight already passed) ===
+  // If session was completed but sessionDate is earlier than today,
+  // it's leftover state from yesterday. We should NOT show "today's
+  // session is complete" — instead reset and show next_session.
+  // The caller (handleMidnightTransition) does the actual reset; here
+  // we just don't return 'today_completed' for it.
+
+  // === Variant 2: next_session ===
+  // Look for the operator's NEXT upcoming assignment that is not
+  // completed and not in a terminal status. Includes today's if
+  // it's scheduled.
+  const all = (typeof getOperatorAssignments === 'function') ? getOperatorAssignments() : [];
+  const isCompletedAssignment = (asgn) => {
+    // Same logic as elsewhere: latest worklog status === session_done
+    if (typeof getMyLatestStatusForAssignment !== 'function') return false;
+    const my = getMyLatestStatusForAssignment(asgn.id);
+    return my && my.status === 'session_done';
+  };
+  const upcoming = all.filter(a => {
+    if (!a || !a.date) return false;
+    if (a.date < today) return false;                       // past
+    if (typeof isTerminalStatus === 'function' && isTerminalStatus(a.status)) return false;
+    if (isCompletedAssignment(a)) return false;
+    return true;
+  });
+  if (upcoming.length > 0) {
+    return { kind: 'next_session', assignment: upcoming[0] };
+  }
+
+  // === Variant 3: no_session ===
+  return { kind: 'no_session' };
+}
+
+// Decide and show the appropriate welcome modal. Called after fresh
+// login and after PST-midnight reset. If the determined state is
+// null (admin path) or 'none' (no popup needed), no modal opens.
+function checkLoginWelcome() {
+  const w = determineWelcomeState();
+  if (!w) return;
+  if (w.kind === 'today_completed')  showTodayCompletedModal(w);
+  else if (w.kind === 'next_session') showNextSessionModal(w);
+  else if (w.kind === 'no_session')   showNoSessionModal(w);
+}
+
+// === Variant 1: "Today's session is completed" ===
+// Three actions: Review the session, Start a new session, Sign out.
+// "Review" dismisses the modal — the operator's locked state already
+// shows their completed work, they can navigate through stations.
+// "Start a new session" resets local state (preserves equipment by
+// default, same semantics as the menu's Reset Session button) and
+// closes the modal so the operator can begin fresh.
+// "Sign out" calls the existing logout flow.
+function showTodayCompletedModal(w) {
+  const partLabel = state.participantName
+    ? state.participantName
+    : (state.participantId ? `participant ${state.participantId}` : 'today\'s participant');
+  const completedTimeStr = (() => {
+    try {
+      const t = new Date(w.completedAt);
+      return t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    } catch (e) { return ''; }
+  })();
+  const subText = completedTimeStr
+    ? `You finished the session with ${partLabel} at ${completedTimeStr}.`
+    : `You finished the session with ${partLabel}.`;
+
+  showLoginWelcomeModal({
+    iconSvg: `
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `,
+    title: 'Today\'s session is complete',
+    sub: subText + ' What would you like to do next?',
+    actions: [
+      {
+        label: 'Review the session',
+        kind: 'primary',
+        onClick: () => {
+          // Just close the modal — the operator's app is already in
+          // locked/completed state and they can navigate freely to
+          // review any station's recorded work and notes.
+        },
+      },
+      {
+        label: 'Start a new session',
+        kind: 'ghost',
+        onClick: () => {
+          // Reset local progress so the operator can begin a fresh
+          // session. preserveEquipment defaults to true here on the
+          // assumption that equipment is still packed and ready —
+          // matches the menu's Reset Session behavior.
+          if (typeof resetOperatorSessionState === 'function') {
+            resetOperatorSessionState({ preserveEquipment: true });
+          }
+          // sessionCompletedAt is reset implicitly by the fresh state;
+          // explicitly null it just in case the reset preserves more
+          // than expected in some future build.
+          state.sessionCompletedAt = null;
+          saveState();
+          if (typeof renderApp === 'function') renderApp();
+          if (typeof showToast === 'function') {
+            showToast('New session ready — start with the first station', 'success', 4000);
+          }
+        },
+      },
+      {
+        label: 'Sign out',
+        kind: 'danger',
+        onClick: () => {
+          if (typeof logoutAndClearOperatorState === 'function') {
+            logoutAndClearOperatorState();
+          }
+        },
+      },
+    ],
+  });
+}
+
+// === Variant 2: "You have a booked session" ===
+// Single confirm button. Shows participant, team, and session window
+// so the operator has at-a-glance context before starting.
+function showNextSessionModal(w) {
+  const asgn = w.assignment;
+  const part = asgn.participantData || {};
+  const partName = [part.firstName, part.lastName].filter(Boolean).join(' ').trim() || 'TBD';
+  const partAddress = [part.address, part.state, part.zipCode].filter(Boolean).join(', ') || '';
+  const team = (adminState.teams || []).find(t => t.id === asgn.teamId);
+  const teamName = team ? team.name : '';
+  // Friendly day label: "today", "tomorrow", or full date
+  const todayStr = getPSTDateString();
+  // Compute "tomorrow in PST" by parsing today as a YYYY-MM-DD string,
+  // adding one day. Using string math is the safest way to avoid
+  // timezone arithmetic gotchas — we never construct a Date in a
+  // different timezone, we just walk the calendar.
+  const tomorrow = (() => {
+    const parts = todayStr.split('-').map(Number);
+    if (parts.length !== 3) return '';
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    d.setUTCDate(d.getUTCDate() + 1);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  })();
+  let dayLabel;
+  if (asgn.date === todayStr) dayLabel = 'today';
+  else if (asgn.date === tomorrow) dayLabel = 'tomorrow';
+  else {
+    try {
+      const d = new Date(asgn.date + 'T12:00:00');
+      dayLabel = 'on ' + d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    } catch (e) { dayLabel = 'on ' + asgn.date; }
+  }
+  // Time range from startMin/endMin
+  const formatTime = (min) => {
+    if (typeof min !== 'number') return '';
+    const h24 = Math.floor(min / 60);
+    const m   = min % 60;
+    const h12 = h24 % 12 || 12;
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  };
+  const timeRange = (typeof asgn.startMin === 'number' && typeof asgn.endMin === 'number')
+    ? `${formatTime(asgn.startMin)} – ${formatTime(asgn.endMin)}`
+    : '';
+
+  const greeting = state.modProfile && state.modProfile.firstName
+    ? `Hello, ${state.modProfile.firstName}!`
+    : 'Hello!';
+
+  // Summary block with stacked rows of key info. Reusable styling
+  // via the new .login-welcome-summary class added in CSS.
+  const summaryRows = [
+    { label: 'Participant',  value: partName },
+    partAddress ? { label: 'Address', value: partAddress } : null,
+    teamName ? { label: 'Team', value: teamName } : null,
+    timeRange ? { label: 'Time', value: timeRange } : null,
+  ].filter(Boolean);
+
+  const summaryHtml = `
+    <div class="login-welcome-summary-rows">
+      ${summaryRows.map(r => `
+        <div class="login-welcome-summary-row">
+          <span class="login-welcome-summary-label">${escapeHTML(r.label)}</span>
+          <span class="login-welcome-summary-value">${escapeHTML(r.value)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  showLoginWelcomeModal({
+    iconSvg: `
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    `,
+    title: `${greeting} You have a session ${dayLabel}`,
+    sub: 'Here are the details for your next session:',
+    summaryHtml,
+    actions: [
+      {
+        label: 'Got it',
+        kind: 'primary',
+        onClick: () => { /* just close */ },
+      },
+    ],
+  });
+}
+
+// === Variant 3: "No booked session" ===
+// Single continue button. Routes the operator's attention to
+// availability so they can claim days they're free.
+function showNoSessionModal() {
+  showLoginWelcomeModal({
+    iconSvg: `
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <circle cx="12" cy="14.5" r="3" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M12 13v1.5l1 0.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    `,
+    title: 'No booked session yet',
+    subHtml: 'You don\'t have a session assigned right now. Open <strong>Menu → My Calendar → My Availability</strong> to mark the days you\'re free so an admin can book you.',
+    actions: [
+      {
+        label: 'Continue to app',
+        kind: 'primary',
+        onClick: () => { /* just close */ },
+      },
+    ],
+  });
+}
+
+// === PST midnight watcher ===
+// When the user is sitting in the app overnight and PST midnight
+// passes, this transition handles the day change:
+//   1. If state was completed yesterday → reset to a fresh state
+//      and trigger the welcome flow (likely shows next_session or
+//      no_session for the new day).
+//   2. If state was in-progress (not completed) → leave it alone.
+//      The user might be intentionally working past midnight.
+//
+// Triggered by:
+//   - 60-second polling tick
+//   - visibilitychange (catches devices that slept and missed ticks)
+function handleMidnightTransition() {
+  if (!state.modProfile || !state.modProfile.orbitLoginId) return;
+  const today = getPSTDateString();
+  // Only reset if the session was completed yesterday (or earlier).
+  // Active in-progress work spans day boundaries — don't touch it.
+  if (!state.sessionCompletedAt) return;
+  const sd = state.sessionDate || '';
+  if (sd >= today) return;  // sessionDate is today or future — not stale
+
+  console.log('[Orbit] PST midnight transition — resetting completed yesterday\'s session');
+  if (typeof resetOperatorSessionState === 'function') {
+    resetOperatorSessionState({ preserveEquipment: true });
+  }
+  state.sessionCompletedAt = null;
+  saveState();
+  // Close any open welcome modal (e.g., the "today completed" modal
+  // that was open before midnight is now stale).
+  const stale = document.getElementById('loginWelcomeOverlay');
+  if (stale) stale.click();  // overlay click triggers close
+  // Re-trigger welcome to show next_session / no_session for the new day.
+  setTimeout(() => checkLoginWelcome(), 400);
+}
+
+function startMidnightWatcher() {
+  if (window._orbitMidnightInterval) return;  // already running
+  _lastSeenPSTDate = getPSTDateString();
+  window._orbitMidnightInterval = setInterval(() => {
+    const now = getPSTDateString();
+    if (now !== _lastSeenPSTDate) {
+      _lastSeenPSTDate = now;
+      handleMidnightTransition();
+    }
+  }, 60_000);
+  // Also fire on visibility return — covers devices that slept past
+  // midnight and missed our interval ticks.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const now = getPSTDateString();
+    if (now !== _lastSeenPSTDate) {
+      _lastSeenPSTDate = now;
+      handleMidnightTransition();
+    }
+  });
+}
+
+function stopMidnightWatcher() {
+  if (window._orbitMidnightInterval) {
+    clearInterval(window._orbitMidnightInterval);
+    window._orbitMidnightInterval = null;
+  }
+}
+
 function shakeLoginCard() {
   const card = document.querySelector('.login-card');
   card.classList.remove('shake');
@@ -23717,6 +24295,10 @@ async function doLogin() {
     saveState();
     setLastLoginUsername(orbitId);
     setLoginLoading(false);
+    // Mark this as a FRESH login (not auto-resume on refresh) so the
+    // welcome modal fires. The flag is consumed by the timer below
+    // and reset, so subsequent renderApp/state changes don't re-trigger.
+    _loginWelcomePending = true;
     startApp();
     // After the app paints, surface a non-intrusive toast confirming
     // the resume happened — gives the operator visual confirmation
@@ -23734,6 +24316,19 @@ async function doLogin() {
         }
       }, 500);
     }
+    // Trigger the login welcome modal (Feature 1 / Feature 2). Runs
+    // ~900ms after paint so the operator sees the app briefly before
+    // the modal appears. This is BEFORE the teammate-sync check
+    // (~1200ms) so the welcome decision happens first; if welcome
+    // shows a "today completed" or "next session" modal, the teammate
+    // sync check skips (its own dedupe sees the welcome overlay).
+    setTimeout(() => {
+      if (_loginWelcomePending) {
+        _loginWelcomePending = false;
+        try { checkLoginWelcome(); }
+        catch (e) { console.warn('[Orbit] Welcome check error:', e && e.message); }
+      }
+    }, 900);
   } catch (e) {
     setLoginLoading(false);
     setLoginError("Couldn't reach the moderator directory. Check your connection and try again.");
