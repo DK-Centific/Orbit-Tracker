@@ -7919,6 +7919,36 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   border-radius: 50%;
   background: var(--green-text, #22c55e);
 }
+/* Shift-coded pip variants — let admin scan the week and see at a glance
+   which days are Morning, Evening, or Either. Reuses the same color
+   tokens the operator's day toggles use (.shift-morning etc), so the
+   admin's hub view and the operator's picker stay visually unified.
+   Morning = warm amber (matches "9-5 daytime" mental model); Evening =
+   cool indigo (matches "1-9 PM late shift"); Either = purple-violet
+   (matches the on-call distinction). */
+.avail-hub-pip.pip-morning { background: rgb(245, 158, 11); }   /* amber-500 */
+.avail-hub-pip.pip-evening { background: rgb(99, 102, 241); }   /* indigo-500 */
+.avail-hub-pip.pip-either  { background: rgb(124, 58, 237); }   /* violet-600 */
+/* Hours label rendered below each available pip — gives admin the
+   actual time range without hovering for the tooltip. Tiny font and
+   monospace digit alignment so the column stays narrow and the
+   numbers line up across rows. Hidden on very narrow phones where the
+   table already overflows; admin can tap into the row detail there. */
+.avail-hub-pip-hours {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-num);
+  font-size: 10px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  /* Hours label hidden on narrow screens to prevent column overflow;
+     the tooltip + admin-tap-into-row-detail still surface the info. */
+  .avail-hub-pip-hours { display: none; }
+}
 
 .avail-hub-td-meta {
   text-align: left !important;
@@ -8860,7 +8890,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051506';
+const APP_VERSION = '1.2.051508';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -16538,9 +16568,30 @@ function availHubRowHTML(mod, row, dayHeaders) {
       </td>
       ${dayHeaders.map(h => {
         if (!row) return '<td class="avail-hub-td-day not-submitted">—</td>';
-        return _availIsYes(row[h.key])
-          ? '<td class="avail-hub-td-day yes" title="Available"><span class="avail-hub-pip yes"></span></td>'
-          : '<td class="avail-hub-td-day no" title="Not available"></td>';
+        // Parse the rich cell format so the pip can surface the time
+        // range + shift preset the moderator (or admin) submitted.
+        // Without this, admin only sees a Yes/No dot — no insight into
+        // whether the mod set Morning, Evening, or Either, or any custom
+        // hours. The tooltip + the shift-coded color class give admin
+        // a quick scan across the week.
+        const parsed = parseAvailabilityCell(row[h.key]);
+        if (!parsed.available) return '<td class="avail-hub-td-day no" title="Not available"></td>';
+        const hoursLbl = `${fmtHourPretty(parsed.startHour)}–${fmtHourPretty(parsed.endHour)}`;
+        const tipParts = [hoursLbl];
+        if (parsed.shiftTag) tipParts.push(parsed.shiftTag);
+        const tip = `Available · ${tipParts.join(' · ')}`;
+        // Color-code the pip by shift so the calendar reads at a glance:
+        // Morning, Evening, Either each get a distinct shade. The CSS
+        // for these classes already exists from the operator's day
+        // toggles (.shift-morning / .shift-evening / .shift-either)
+        // and we just reuse the color tokens via the same naming.
+        const shiftClass = parsed.shiftTag === 'Either'  ? 'pip-either'
+                        : parsed.shiftTag === 'Evening' ? 'pip-evening'
+                        : 'pip-morning';
+        return `<td class="avail-hub-td-day yes" title="${escapeHTML(tip)}">
+          <span class="avail-hub-pip yes ${shiftClass}"></span>
+          <span class="avail-hub-pip-hours">${escapeHTML(hoursLbl)}</span>
+        </td>`;
       }).join('')}
       <td class="avail-hub-td-meta">
         ${row ? `<span class="avail-hub-time">${escapeHTML(subTime)}</span>${enteredBy === 'admin' ? '<span class="avail-hub-by-admin" title="Admin-submitted">admin</span>' : ''}` : '<span class="avail-hub-pending">Not submitted</span>'}
@@ -16573,13 +16624,24 @@ function showAvailabilityRowDetail(row) {
         <dl class="avail-detail-list">
           <dt>Moderator</dt><dd>${escapeHTML(row.orbitLoginId || '')}</dd>
           <dt>Week</dt><dd>${escapeHTML(row.weekRange || '')}</dd>
-          <dt>Mon</dt><dd>${row.mon === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Tue</dt><dd>${row.tue === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Wed</dt><dd>${row.wed === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Thu</dt><dd>${row.thu === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Fri</dt><dd>${row.fri === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Sat</dt><dd>${row.sat === 'Yes' ? '✓ Available' : '—'}</dd>
-          <dt>Sun</dt><dd>${row.sun === 'Yes' ? '✓ Available' : '—'}</dd>
+          ${(() => {
+            // Parse each day cell so the drawer shows the rich hours +
+            // shift tag the moderator (or admin) actually submitted.
+            // Previously this used a strict `=== 'Yes'` test which
+            // failed on the rich format (e.g. "Yes, 9AM_5PM, Morning")
+            // and incorrectly showed "—" for genuinely available days.
+            const days = [
+              ['Mon', 'mon'], ['Tue', 'tue'], ['Wed', 'wed'], ['Thu', 'thu'],
+              ['Fri', 'fri'], ['Sat', 'sat'], ['Sun', 'sun'],
+            ];
+            return days.map(([label, key]) => {
+              const parsed = parseAvailabilityCell(row[key]);
+              if (!parsed.available) return `<dt>${label}</dt><dd>—</dd>`;
+              const hours = `${fmtHourPretty(parsed.startHour)} – ${fmtHourPretty(parsed.endHour)}`;
+              const tag = parsed.shiftTag ? ` · <span style="color: var(--accent-ink); font-weight: 600;">${escapeHTML(parsed.shiftTag)}</span>` : '';
+              return `<dt>${label}</dt><dd>✓ ${escapeHTML(hours)}${tag}</dd>`;
+            }).join('');
+          })()}
           ${row.notesText ? `<dt>Notes</dt><dd>${escapeHTML(row.notesText)}</dd>` : ''}
           <dt>Submitted at</dt><dd>${escapeHTML(row.submittedAt || '')}</dd>
           <dt>Entered by</dt><dd>${escapeHTML(row.enteredBy || 'self')}</dd>
@@ -16598,47 +16660,147 @@ function showAvailabilityRowDetail(row) {
 function openAdminAvailabilitySubmit(modId) {
   const mod = (adminState.moderators || []).find(m => String(m.orbitLoginId || '').toLowerCase() === String(modId).toLowerCase());
   if (!mod) { toast('Moderator not found'); return; }
-  // Mirror the operator's modCalState shape but locally scoped
+
+  // ===================================================================
+  // Admin availability submission modal — RICH PICKER VERSION
+  // ===================================================================
+  // Previous version had a simple Yes/No-per-day grid that wrote
+  // `{ mon: 'Yes' }` cells to Excel. The moderator's My Availability
+  // view writes a much richer format:
+  //   `{ mon: 'Yes, 9AM_5PM, Morning' }`  — day + time range + shift tag
+  // When admin used the simple modal to "update" an existing mod-
+  // submitted row, the rich data got downgraded and the moderator
+  // lost their hours and shift preset. That was a real data-gap bug.
+  //
+  // This rewrite ports the operator's picker (day toggle + per-day
+  // start/end hour selects + Morning/Evening/Either shift pills +
+  // minimum-8-hour enforcement) into the admin surface. Submissions
+  // from either side now use the same encoding, so the reader
+  // (parseAvailabilityCell) gets the same data shape regardless of
+  // who submitted, and round-tripping is loss-less.
+  //
+  // submitState mirrors modCalState.pending* exactly (just locally
+  // scoped to this modal). The render fn rebuilds the modal body on
+  // every state change — same approach the operator side uses.
+  // ===================================================================
   const submitState = {
     modId: mod.orbitLoginId,
     firstName: mod.firstName || '',
-    lastName: mod.lastName || '',
+    lastName:  mod.lastName  || '',
     weekStart: adminState._availWeekStart || ymdLocal(mondayOf(new Date())),
-    days: { mon:false, tue:false, wed:false, thu:false, fri:false, sat:false, sun:false },
+    pendingDays: { mon:false, tue:false, wed:false, thu:false, fri:false, sat:false, sun:false },
+    pendingHours: {
+      mon: [9, 17], tue: [9, 17], wed: [9, 17],
+      thu: [9, 17], fri: [9, 17], sat: [9, 17], sun: [9, 17],
+    },
+    pendingShiftTags: {
+      mon: 'Morning', tue: 'Morning', wed: 'Morning',
+      thu: 'Morning', fri: 'Morning', sat: 'Morning', sun: 'Morning',
+    },
     notes: '',
     submitting: false,
   };
-  // Preload from existing row if present
+
+  // Preload from existing row if present — use parseAvailabilityCell so
+  // we recover the hours + shift tag, not just the bare Yes/No state.
+  // This is what makes the round-trip loss-less: open an existing rich
+  // row, see the same hours and shift the moderator picked.
   const idx = indexLatestAvailability(adminState.availability || []);
   const existing = idx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
   if (existing) {
-    DAY_KEYS.forEach(k => { submitState.days[k] = _availIsYes(existing[k]); });
+    DAY_KEYS.forEach(k => {
+      const parsed = parseAvailabilityCell(existing[k]);
+      submitState.pendingDays[k]      = !!parsed.available;
+      submitState.pendingHours[k]     = [parsed.startHour, parsed.endHour];
+      submitState.pendingShiftTags[k] = parsed.shiftTag || (parsed.available ? 'Morning' : '');
+    });
     submitState.notes = existing.notesText || '';
   }
+
+  // Compute the active preset (for highlighting the matching shift pill).
+  // Same logic as _activePresetTag but reads from submitState's local shape.
+  const localActivePreset = () => {
+    const active = DAY_KEYS.filter(k => submitState.pendingDays[k]);
+    if (active.length === 0) return '';
+    const first = submitState.pendingShiftTags[active[0]] || '';
+    if (!first) return '';
+    for (const k of active) {
+      if ((submitState.pendingShiftTags[k] || '') !== first) return '';
+    }
+    return first;
+  };
 
   const overlay = document.createElement('div');
   overlay.className = 'avail-admin-submit-overlay';
 
   const render = () => {
-    const onCount = DAY_KEYS.filter(k => submitState.days[k]).length;
+    const onCount = DAY_KEYS.filter(k => submitState.pendingDays[k]).length;
+    const eitherCount = DAY_KEYS.filter(k =>
+      submitState.pendingDays[k] && submitState.pendingShiftTags[k] === 'Either'
+    ).length;
     const ws = parseYMD(submitState.weekStart);
     const todayStr = ymdLocal(new Date());
+    const activePreset = localActivePreset();
+
+    // Build day cells with the same structure the operator view uses —
+    // toggle button + (when on) time-range row underneath.
     const cellsHTML = DAY_KEYS.map((k, i) => {
       const d = addDays(ws, i);
       const ds = ymdLocal(d);
-      const isOn = !!submitState.days[k];
+      const isOn = !!submitState.pendingDays[k];
+      const isPast = ds < todayStr;
       const isToday = ds === todayStr;
+      const [sh, eh] = submitState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+      const tag = submitState.pendingShiftTags[k] || '';
+      let tagShort;
+      if (isPast) {
+        tagShort = 'past';
+      } else if (!isOn) {
+        tagShort = 'tap to mark';
+      } else if (tag === 'Either') {
+        tagShort = 'Either · 9A–9P';
+      } else {
+        tagShort = `${fmtHourPretty(sh)} – ${fmtHourPretty(eh)}`;
+      }
+      const dayShiftClass = tag === 'Either'  ? 'shift-either'
+                         : tag === 'Morning'  ? 'shift-morning'
+                         : tag === 'Evening'  ? 'shift-evening'
+                         : '';
       return `
-        <button type="button"
-                class="mc-avail-day ${isOn ? 'is-on' : ''} ${isToday ? 'is-today' : ''}"
-                data-day="${k}"
-                aria-pressed="${isOn}">
-          <span class="mc-avail-day-name">${k}</span>
-          <span class="mc-avail-day-num">${d.getDate()}</span>
-          <span class="mc-avail-day-tag">${isOn ? 'available' : 'tap to mark'}</span>
-        </button>
+        <div class="mc-avail-day-wrap">
+          <button type="button"
+                  class="mc-avail-day ${isOn ? 'is-on' : ''} ${isPast ? 'is-past' : ''} ${isToday ? 'is-today' : ''} ${isOn ? dayShiftClass : ''}"
+                  data-day="${k}"
+                  ${isPast ? 'disabled' : ''}
+                  aria-pressed="${isOn}">
+            <span class="mc-avail-day-name">${k}</span>
+            <span class="mc-avail-day-num">${d.getDate()}</span>
+            <span class="mc-avail-day-tag">${tagShort}</span>
+          </button>
+          ${isOn && !isPast ? `
+            <div class="mc-avail-time-row" data-day="${k}">
+              <select class="mc-avail-time" data-day="${k}" data-edge="start" aria-label="Start hour for ${k}">
+                ${[...Array(24)].map((_, h) => `<option value="${h}" ${h === sh ? 'selected' : ''}>${fmtHourPretty(h)}</option>`).join('')}
+              </select>
+              <span class="mc-avail-time-sep">to</span>
+              <select class="mc-avail-time" data-day="${k}" data-edge="end" aria-label="End hour for ${k}">
+                ${[...Array(25)].map((_, h) => `<option value="${h}" ${h === eh ? 'selected' : ''}>${fmtHourPretty(h === 24 ? 23 : h)}</option>`).join('')}
+              </select>
+            </div>` : ''}
+        </div>
       `;
     }).join('');
+
+    let summary;
+    if (onCount === 0) {
+      summary = 'Tap days to mark this moderator <strong>available</strong>.';
+    } else if (eitherCount === onCount) {
+      summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked <strong style="color: var(--accent-ink);">Either / On-call</strong>.`;
+    } else if (eitherCount > 0) {
+      summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} available · ${eitherCount} on the <strong>Either</strong> shift.`;
+    } else {
+      summary = `<strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked available.`;
+    }
 
     overlay.innerHTML = `
       <div class="avail-detail-modal avail-admin-submit-modal" role="dialog" aria-modal="true">
@@ -16652,15 +16814,40 @@ function openAdminAvailabilitySubmit(modId) {
           </button>
         </div>
         <div class="avail-detail-body">
+          <div class="mc-avail-intro">
+            Mark the days <strong>${escapeHTML(submitState.firstName)}</strong> is available during the week of ${escapeHTML(weekRangeLabel(submitState.weekStart))}.
+            Pick a shift preset (Morning, Evening, or <strong>Either</strong> for flexible / on-call) or set custom hours per day. Minimum ${AVAILABILITY_MIN_HOURS} hours.
+          </div>
+
+          <!-- Shift preset pills — same three presets the operator gets.
+               Applying a preset overwrites hours + tag for every currently-
+               available day. If no days are toggled on yet, the preset
+               also toggles them ALL on (the "available all week on this
+               shift" gesture, matching operator behavior). -->
+          <div class="mc-avail-shifts">
+            <button type="button" class="mc-avail-shift-pill ${activePreset === 'Morning' ? 'is-active' : ''}" data-shift="morning">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              Morning · 9 AM – 5 PM
+            </button>
+            <button type="button" class="mc-avail-shift-pill ${activePreset === 'Evening' ? 'is-active' : ''}" data-shift="evening">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 9a5 5 0 0 0 10 0c0-1.5-.7-2.8-1.8-3.7C11.3 7 9.8 8 8 8a5 5 0 0 1-4.2-2.3A4.97 4.97 0 0 0 3 9z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Evening · 1 PM – 9 PM
+            </button>
+            <button type="button" class="mc-avail-shift-pill is-either ${activePreset === 'Either' ? 'is-active' : ''}" data-shift="either">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 8h12M2 8l3-3M2 8l3 3M14 8l-3-3M14 8l-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Either · On-call
+            </button>
+          </div>
+
           <div class="mc-avail-grid">${cellsHTML}</div>
+
           <div class="mc-avail-quick">
             <button class="mc-avail-quick-btn" id="adminAvailWeekdays">Weekdays only</button>
             <button class="mc-avail-quick-btn" id="adminAvailAll">All days</button>
             <button class="mc-avail-quick-btn" id="adminAvailNone">Clear</button>
           </div>
-          <div class="mc-avail-summary">
-            <strong>${onCount}</strong> day${onCount === 1 ? '' : 's'} marked available
-          </div>
+          <div class="mc-avail-summary">${summary}</div>
+
           <label class="mc-avail-notes-label" for="adminAvailNotes">Notes (optional)</label>
           <textarea class="mc-avail-notes" id="adminAvailNotes" placeholder="e.g., Out the 14th">${escapeHTML(submitState.notes || '')}</textarea>
         </div>
@@ -16671,26 +16858,108 @@ function openAdminAvailabilitySubmit(modId) {
       </div>
     `;
 
-    overlay.querySelectorAll('.mc-avail-day').forEach(b => {
-      b.addEventListener('click', () => {
-        submitState.days[b.dataset.day] = !submitState.days[b.dataset.day];
+    // Day toggle buttons — identical semantics to operator's renderModCalBody.
+    // First toggle ON initializes hours + shift tag to a sensible default
+    // so the moderator's preset survives a quick admin tap-toggle-untoggle.
+    overlay.querySelectorAll('.mc-avail-day').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        const k = btn.dataset.day;
+        submitState.pendingDays[k] = !submitState.pendingDays[k];
+        if (submitState.pendingDays[k] && !submitState.pendingHours[k]) {
+          submitState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+        }
+        if (submitState.pendingDays[k] && !submitState.pendingShiftTags[k]) {
+          submitState.pendingShiftTags[k] = 'Morning';
+        }
         render();
       });
     });
+
+    // Time pickers — 8-hour-minimum enforcement on every edit. Same
+    // gentle auto-correction the operator side uses (drag start past
+    // the legal zone? push end forward; drag end too early? pull start
+    // back).
+    overlay.querySelectorAll('.mc-avail-time').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const k = e.target.dataset.day;
+        const edge = e.target.dataset.edge;
+        const v = parseInt(e.target.value, 10);
+        let [sh, eh] = submitState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+        if (edge === 'start') {
+          sh = v;
+          if (eh - sh < AVAILABILITY_MIN_HOURS) eh = sh + AVAILABILITY_MIN_HOURS;
+          if (eh > 24) { eh = 24; sh = eh - AVAILABILITY_MIN_HOURS; }
+        } else {
+          eh = v;
+          if (eh - sh < AVAILABILITY_MIN_HOURS) sh = eh - AVAILABILITY_MIN_HOURS;
+          if (sh < 0) { sh = 0; eh = sh + AVAILABILITY_MIN_HOURS; }
+        }
+        submitState.pendingHours[k] = [sh, eh];
+        // Re-derive the shift tag — snaps to preset on exact bounds, else clears.
+        if (sh === 9 && eh === 17)       submitState.pendingShiftTags[k] = 'Morning';
+        else if (sh === 13 && eh === 21) submitState.pendingShiftTags[k] = 'Evening';
+        else if (sh === 9 && eh === 21)  submitState.pendingShiftTags[k] = 'Either';
+        else                             submitState.pendingShiftTags[k] = '';
+        render();
+      });
+    });
+
+    // Shift preset pills — apply to all currently-on days, OR toggle all
+    // days on when none are picked yet (matches operator behavior).
+    overlay.querySelectorAll('.mc-avail-shift-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const preset = AVAILABILITY_SHIFT_PRESETS[btn.dataset.shift];
+        if (!preset) return;
+        const onDays = DAY_KEYS.filter(k => submitState.pendingDays[k]);
+        if (onDays.length > 0) {
+          onDays.forEach(k => {
+            submitState.pendingHours[k] = [preset.start, preset.end];
+            submitState.pendingShiftTags[k] = preset.tag;
+          });
+        } else {
+          DAY_KEYS.forEach(k => {
+            submitState.pendingDays[k] = true;
+            submitState.pendingHours[k] = [preset.start, preset.end];
+            submitState.pendingShiftTags[k] = preset.tag;
+          });
+        }
+        render();
+      });
+    });
+
+    // Quick selectors (Weekdays, All, Clear) — preserve hours/tags that
+    // already exist for each day (so toggling Weekdays doesn't blow away
+    // Tuesday's custom hours).
     overlay.querySelector('#adminAvailWeekdays').addEventListener('click', () => {
-      DAY_KEYS.forEach(k => { submitState.days[k] = ['mon','tue','wed','thu','fri'].includes(k); });
+      DAY_KEYS.forEach(k => {
+        submitState.pendingDays[k] = ['mon','tue','wed','thu','fri'].includes(k);
+        if (submitState.pendingDays[k] && !submitState.pendingHours[k]) {
+          submitState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+        }
+        if (submitState.pendingDays[k] && !submitState.pendingShiftTags[k]) {
+          submitState.pendingShiftTags[k] = 'Morning';
+        }
+      });
       render();
     });
     overlay.querySelector('#adminAvailAll').addEventListener('click', () => {
-      DAY_KEYS.forEach(k => { submitState.days[k] = true; });
+      DAY_KEYS.forEach(k => {
+        submitState.pendingDays[k] = true;
+        if (!submitState.pendingHours[k]) submitState.pendingHours[k] = [...AVAILABILITY_DAY_DEFAULT];
+        if (!submitState.pendingShiftTags[k]) submitState.pendingShiftTags[k] = 'Morning';
+      });
       render();
     });
     overlay.querySelector('#adminAvailNone').addEventListener('click', () => {
-      DAY_KEYS.forEach(k => { submitState.days[k] = false; });
+      DAY_KEYS.forEach(k => { submitState.pendingDays[k] = false; });
       render();
     });
+
+    // Notes — bind without re-render so the cursor doesn't jump.
     const notesEl = overlay.querySelector('#adminAvailNotes');
     if (notesEl) notesEl.addEventListener('input', e => { submitState.notes = e.target.value; });
+
     overlay.querySelector('#adminAvailClose').addEventListener('click', close);
     overlay.querySelector('#adminAvailCancel').addEventListener('click', close);
     overlay.querySelector('#adminAvailSubmit').addEventListener('click', doSubmit);
@@ -16703,10 +16972,39 @@ function openAdminAvailabilitySubmit(modId) {
 
   const doSubmit = async () => {
     if (submitState.submitting) return;
+
+    // Defensive validation — same checks the operator side runs.
+    for (const k of DAY_KEYS) {
+      if (!submitState.pendingDays[k]) continue;
+      const [sh, eh] = submitState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+      if (eh - sh < AVAILABILITY_MIN_HOURS) {
+        await appAlert({
+          title:   `${k.toUpperCase()}: shift too short`,
+          message: `Available days need at least ${AVAILABILITY_MIN_HOURS} hours. ${k.toUpperCase()} is currently set to ${fmtHourPretty(sh)} – ${fmtHourPretty(eh)} (${eh - sh}h). Adjust the hours and try again.`,
+          variant: 'warning',
+        });
+        return;
+      }
+    }
+
     submitState.submitting = true;
     render();
+
+    // Build the row in the SAME format the operator writes — packed
+    // day-cells with hours and shift tag. This is the heart of the
+    // data-gap fix: admin and mod produce identical cell strings, so
+    // round-tripping the data through Excel is loss-less.
     const onDays = {};
-    DAY_KEYS.forEach(k => { onDays[k] = submitState.days[k] ? 'Yes' : ''; });
+    DAY_KEYS.forEach(k => {
+      if (!submitState.pendingDays[k]) {
+        onDays[k] = '';
+        return;
+      }
+      const [sh, eh] = submitState.pendingHours[k] || AVAILABILITY_DAY_DEFAULT;
+      const tag = submitState.pendingShiftTags[k] || '';
+      const base = `Yes, ${fmtHourCompact(sh)}_${fmtHourCompact(eh)}`;
+      onDays[k] = tag ? `${base}, ${tag}` : base;
+    });
     const row = {
       availabilityId: 'avail_' + Date.now() + '_' + Math.floor(Math.random() * 1e6).toString(36),
       orbitLoginId: submitState.modId,
@@ -16721,7 +17019,9 @@ function openAdminAvailabilitySubmit(modId) {
       appVersion: APP_VERSION,
       enteredBy: 'admin',
     };
+
     let posted = false;
+    let lastError = null;
     if (AVAILABILITY_PA_WRITE_URL) {
       try {
         const res = await fetch(AVAILABILITY_PA_WRITE_URL, {
@@ -16729,28 +17029,49 @@ function openAdminAvailabilitySubmit(modId) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(row),
         });
-        if (res.ok || res.status === 202) posted = true;
-      } catch (e) { /* fall through */ }
+        if (res.ok || res.status === 202) {
+          posted = true;
+        } else {
+          let errBody = '';
+          try { errBody = await res.text(); } catch (_) {}
+          lastError = `HTTP ${res.status}: ${errBody.slice(0, 200)}`;
+          console.warn('[Orbit] Admin avail POST rejected:', lastError);
+        }
+      } catch (e) {
+        lastError = e.message || String(e);
+        console.warn('[Orbit] Admin avail POST failed (network):', lastError);
+      }
+    } else {
+      console.warn('[Orbit] AVAILABILITY_PA_WRITE_URL is empty — admin row will be queued.');
     }
+
     submitState.submitting = false;
+
+    // Optimistic local-cache merge regardless of POST outcome — the
+    // admin's intent is captured immediately. indexLatestAvailability
+    // uses submittedAt to pick the newest row when the server eventually
+    // confirms, so this is safe.
+    const cache = loadAvailabilityCache();
+    cache.push(row);
+    saveAvailabilityCache(cache);
+    adminState.availability = cache;
+
     if (posted) {
-      // Optimistically merge into local cache so the table updates immediately
-      const cache = loadAvailabilityCache();
-      cache.push(row);
-      saveAvailabilityCache(cache);
-      adminState.availability = cache;
       toast('Availability saved for ' + submitState.firstName);
       close();
       renderAvailabilityHub();
-      // Background refresh to reconcile with server-side ordering
+      // Background reconcile to pick up server-side ordering / canonical row.
       setTimeout(() => { if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA(); }, 500);
     } else {
-      // Queue for retry
+      // Queue for retry — same queue the operator submission flow uses,
+      // so flushAvailabilityQueue will catch up admin submissions too.
       const q = loadAvailabilityQueue();
-      q.push({ row, queuedAt: new Date().toISOString(), attempts: 0 });
+      q.push({ row, queuedAt: new Date().toISOString(), attempts: 0, lastError });
       saveAvailabilityQueue(q);
+      setTimeout(flushAvailabilityQueue, 30000);
       toast('Saved locally — will sync when online');
       close();
+      renderAvailabilityHub();
     }
   };
 
@@ -19358,10 +19679,62 @@ function renderAssignmentModal() {
         const list = role === 'primary'
           ? adminState.modal.inlineTeamPrimaryIds
           : adminState.modal.inlineTeamBackupIds;
-        const idx = list.indexOf(id);
-        if (idx >= 0) list.splice(idx, 1);
+        const idxInList = list.indexOf(id);
+        const wasSelected = idxInList >= 0;
+        if (wasSelected) list.splice(idxInList, 1);
         else if (list.length < 2) list.push(id);
-        renderAssignmentModal();
+        else return; // at cap, don't change anything
+
+        // ===================================================================
+        // Surgical DOM update — keeps the mod-picker scroll position intact
+        // ===================================================================
+        // Previously this called renderAssignmentModal() which does
+        // `innerHTML = ...` on #asgnModalContent. That destroys and
+        // recreates every mod-picker item, which resets the scroll
+        // position of both pickers (primary + backup) to the top. When
+        // a long list of moderators is scrolled mid-way and admin taps
+        // someone, the page jumped back to the top and admin lost
+        // sight of who they just picked. The surgical update below
+        // mutates just the changed nodes so scroll stays where the
+        // admin left it.
+        //
+        // Things that change on a pick:
+        //   (1) .selected class on the clicked item
+        //   (2) Counter "X/2" in the field label
+        //   (3) The OPPOSITE picker's matching mod gets disabled
+        //       (because picking someone as primary disables them in
+        //       backup, and vice versa)
+        // Everything else (hours labels, availability dots) stays the
+        // same since we're not changing the date or any availability
+        // state — we're just toggling membership.
+        // ===================================================================
+        const isNowSelected = !wasSelected;
+        // (1) Update the clicked item's own .selected class
+        item.classList.toggle('selected', isNowSelected);
+
+        // (2) Update the role's counter in the field label. Both pickers
+        // share the same label format so we update the right one based
+        // on role. The label nodes are not given IDs so we find them
+        // via querySelector with text content as the anchor — fragile,
+        // so we use a more robust approach: query the field that
+        // contains this picker, then update its label's <span>.
+        const fieldEl = item.closest('.asgn-field');
+        if (fieldEl) {
+          const labelSpan = fieldEl.querySelector('.asgn-field-label > span');
+          if (labelSpan) labelSpan.textContent = `${list.length}/2`;
+        }
+
+        // (3) Update the OPPOSITE picker's matching mod — disable if
+        // this one is now selected, re-enable if it's now deselected.
+        // The opposite-role item lives in the other .asgn-field; find
+        // it by matching data-mod-id + the opposite role.
+        const oppositeRole = role === 'primary' ? 'backup' : 'primary';
+        const oppositeItem = document.querySelector(
+          `.mod-picker-item[data-mod-id="${CSS.escape(id)}"][data-role="${oppositeRole}"]`
+        );
+        if (oppositeItem) {
+          oppositeItem.classList.toggle('disabled', isNowSelected);
+        }
       });
     });
     document.getElementById('inlineTeamCreateBtn').addEventListener('click', () => {
@@ -20007,6 +20380,88 @@ async function saveAssignment() {
         variant: 'warning',
       });
       return;
+    }
+
+    // =====================================================================
+    // CROSS-TEAM DOUBLE-BOOK: auto-cancel-on-confirm flow
+    // =====================================================================
+    // The in-modal banner already warned the admin that this participant
+    // has booking(s) with OTHER teams. The "Save anyway" button got them
+    // here. Per product decision, the save flow should now offer to
+    // auto-cancel those other booking(s) — historically admins had to
+    // remember to cancel them manually, which often got skipped and left
+    // the calendar with duplicate active bookings for the same person.
+    //
+    // We surface a single confirm modal listing every booking that will
+    // be cancelled, then run cancelAssignmentSilent for each one before
+    // proceeding with the save. The silent helper writes to Excel +
+    // updates local state but does NOT close the modal or fire its own
+    // toasts — so the save flow's UI sequence stays clean: one confirm,
+    // one save, one final success toast.
+    //
+    // Conflicts here are CROSS-TEAM only (sameTeamDup is already
+    // returned above). All conflicts are by definition currently active
+    // (findActiveBookingsForParticipant filters out terminal statuses).
+    // =====================================================================
+    const crossTeamConflicts = conflicts; // sameTeamDup is null here
+    if (crossTeamConflicts.length > 0) {
+      const fullName = [sel.firstName, sel.lastName].filter(Boolean).join(' ') || 'This participant';
+      // Build the conflict list in a single readable block. We list date,
+      // time, and team name for each so admin can verify before
+      // confirming. Long lists are still legible because each conflict
+      // is its own line.
+      const conflictListHTML = crossTeamConflicts.map(c => {
+        const conflictTeam = adminState.teams.find(t => t.id === c.teamId);
+        const conflictTeamName = conflictTeam ? conflictTeam.name : 'Unknown team';
+        const cDate = parseYMD(c.date);
+        const cDateLabel = cDate
+          ? cDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+          : c.date;
+        const cTimeLabel = (typeof fmtTimeOfDay === 'function') ? fmtTimeOfDay(c.startMin) : '';
+        return `<li><strong>${escapeHTML(conflictTeamName)}</strong> · ${escapeHTML(cDateLabel)}${cTimeLabel ? ' · ' + escapeHTML(cTimeLabel) : ''}</li>`;
+      }).join('');
+
+      const newDateObj = parseYMD(m.date);
+      const newDateLabel = newDateObj
+        ? newDateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+        : m.date;
+      const newTimeLabel = (typeof fmtTimeOfDay === 'function') ? fmtTimeOfDay(m.startMin) : '';
+      const newTeamName = team ? team.name : 'the new team';
+
+      const confirmed = await appConfirm({
+        title:   `Cancel ${crossTeamConflicts.length === 1 ? 'existing booking' : crossTeamConflicts.length + ' existing bookings'}?`,
+        message:
+          `Saving this booking will <strong>auto-cancel</strong> the following existing booking${crossTeamConflicts.length === 1 ? '' : 's'} for ${escapeHTML(fullName)}:`
+          + `<ul style="margin: 10px 0 12px 18px; padding: 0; font-size: 13.5px; color: var(--text2);">${conflictListHTML}</ul>`
+          + `Then ${escapeHTML(fullName)} will be booked with <strong>${escapeHTML(newTeamName)}</strong> on <strong>${escapeHTML(newDateLabel)}${newTimeLabel ? ' · ' + escapeHTML(newTimeLabel) : ''}</strong>.`
+          + `<br><br>Continue?`,
+        html:    true,
+        confirmLabel: 'Cancel old & save new',
+        cancelLabel:  'Back',
+        variant: 'warning',
+      });
+      if (!confirmed) return;
+
+      // Run the silent cancels sequentially so each one fully completes
+      // (including its PA write) before the next. Sequential instead of
+      // Promise.all because (a) it keeps the Excel write order
+      // deterministic, and (b) PA throttles concurrent writes and we'd
+      // rather take an extra second than risk one being dropped silently.
+      let cancelFailures = 0;
+      for (const c of crossTeamConflicts) {
+        const result = await cancelAssignmentSilent(c.id, `Auto-cancelled when ${fullName} was rebooked with ${newTeamName} on ${newDateLabel}${newTimeLabel ? ' at ' + newTimeLabel : ''}`);
+        if (!result.ok) cancelFailures++;
+      }
+      if (cancelFailures > 0) {
+        // Surface a non-blocking warning. The cancels are queued locally
+        // either way; the new booking proceeds. The next refresh will
+        // reconcile.
+        toast(`Heads up: ${cancelFailures} cancel${cancelFailures === 1 ? '' : 's'} pending sync — will retry`);
+      } else if (crossTeamConflicts.length === 1) {
+        toast('Previous booking cancelled');
+      } else {
+        toast(`${crossTeamConflicts.length} previous bookings cancelled`);
+      }
     }
   }
 
@@ -22037,9 +22492,21 @@ async function completeAssignment(asgnId, opts) {
   }
 }
 
-async function cancelAssignment(asgnId, comment) {
+// Cancel an assignment WITHOUT touching the modal/toast/render UI.
+// Used as a building block by `cancelAssignment` (the user-facing cancel)
+// AND by other flows that need to cancel as a side-effect — e.g., the
+// "Save anyway with auto-cancel" double-booking confirm flow in
+// saveAssignment, where the calling code needs to do its own UI work
+// AFTER the cancel completes.
+//
+// Returns { ok: boolean, error: string|null } so callers can decide
+// whether to surface a failure to the user. Always mutates local state
+// first (optimistic), so even if the PA write fails the cancel still
+// "happens" from the admin's perspective and will sync when the queue
+// catches up.
+async function cancelAssignmentSilent(asgnId, comment) {
   const idx = adminState.assignments.findIndex(x => x.id === asgnId);
-  if (idx === -1) return;
+  if (idx === -1) return { ok: false, error: 'Assignment not found' };
   const now = new Date().toISOString();
   adminState.assignments[idx] = {
     ...adminState.assignments[idx],
@@ -22047,28 +22514,15 @@ async function cancelAssignment(asgnId, comment) {
     comment: comment || '',
     cancelledAt: now,
     updatedAt: now,
-    // CRITICAL: bump savedAt too. buildAssignmentExcelRow uses savedAt as
-    // the `lastActive` column. Without bumping it, the cancellation row in
-    // Excel ends up with the SAME lastActive timestamp as the original
-    // booking row — and the read-back's "latest wins" tiebreaker can't
-    // distinguish them. With this bump, the cancelled row is unambiguously
-    // newer than the booked row in Excel.
     savedAt: now,
-    // Terminal-action lock: protects local Cancelled state from a stale
-    // remote row during Excel's propagation window. TIME-BOUNDED — see
-    // terminalLockUntil() for the rationale. Previously a permanent
-    // boolean that prevented cross-admin overrides indefinitely.
     _terminalLockUntil: terminalLockUntil(),
   };
   saveAssignmentData();
-  closeAsgnModal();
-  toast('Assignment cancelled · syncing to Excel…');
-  renderAssignment();
-
   // POST the cancellation to PA
+  let error = null;
   if (ASSIGNMENT_PA_WRITE_URL) {
     const rows = buildAssignmentExcelRow(adminState.assignments[idx]);
-    let succeeded = 0, failed = 0, lastError = null;
+    let failed = 0;
     for (const row of rows) {
       try {
         const res = await fetch(ASSIGNMENT_PA_WRITE_URL, {
@@ -22076,15 +22530,24 @@ async function cancelAssignment(asgnId, comment) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(row),
         });
-        if (res.ok || res.status === 202) succeeded++;
-        else { failed++; lastError = `HTTP ${res.status}`; }
-      } catch (e) { failed++; lastError = e.message || String(e); }
+        if (!res.ok && res.status !== 202) { failed++; error = `HTTP ${res.status}`; }
+      } catch (e) { failed++; error = e.message || String(e); }
     }
-    if (failed === 0) {
-      toast(`Cancellation synced (${succeeded} row${succeeded === 1 ? '' : 's'}) ✓`);
-    } else {
-      toast(`Saved locally — Excel sync failed: ${lastError}`);
+    if (failed > 0) {
+      console.warn('[Orbit] cancelAssignmentSilent: ' + failed + ' row write(s) failed:', error);
     }
+  }
+  return { ok: !error, error };
+}
+
+async function cancelAssignment(asgnId, comment) {
+  const result = await cancelAssignmentSilent(asgnId, comment);
+  closeAsgnModal();
+  renderAssignment();
+  if (result.ok) {
+    toast('Assignment cancelled · syncing to Excel…');
+  } else {
+    toast(`Saved locally — Excel sync failed: ${result.error}`);
   }
 }
 
