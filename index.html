@@ -274,6 +274,21 @@ a.icon-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* =========================================================
+   Lakitu nav quick link
+   =========================================================
+   Icon-only square button on both mobile and desktop — kept identical
+   across breakpoints so the nav's visual rhythm stays consistent and
+   the icon doesn't change shape/size when resizing the window. The
+   brand name is shown in the menu drawer's Quick Links row instead,
+   which is always available as a discoverable secondary path.
+
+   Inherits .icon-btn's 34x34 square, background, border, hover/active/
+   focus behavior. The only additional rule is flex-shrink:0 on the
+   SVG so the 22x22 logo doesn't collapse if the nav gets cramped on
+   narrow screens. */
+.nav-lakitu-icon { flex-shrink: 0; }
 /* When the button has class .refreshing, spin its inner SVG icon — used by
    the admin nav-bar Refresh button to give visual feedback while fetches run */
 .icon-btn.refreshing svg {
@@ -8385,17 +8400,34 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
            rel="noopener noreferrer" pair is the standard security hardening
            for any target="_blank" link: prevents the destination page from
            accessing window.opener (which could otherwise navigate this tab
-           or read its origin). target="_blank" is what opens the new tab. -->
+           or read its origin). target="_blank" is what opens the new tab.
+
+           Visual: icon-only square button on every screen size, sized
+           to match the user-chip avatar. The brand name "Lakitu App"
+           appears in the menu drawer's Quick Links row instead — kept
+           out of the nav so the nav's visual rhythm stays consistent
+           across breakpoints. -->
       <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
          class="icon-btn nav-lakitu-btn" id="navLakituBtn"
-         aria-label="Open Lakitu in a new tab"
-         title="Open Lakitu (sessions)">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <!-- Stylized "external link" glyph: a small window with an
-               outbound arrow at the top-right. Clean, recognizable,
-               matches the visual weight of the sibling refresh/menu icons. -->
-          <path d="M3 3.5h6.5M3 3.5v9h9V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M8 8l5-5M9 3h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+         aria-label="Open Lakitu App in a new tab"
+         title="Open Lakitu App (sessions)">
+        <!-- Sized to 22x22 to match the user-chip avatar (.user-chip .avatar)
+             so the two "identity markers" in the nav read at the same
+             visual weight. The viewBox stays 16x16 — only the rendered
+             size grows, which keeps the path coordinates simple. -->
+        <svg class="nav-lakitu-icon" width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <!-- Lakitu Ring app logo: a white triangle inside a black circle.
+               (The source asset has a green app-icon background; we drop
+               that so the logo reads cleanly in both dark and light themes.)
+               Hardcoded #000 / #fff (not currentColor) so the brand mark
+               looks identical in dark and light modes — it shouldn't
+               invert with the surroundings. -->
+          <circle cx="8" cy="8" r="7.25" fill="#000"/>
+          <!-- Upward-pointing equilateral triangle, centered inside the
+               circle. Apex at top (~y=4.0), base across (~y=11.5). Slight
+               rounding via stroke-linejoin so the triangle's corners
+               feel intentional rather than razor-sharp. -->
+          <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
         </svg>
       </a>
       <button class="icon-btn" id="navRefreshBtn" aria-label="Refresh schedule" title="Refresh next-session queue">
@@ -8555,14 +8587,23 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
     <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
        class="menu-row menu-row-link" id="lakituRow">
       <div class="label">
-        <span class="ic" style="color:var(--accent-ink)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 3.5h6.5M3 3.5v9h9V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 8l5-5M9 3h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Drop the .ic wrapper's default bg3 background here — the
+             Lakitu logo's black disc IS the icon shape, so a tinted
+             wrapper would visually fight with it. Size matches other
+             .ic wrappers (30x30) so the row alignment stays consistent
+             with sibling menu rows like My Calendar / Export. -->
+        <span class="ic" style="background: transparent; padding: 0;">
+          <!-- Same Lakitu logo as the nav button — keeps the brand
+               glyph consistent wherever the link appears in the app.
+               White triangle inside a black disc; theme-independent
+               colors so the brand looks identical in dark and light. -->
+          <svg width="26" height="26" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7.25" fill="#000"/>
+            <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
           </svg>
         </span>
         <div>
-          <div class="text">Lakitu</div>
+          <div class="text">Lakitu App</div>
           <div class="desc">Open Amazon's session console in a new tab</div>
         </div>
       </div>
@@ -8722,7 +8763,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051442';
+const APP_VERSION = '1.2.051446';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
