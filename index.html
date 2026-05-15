@@ -3256,21 +3256,66 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   border-top: 0.5px solid var(--border);
   display: flex;
   align-items: center;
+  /* Legacy layout (default): flex-end alignment with a `<div style="flex:1">`
+     spacer inserted by the markup to push left/right groups apart. This
+     pattern is used by team modals, edit modals, etc. */
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
+  row-gap: 10px;
 }
 .asgn-modal-foot .btn {
   white-space: nowrap;
   flex-shrink: 0;
 }
-/* Spacer pattern: some modal feet (View Assignment, Cancel Assignment)
-   put a "<div style='flex: 1'></div>" between the left and right groups
-   to push them apart. That continues to work — empty flex:1 spacer
-   takes all available space and dominates over justify-content. */
+/* Spacer used by legacy foot markup — collapses on wrap so it doesn't
+   eat a whole row by itself, but on a single row it still expands to
+   push left and right groups apart. */
+.asgn-modal-foot > div[style*="flex: 1"],
+.asgn-modal-foot > div[style*="flex:1"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Modern two-group layout — opted into by markup that uses
+   .asgn-modal-foot-left and .asgn-modal-foot-right. Triggers ONLY when
+   both groups are present so we don't disturb legacy modal feet.
+   :has() is supported in all modern browsers (Chrome 105+, Safari 15.4+,
+   Firefox 121+, all of which our target users are on). */
+.asgn-modal-foot:has(.asgn-modal-foot-left):has(.asgn-modal-foot-right) {
+  /* space-between puts the two groups at opposite edges on a single
+     row. When the right group wraps below (narrow viewport), it sits
+     on its own row at full width with internal right-alignment. */
+  justify-content: space-between;
+}
+.asgn-modal-foot-left,
+.asgn-modal-foot-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 10px;
+}
+.asgn-modal-foot-right {
+  justify-content: flex-end;
+  /* When the right group wraps below the left, take the full row
+     so internal right-alignment lands at the modal's right edge.
+     On a single row, flex-grow lets the right group absorb any
+     leftover slack instead of being a fixed-size island. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 @media (max-width: 480px) {
   .asgn-modal-foot {
     padding: 14px 16px 16px;
     gap: 8px;
+    row-gap: 8px;
+  }
+  .asgn-modal-foot-left,
+  .asgn-modal-foot-right {
+    gap: 8px;
+    row-gap: 8px;
   }
 }
 
@@ -4657,7 +4702,11 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
    or navigation step, so admin always sees the right scope. */
 .cal-stat-tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 4-column grid on desktop (Booked / Notified / Completed / Available).
+     auto-fit lets the grid collapse to fewer columns when narrow — each
+     tile claims at least 140px, so on phones we naturally get 2x2 rather
+     than a cramped horizontal scroll. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   padding: 12px 14px;
   border-bottom: 0.5px solid var(--border);
@@ -4674,8 +4723,9 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 }
 .cal-stat-tile::before {
   /* Soft accent strip along the left edge — color-codes the tile so
-     admin can scan by category (blue = booked pipeline, purple =
-     throughput, green = capacity) without reading the labels. */
+     admin can scan by category (blue = booking pipeline, teal = email
+     send status, purple = throughput, green = capacity) without
+     reading the labels. */
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
@@ -4683,6 +4733,7 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   background: var(--text3);
 }
 .cal-stat-tile.cal-stat-booked::before    { background: rgb(59, 130, 246); }
+.cal-stat-tile.cal-stat-notified::before  { background: rgb(20, 184, 166); }
 .cal-stat-tile.cal-stat-completed::before { background: rgb(168, 85, 247); }
 .cal-stat-tile.cal-stat-available::before { background: rgb(34, 197, 94); }
 .cal-stat-tile-num {
@@ -4699,6 +4750,15 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text3);
+}
+/* Secondary callout inside a tile label, used for the Notified tile's
+   "X pending" badge. Lower-weight + amber tint so it reads as a related
+   sub-stat without competing with the primary number for attention. */
+.cal-stat-tile-sub {
+  color: var(--amber, rgb(245, 158, 11));
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: none;
 }
 @media (max-width: 720px) {
   .cal-stat-tiles { gap: 6px; padding: 8px 10px; }
@@ -8612,6 +8672,43 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
       </svg>
     </a>
 
+    <!-- Admin Tools section — only visible when the admin app is active.
+         The .menu-row-admin-only class is toggled visible/hidden in
+         openMenu() based on whether #adminApp has the .active class.
+         Falls back to hidden by default so moderators never see admin
+         links even briefly during page load.
+
+         Master List link goes to the SharePoint-hosted Excel file that
+         backs the moderator + assignment data. Useful for admins who
+         need to manually inspect or tweak rows (e.g., debugging a
+         malformed entry, bulk fixing a column). Opens in a new tab
+         with the standard target=_blank + rel=noopener pair so the
+         destination can't navigate this tab. -->
+    <div class="menu-section-label menu-row-admin-only" style="display: none;">Admin Tools</div>
+    <a href="https://digitaltechedge.sharepoint.com/:x:/r/sites/DataCollectionUSHUB/_layouts/15/Doc.aspx?sourcedoc=%7BA0157132-813A-4CEA-A183-6F0F18FEE631%7D&file=Moderator_Masterlist.xlsx&action=default&mobileredirect=true"
+       target="_blank" rel="noopener noreferrer"
+       class="menu-row menu-row-link menu-row-admin-only" id="masterlistRow"
+       style="display: none;">
+      <div class="label">
+        <span class="ic" style="color:var(--accent-ink)">
+          <!-- Excel-style icon: rounded rectangle with a stylized X mark.
+               Drawn at 16x16 to match the other menu-row icons exactly.
+               Uses currentColor so it picks up the .ic wrapper's tint. -->
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2" y="2" width="12" height="12" rx="1.6" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <div class="text">Master List</div>
+          <div class="desc">Open the source Excel file where data is logged</div>
+        </div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="opacity: 0.55;">
+        <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+
     <div class="menu-section-label">Session</div>
     <div class="menu-row" id="exportRow">
       <div class="label">
@@ -8763,7 +8860,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051446';
+const APP_VERSION = '1.2.051506';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -10388,6 +10485,17 @@ function exportExcel() {
    MENU + UTILS
    ===================================================================== */
 function openMenu() {
+  // Toggle visibility of admin-only menu rows based on which app is
+  // active. The shared menu drawer is used by both moderator and admin
+  // nav buttons, so we gate admin-specific links (Master List, future
+  // admin tools) by checking #adminApp.active. Done here at open time
+  // rather than via global CSS because the .active class is itself
+  // toggled in JS — easier to keep the source of truth in one place.
+  const isAdminActive = !!(document.getElementById('adminApp')
+                        && document.getElementById('adminApp').classList.contains('active'));
+  document.querySelectorAll('.menu-row-admin-only').forEach(el => {
+    el.style.display = isAdminActive ? '' : 'none';
+  });
   document.getElementById('menuOverlay').classList.add('open');
   document.getElementById('menuDrawer').classList.add('open');
 }
@@ -12138,7 +12246,15 @@ async function loadModerators(force = false) {
     // view, leaving stale data on screen. Two checks now: the new
     // top-level location and the legacy sub-tab name (in case any
     // old build still has it cached on the runtime adminState).
-    if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
+    //
+    // Modal-open guard: same anti-hiccup pattern as elsewhere. If admin
+    // has a booking modal open, defer the page rebuild to avoid a
+    // visible repaint underneath. The data on adminState is already
+    // current; the UI just hasn't been redrawn yet.
+    if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
+      console.log('[Orbit] Moderators load landed during open modal — deferring render');
+      adminState._pendingPostFetchRender = true;
+    } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
       renderAssignment();
     } else {
       renderModerators();
@@ -12643,10 +12759,15 @@ async function loadParticipants(force = false) {
     adminState.participants = [];
   } finally {
     adminState.partLoading = false;
-    // Same as loadModerators above: route the post-load render to the
-    // Assignment tab when admin is viewing it. Was checking the old
-    // sub-tab location and missing top-level Assignment tab views.
-    if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
+    // Re-render the right tab IF no modal is open. When admin has the
+    // booking modal open (or any other interactive overlay), defer the
+    // re-render until they close it — same anti-hiccup pattern as the
+    // assignment fetcher uses. The data on adminState is already
+    // updated; only the painted UI lags briefly.
+    if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
+      console.log('[Orbit] Participants load landed during open modal — deferring render');
+      adminState._pendingPostFetchRender = true;
+    } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
       renderAssignment();
     } else {
       renderParticipants();
@@ -12656,7 +12777,11 @@ async function loadParticipants(force = false) {
     // without the admin having to close and re-open the booking.
     // This covers the timing race where admin clicked a booking before
     // participants finished loading — the modal showed "No email on
-    // file" stale, and now self-heals.
+    // file" stale, and now self-heals. Note: this is a DIFFERENT
+    // re-render path from the page-underneath one above — we're
+    // intentionally re-rendering JUST the modal, which is harmless
+    // (admin is looking at this booking, refreshing its data is
+    // exactly what they want).
     if (adminState._viewingAsgnId
         && document.getElementById('asgnModal')
         && document.getElementById('asgnModal').classList.contains('open')) {
@@ -15332,44 +15457,35 @@ async function fetchAssignmentsFromPA() {
     if (!a.id || !remoteIds.has(a.id)) return false;
     const r = remoteById.get(a.id);
     if (!r) return false;
-    // PRIMARY: explicit terminal-action lock. Set by cancelAssignment,
-    // completeAssignment, and unassignTeamFromAssignment when admin
-    // takes a terminal action directly. This is an ACTION-based signal
-    // (rather than a timestamp-based one), so it's immune to every
-    // failure mode that breaks the savedAt comparison:
-    //   - PA pagination dropping newer rows from the response
-    //   - Excel auto-converting lastActive column from Text to Date and
-    //     reformatting the timestamps so local/remote no longer compare
-    //   - PA's "Add a row" silently dropping empty fields, losing the
-    //     status='Cancelled' marker on empty-mods rows
-    // None of those affect the lock — it lives entirely in localStorage
-    // until an explicit edit-revive (saveAssignment) clears it. Without
-    // this, terminal-state assignments could silently revert to Booked
-    // on the next refresh.
-    // PRIMARY: time-bounded terminal-action lock. Set by cancelAssignment,
-    // completeAssignment, and unassignTeamFromAssignment when admin
-    // takes a terminal action directly. This is an ACTION-based signal
-    // that protects the local terminal state from being clobbered by
-    // a stale remote row during Excel's propagation window.
+    // ===================================================================
+    // LATEST-FROM-EXCEL-ALWAYS-WINS POLICY
+    // ===================================================================
+    // Per product decision: Excel is the source of truth. When the remote
+    // returns a row for an assignment, the remote status is authoritative
+    // EXCEPT during a narrow write-propagation race window protected by an
+    // explicit terminal-action lock (see below).
     //
-    // CHANGE FROM PRIOR BUILDS: the lock now EXPIRES. Previously it was
-    // a boolean that stayed true until edit-revive cleared it — which
-    // meant a different admin's later action could NEVER take effect on
-    // a locked browser. Bad in multi-admin use: admin A cancels at 10am,
-    // admin B revives at 11am, admin A's browser stayed Cancelled
-    // forever even on refresh.
+    // What's been REMOVED from earlier builds:
+    //   1. Generic "local.savedAt > remote.savedAt" preference — caused
+    //      stale local state to win on clock skew or near-simultaneous
+    //      cross-admin writes.
+    //   2. Tertiary "terminal local + non-terminal remote" override —
+    //      same root cause. Made revives invisible: admin A cancels at
+    //      T, admin B revives at T+ε, the timestamps tied and admin A's
+    //      Cancelled stayed visible forever.
     //
-    // New form: _terminalLockUntil holds an ISO timestamp. The lock is
-    // active only while NOW < _terminalLockUntil. The window is 90s,
-    // which comfortably covers PA write (~2-5s) + read (~1-3s) + poll
-    // interval (60s). After the window, normal latest-timestamp-wins
-    // semantics resume — admin B's later write can override.
-    //
-    // Backwards compat: legacy boolean _terminalLock: true rows (from
-    // pre-time-bound builds) are treated as IMMEDIATELY EXPIRED. They
-    // were set before this fix, so the propagation window has long
-    // since passed — keeping them locked would re-create the original
-    // cross-admin bug. Falling back to timestamp comparison is correct.
+    // What REMAINS:
+    //   - Terminal-action lock with a TIGHTER 30s window (was 90s). When
+    //     this admin's own browser just performed a terminal action
+    //     (cancel / complete / unassign), don't let the next polling
+    //     fetch revert it before PA's write has had time to propagate
+    //     back through the read flow. After 30s, the lock expires
+    //     and Excel's authoritative state takes over.
+    //   - Strict-significantly-newer savedAt comparison (>5s gap). The
+    //     5-second buffer absorbs clock skew between admin machines and
+    //     PA's timestamp generation. Without a meaningful gap, the
+    //     comparison can flip-flop based on millisecond noise.
+    // ===================================================================
     const lockUntil = a._terminalLockUntil;
     if (lockUntil) {
       const now = new Date().toISOString();
@@ -15377,21 +15493,20 @@ async function fetchAssignmentsFromPA() {
         console.log('[Orbit] Keeping local terminal-state', a.id, '(status:', a.status, ')— terminal lock active until', lockUntil);
         return true;
       }
-      // Expired lock — fall through to timestamp comparison below.
+      // Expired lock — fall through. We also CLEAR the expired lock from
+      // the local copy so the next merge doesn't waste cycles re-checking.
+      // (Best-effort; the localStorage write below picks it up.)
+      delete a._terminalLockUntil;
     }
-    // Secondary: savedAt timestamp comparison. Catches the
-    // standard race-condition case where local saved newer than what
-    // PA has returned yet.
-    if (a.savedAt && r.savedAt && a.savedAt > r.savedAt) return true;
-    // Tertiary belt: terminal-state local vs non-terminal remote, no
-    // active lock and timestamps tie/inverted. This last belt is kept
-    // narrow — only fires when local is terminal AND remote is not,
-    // which is the specific failure pattern where stale Booked rows in
-    // PA pagination drop the newer Cancelled rows. If both states are
-    // non-terminal or both are terminal, we trust the timestamps fully.
-    const terminal = s => s === 'Completed' || s === 'Cancelled' || s === 'Unassigned';
-    if (terminal(a.status) && !terminal(r.status) && a.savedAt && r.savedAt && a.savedAt >= r.savedAt) {
-      return true;
+    // Secondary: significantly-newer-local guard, for the legit race where
+    // admin saved + PA hasn't returned the new row yet. 5-second threshold
+    // means we only consider local "newer" when it's meaningfully ahead —
+    // sub-second clock skew between admin machines cannot trigger this.
+    if (a.savedAt && r.savedAt) {
+      try {
+        const dt = new Date(a.savedAt).getTime() - new Date(r.savedAt).getTime();
+        if (dt > 5000) return true;
+      } catch (_) { /* unparseable timestamp — fall through, remote wins */ }
     }
     return false;
   });
@@ -15653,8 +15768,27 @@ async function fetchAssignmentsFromPA() {
 
   console.log(`[Orbit] Assignment sync: ${rows.length} rows → ${mergedAssignments.length} assignments, ${mergedTeams.length} teams`);
 
-  // Re-render any visible UI that depends on assignments
-  if (typeof renderAdmin === 'function' && document.getElementById('adminApp')?.classList.contains('active')) {
+  // Re-render any visible UI that depends on assignments.
+  //
+  // CRITICAL: skip the re-render when a modal is open. renderAdmin()
+  // does `c.innerHTML = ...` which destroys and recreates everything
+  // inside #adminContent — even though the modal itself lives outside
+  // that container (appended to <body> directly), the page underneath
+  // visibly re-paints. Users perceive this as a "hiccup" during their
+  // booking flow. Worse, certain modals (like the participant picker
+  // inside the booking modal) rely on event listeners attached to
+  // DOM elements that the modal references — those listeners can
+  // mis-fire when the parent grid is reconstructed underneath them.
+  //
+  // The deferred-render flag tells closeAsgnModal to fire a render
+  // when the modal closes, so admin still picks up the freshest data
+  // the moment they're done with the modal. Until then, the cache
+  // (adminState.assignments + adminState.teams) is already updated
+  // — only the painted UI lags.
+  if (isAnyAsgnModalOpen()) {
+    console.log('[Orbit] Fetch landed during open modal — deferring render until modal closes');
+    adminState._pendingPostFetchRender = true;
+  } else if (typeof renderAdmin === 'function' && document.getElementById('adminApp')?.classList.contains('active')) {
     renderAdmin();
   }
   if (typeof renderMySessionSection === 'function') renderMySessionSection();
@@ -15735,7 +15869,16 @@ function startOfWeek(d) {
 // with a comfortable margin. After the window, normal latest-wins
 // semantics resume.
 function terminalLockUntil() {
-  const ms = 90 * 1000;
+  // Window during which a locally-applied terminal action (cancel,
+  // complete, unassign) is protected from being overridden by a stale
+  // remote read. Was 90s in earlier builds — felt too long: it meant
+  // another admin's later action could be invisible to THIS admin's
+  // browser for up to 90 seconds. 30s is enough to cover PA write
+  // (~2-5s) + read (~1-3s) + one polling interval — but tight enough
+  // that cross-admin updates surface quickly. Combined with the
+  // refresh-button lock-clearing fallback, this gives admins a way to
+  // force-pull the latest state immediately if they need to.
+  const ms = 30 * 1000;
   return new Date(Date.now() + ms).toISOString();
 }
 
@@ -16104,6 +16247,13 @@ function renderAssignment() {
     adminState._asgnPollTimer = setInterval(() => {
       if (adminState.tab !== 'assignment') return;
       if (typeof fetchAssignmentsFromPA !== 'function') return;
+      // Skip the poll while any modal is open. Polling during a modal
+      // results in a deferred render anyway (see fetchAssignmentsFromPA),
+      // so we'd just be burning a network round-trip we can't use yet.
+      // The next tick after the modal closes will catch up cleanly.
+      if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
+        return;
+      }
       adminState._lastAsgnFetchTs = Date.now();
       fetchAssignmentsFromPA().catch(() => {});
     }, 60 * 1000);
@@ -17266,6 +17416,19 @@ function renderCalendarStatTilesHTML(view, days) {
   });
   const bookedCount    = inScope.filter(a => a.status === 'Booked' || a.status === 'Notified').length;
   const completedCount = inScope.filter(a => a.status === 'Completed').length;
+  // Email-status breakdown: of the active bookings (Booked + Notified),
+  // how many have already had their confirmation email sent (status =
+  // 'Notified') vs still pending (status = 'Booked'). This surfaces
+  // "outstanding work" at a glance — admin can spot when there are
+  // bookings that still need the initial email fired off, without
+  // having to scan the calendar visually for them.
+  //
+  // Why not count by `notifiedAt` directly? Some legacy rows have the
+  // status flipped to Notified without a notifiedAt stamp (older
+  // builds set status but didn't always populate the timestamp). The
+  // status field is the authoritative signal.
+  const notifiedCount = inScope.filter(a => a.status === 'Notified').length;
+  const pendingNotifyCount = inScope.filter(a => a.status === 'Booked').length;
   // Available — semantics depend on view:
   //   - day view:   how many teams have every primary available TODAY
   //                 (admin wants to know "how many bookable teams do I
@@ -17308,6 +17471,16 @@ function renderCalendarStatTilesHTML(view, days) {
       <div class="cal-stat-tile cal-stat-booked">
         <div class="cal-stat-tile-num">${bookedCount}</div>
         <div class="cal-stat-tile-label">Booked ${scopeLabel}</div>
+      </div>
+      <!-- Notified vs Pending tile — shows the email-send progress for
+           bookings in scope. Big number = how many bookings have had
+           their confirmation email sent. Small "· X pending" callout
+           in the label tells admin how many still need the initial
+           send. Color-coded teal (cal-stat-notified) to distinguish
+           from the booking-pipeline blue and capacity green. -->
+      <div class="cal-stat-tile cal-stat-notified">
+        <div class="cal-stat-tile-num">${notifiedCount}</div>
+        <div class="cal-stat-tile-label">Notified${pendingNotifyCount > 0 ? ` · <span class="cal-stat-tile-sub">${pendingNotifyCount} pending</span>` : ''}</div>
       </div>
       <div class="cal-stat-tile cal-stat-completed">
         <div class="cal-stat-tile-num">${completedCount}</div>
@@ -20228,40 +20401,66 @@ function openViewAssignmentModal(asgnId) {
         <div style="font-size: 13px; color: var(--text2);">${escapeHTML(new Date(a.savedAt).toLocaleString())}${a.updatedAt && a.updatedAt !== a.savedAt ? ' · updated ' + escapeHTML(new Date(a.updatedAt).toLocaleString()) : ''}</div>
       </div>
     </div>
+    ${(() => {
+      // Decide whether to render the foot at all. The × button at the
+      // top-right of the modal head is the canonical close affordance, so
+      // we don't repeat a Close button at the bottom. The foot now only
+      // exists when there's at least one ACTION to take (Cancel / Send /
+      // Edit for active bookings; Reassign for unassigned ones). For
+      // terminal-state bookings (Cancelled / Completed) with no actions
+      // available, the foot would be a vestigial empty bar with just a
+      // top border — better to omit it entirely.
+      const hasAnyAction = !isImmutableAssignmentStatus(status) || isUnassigned;
+      if (!hasAnyAction) return '';
+      return `
     <div class="asgn-modal-foot">
-      ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
-      <div style="flex: 1"></div>
-      ${(!isImmutableAssignmentStatus(status) && hasEmail) ? `
-        <!-- Split button: main action = send (default = both recipients);
-             caret = chooser (lets admin pick participant vs moderators).
-             Wrapped in a flex container so the two buttons sit flush
-             against each other visually like Apple's split buttons. -->
-        <div class="asgn-notify-split">
-          <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify asgn-notify-main" id="asgnNotifyBtn"
-                  title="${isNotified ? 'Send the confirmation email again to participant and moderators' : 'Send confirmation email to participant and moderators'}">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
-              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
-              <path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>${isNotified ? 'Resend email' : 'Send email'}</span>
-          </button>
-          <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} asgn-notify-caret" id="asgnNotifyCaretBtn"
-                  aria-label="Choose recipients"
-                  title="Choose which recipients to send to">
-            <svg width="11" height="11" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </div>` : ''}
-      ${(!isImmutableAssignmentStatus(status) && !hasEmail) ? `
-        <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
-      ${isUnassigned ? `<button class="btn btn-primary" id="asgnReassignBtn" title="Pick a new team for this slot — status returns to Booked">Reassign team</button>` : ''}
-      ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
-      <button class="btn ${isImmutableAssignmentStatus(status) ? 'btn-primary' : 'btn-ghost'}" id="asgnCloseBtn">Close</button>
-    </div>
+      <!-- LEFT GROUP — destructive action lives by itself on the left,
+           visually separated from the right-side action cluster. -->
+      <div class="asgn-modal-foot-left">
+        ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-danger" id="asgnCancelAsgnBtn">Cancel assignment</button>` : ''}
+      </div>
+      <!-- RIGHT GROUP — primary actions (Send/Resend, Edit, Reassign)
+           cluster together as a single decision cluster. No Close button
+           here; the × at top-right of the modal head closes the modal
+           cleanly. Grouping in one flex container also keeps wrapping
+           predictable: when the modal is narrow enough that the right
+           group can't fit alongside Cancel, it wraps as a unit to row 2
+           rather than fragmenting button-by-button. -->
+      <div class="asgn-modal-foot-right">
+        ${(!isImmutableAssignmentStatus(status) && hasEmail) ? `
+          <!-- Split button: main action = send (default = both recipients);
+               caret = chooser (lets admin pick participant vs moderators). -->
+          <div class="asgn-notify-split">
+            <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} btn-notify asgn-notify-main" id="asgnNotifyBtn"
+                    title="${isNotified ? 'Send the confirmation email again to participant and moderators' : 'Send confirmation email to participant and moderators'}">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex-shrink: 0;">
+                <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M2 4.5l6 4.5 6-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>${isNotified ? 'Resend email' : 'Send email'}</span>
+            </button>
+            <button class="btn ${isNotified ? 'btn-ghost' : 'btn-primary'} asgn-notify-caret" id="asgnNotifyCaretBtn"
+                    aria-label="Choose recipients"
+                    title="Choose which recipients to send to">
+              <svg width="11" height="11" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>` : ''}
+        ${(!isImmutableAssignmentStatus(status) && !hasEmail) ? `
+          <span style="font-size: 12px; color: var(--text3); align-self: center; padding-right: 6px;">No email on file</span>` : ''}
+        ${isUnassigned ? `<button class="btn btn-primary" id="asgnReassignBtn" title="Pick a new team for this slot — status returns to Booked">Reassign team</button>` : ''}
+        ${!isImmutableAssignmentStatus(status) ? `<button class="btn btn-ghost" id="asgnEditBtn">Edit</button>` : ''}
+      </div>
+    </div>`;
+    })()}
   `;
   document.getElementById('asgnModalClose').addEventListener('click', closeAsgnModal);
-  document.getElementById('asgnCloseBtn').addEventListener('click', closeAsgnModal);
+  // The Close button at the bottom was removed in favor of the × at the
+  // top-right (which is always present, always wired to closeAsgnModal).
+  // Click handlers for the remaining foot buttons (Cancel, Edit, Send/
+  // Resend, caret, Reassign) are still wired below — they only exist
+  // when the foot was rendered (see the hasAnyAction gate above).
   if (!isImmutableAssignmentStatus(status)) {
     document.getElementById('asgnEditBtn').addEventListener('click', () => {
       openEditAssignmentModal(asgnId);
@@ -22100,11 +22299,54 @@ function showAsgnModal() {
   document.getElementById('asgnModalOverlay').classList.add('open');
   document.getElementById('asgnModal').classList.add('open');
 }
+
+// Returns true when ANY admin modal that admin interacts with is open.
+// Used by background fetchers to defer re-renders so admin isn't
+// interrupted by repaints under their open modal. Includes:
+//   - The main asgn-modal (booking, view, edit, cancel flows)
+//   - The teammate-sync modal (recipient chooser, bulk resend)
+//   - The bulk-resend modal
+//   - The booking context menu (right-click menu — short-lived but
+//     still counts; closes on outside-click anyway)
+// We deliberately do NOT include the in-app confirm/alert modals
+// (.app-confirm-overlay) — those are typically dismissed in seconds
+// and re-rendering under them is harmless.
+function isAnyAsgnModalOpen() {
+  try {
+    const selectors = [
+      '#asgnModal.open',
+      '#asgnModalOverlay.open',
+      '#recipientChooserModal.open',
+      '#bulkResendModal.open',
+      '.teammate-sync-modal.open',
+    ];
+    for (const sel of selectors) {
+      if (document.querySelector(sel)) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 function closeAsgnModal() {
   document.getElementById('asgnModalOverlay').classList.remove('open');
   document.getElementById('asgnModal').classList.remove('open');
   adminState.modal = null;
   adminState._viewingAsgnId = null;
+  // If a background fetch landed while the modal was open, run the
+  // deferred render now so the calendar / stat tiles / team list
+  // pick up the latest data the admin just closed out of. Wrapping in
+  // requestAnimationFrame batches the work with the next paint, so the
+  // modal's close animation isn't competing for the same frame.
+  if (adminState._pendingPostFetchRender) {
+    adminState._pendingPostFetchRender = false;
+    requestAnimationFrame(() => {
+      try {
+        if (typeof renderAdmin === 'function' && document.getElementById('adminApp')?.classList.contains('active')) {
+          renderAdmin();
+        }
+      } catch (e) { console.warn('[Orbit] Deferred render failed:', e && e.message); }
+    });
+  }
 }
 
 /* ===================================================================
@@ -22449,6 +22691,38 @@ function bindAdminMenu() {
       // Spin the icon as a small visual cue while the fetches run
       refreshBtn.classList.add('refreshing');
       setTimeout(() => refreshBtn.classList.remove('refreshing'), 1200);
+
+      // Manual refresh = "show me what's really in Excel right now."
+      // Clear any active terminal-action locks on local assignments so
+      // they DON'T survive the merge if Excel has a newer state. The
+      // locks exist to protect against stale-read races immediately
+      // after a local terminal action — but when admin explicitly taps
+      // Refresh, they're telling us they want the authoritative truth,
+      // even if that means undoing their own recently-cached terminal
+      // state. This is the user's escape hatch when their browser is
+      // stuck on an old view.
+      try {
+        if (Array.isArray(adminState.assignments)) {
+          let cleared = 0;
+          for (const a of adminState.assignments) {
+            if (a && a._terminalLockUntil) {
+              delete a._terminalLockUntil;
+              cleared++;
+            }
+          }
+          if (cleared > 0) {
+            console.log(`[Orbit] Refresh button: cleared ${cleared} terminal-action lock${cleared === 1 ? '' : 's'} to force authoritative Excel sync`);
+            // Persist the cleared state so the next merge doesn't re-read
+            // the locks from a stale localStorage copy.
+            try {
+              localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+                teams:       adminState.teams       || [],
+                assignments: adminState.assignments,
+              }));
+            } catch (e) {}
+          }
+        }
+      } catch (e) { console.warn('[Orbit] Lock-clearing on refresh failed:', e && e.message); }
 
       // Refresh based on the currently active tab. The fetch helpers are
       // safe to call regardless of state — they short-circuit if a load is
@@ -23351,9 +23625,23 @@ async function refreshModAssignments(opts) {
       // (participant fields), welcome screen (next session). The mod
       // calendar's schedule tab also depends on this, but we only
       // re-render it if the calendar is currently OPEN.
+      //
+      // Modal-open guard: if the operator has an interactive overlay
+      // open (welcome modal, station scenario detail), defer the
+      // page-underneath re-render to avoid a visible hiccup. The
+      // operator's data on adminState/state is already updated; only
+      // the painted UI is delayed by at most a couple of seconds.
       try {
-        applyAssignmentToEntryFields();
-        if (typeof renderApp === 'function') renderApp();
+        const modalOpen = (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen());
+        if (modalOpen) {
+          console.log('[Orbit] Mod refresh landed during open modal — skipping page render');
+        } else {
+          applyAssignmentToEntryFields();
+          if (typeof renderApp === 'function') renderApp();
+        }
+        // The mod calendar's body is safe to re-render even if other
+        // modals are open — it lives inside its own overlay and reads
+        // fresh data directly. Skipping its update would leave it stale.
         const calOverlay = document.getElementById('modCalOverlay');
         if (calOverlay && calOverlay.classList.contains('open')
             && typeof renderModCalBody === 'function') {
@@ -26869,6 +27157,16 @@ function init() {
       setTimeout(() => { try { closeMenu(); } catch (_) {} }, 10);
     });
   }
+  // Master List — admin-only external link to SharePoint-hosted Excel.
+  // Same pattern as Lakitu: the <a target="_blank"> handles the
+  // navigation; the JS just closes the drawer so the admin returns to
+  // a clean state when they switch back to this tab.
+  const masterlistRow = document.getElementById('masterlistRow');
+  if (masterlistRow) {
+    masterlistRow.addEventListener('click', () => {
+      setTimeout(() => { try { closeMenu(); } catch (_) {} }, 10);
+    });
+  }
   document.getElementById('resetRow').addEventListener('click', async () => {
     const ok = await appConfirm({
       title:        'Reset session data?',
@@ -26899,6 +27197,28 @@ function init() {
     navRefreshBtn.addEventListener('click', async () => {
       navRefreshBtn.classList.add('refreshing');
       try {
+        // Manual refresh = "show me what's really in Excel right now."
+        // Same lock-clearing as admin's refresh button — moderators can
+        // accidentally inherit stale terminal locks from a previous
+        // admin session in the shared assignment cache. Clearing them
+        // here lets Excel's authoritative state take over.
+        try {
+          if (Array.isArray(adminState.assignments)) {
+            let cleared = 0;
+            for (const a of adminState.assignments) {
+              if (a && a._terminalLockUntil) { delete a._terminalLockUntil; cleared++; }
+            }
+            if (cleared > 0) {
+              console.log(`[Orbit] Mod refresh cleared ${cleared} stale terminal lock${cleared === 1 ? '' : 's'}`);
+              try {
+                localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+                  teams:       adminState.teams       || [],
+                  assignments: adminState.assignments,
+                }));
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
         // Fresh cloud fetch — overrides cache. force:true bypasses the
         // in-flight dedupe so manual refresh always feels live.
         if (typeof refreshModAssignments === 'function') {
