@@ -8890,7 +8890,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051801';
+const APP_VERSION = '1.2.051802';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -16710,21 +16710,37 @@ function openAdminAvailabilitySubmit(modId) {
     submitting: false,
   };
 
-  // Preload from existing row if present — use parseAvailabilityCell so
-  // we recover the hours + shift tag, not just the bare Yes/No state.
-  // This is what makes the round-trip loss-less: open an existing rich
-  // row, see the same hours and shift the moderator picked.
-  const idx = indexLatestAvailability(adminState.availability || []);
-  const existing = idx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
-  if (existing) {
-    DAY_KEYS.forEach(k => {
-      const parsed = parseAvailabilityCell(existing[k]);
-      submitState.pendingDays[k]      = !!parsed.available;
-      submitState.pendingHours[k]     = [parsed.startHour, parsed.endHour];
-      submitState.pendingShiftTags[k] = parsed.shiftTag || (parsed.available ? 'Morning' : '');
-    });
-    submitState.notes = existing.notesText || '';
-  }
+  // Load (or reload) state from cache for the current submitState.weekStart.
+  // Called once at modal open AND on every week-nav click — same helper
+  // both times keeps init/nav behavior identical, no chance of drift.
+  // Returns the existing row (or undefined) so callers can use it to
+  // decide UI affordances ("updates existing row" vs "creates new row").
+  const loadWeekFromCache = () => {
+    const idx = indexLatestAvailability(adminState.availability || []);
+    const found = idx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
+    if (found) {
+      DAY_KEYS.forEach(k => {
+        const parsed = parseAvailabilityCell(found[k]);
+        submitState.pendingDays[k]      = !!parsed.available;
+        submitState.pendingHours[k]     = [parsed.startHour, parsed.endHour];
+        submitState.pendingShiftTags[k] = parsed.shiftTag || (parsed.available ? 'Morning' : '');
+      });
+      submitState.notes = found.notesText || '';
+    } else {
+      // No row for this week yet — reset to clean defaults so admin sees
+      // a fresh blank slate rather than carrying state over from the
+      // previously viewed week.
+      DAY_KEYS.forEach(k => {
+        submitState.pendingDays[k]      = false;
+        submitState.pendingHours[k]     = [9, 17];
+        submitState.pendingShiftTags[k] = 'Morning';
+      });
+      submitState.notes = '';
+    }
+    return found;
+  };
+
+  loadWeekFromCache();
 
   // Compute the active preset (for highlighting the matching shift pill).
   // Same logic as _activePresetTag but reads from submitState's local shape.
@@ -16750,6 +16766,21 @@ function openAdminAvailabilitySubmit(modId) {
     const ws = parseYMD(submitState.weekStart);
     const todayStr = ymdLocal(new Date());
     const activePreset = localActivePreset();
+
+    // Recompute on every render so navigating to a different week
+    // refreshes the "creates new row" vs "updates existing row" hint
+    // in the subtitle. Cheap operation — indexLatestAvailability is
+    // O(n) over the cache and the cache is small.
+    const existingIdx = indexLatestAvailability(adminState.availability || []);
+    const existing = existingIdx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
+
+    // Week-nav state: disable the Prev arrow when we'd cross before this
+    // week's Monday. Matches the mod app's restriction — historical
+    // edits are off-limits for now. If admin ever needs to fix old
+    // rows, this is the one knob to flip.
+    const thisMonday = ymdLocal(mondayOf(new Date()));
+    const prevCandidate = ymdLocal(addDays(ws, -7));
+    const prevDisabled = prevCandidate < thisMonday;
 
     // Build day cells with the same structure the operator view uses —
     // toggle button + (when on) time-range row underneath.
@@ -16826,6 +16857,28 @@ function openAdminAvailabilitySubmit(modId) {
           <div class="mc-avail-intro">
             Mark the days <strong>${escapeHTML(submitState.firstName)}</strong> is available during the week of ${escapeHTML(weekRangeLabel(submitState.weekStart))}.
             Pick a shift preset (Morning, Evening, or <strong>Either</strong> for flexible / on-call) or set custom hours per day. Minimum ${AVAILABILITY_MIN_HOURS} hours.
+          </div>
+
+          <!-- Week navigation — mirrors the mod app's My Availability
+               picker so admin gets the same affordances for browsing or
+               editing other weeks on behalf of a moderator. Three
+               controls:
+                 - Prev arrow (◀)  → previous week, disabled at current week
+                 - "Next week" pill → jump to next Monday from today
+                 - Next arrow (▶)  → next week
+               Past weeks are blocked the same way the mod app blocks
+               them (no editing history). The "creates new row" /
+               "updates existing row" hint in the modal subtitle updates
+               automatically on each render to reflect the new week. -->
+          <div class="mc-weeknav" style="margin-bottom: 14px;">
+            <button class="mc-weeknav-arrow" id="adminAvailPrev" aria-label="Previous week" ${prevDisabled ? 'disabled' : ''}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 3L4 7l5 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="mc-weeknav-label">${escapeHTML(weekRangeLabel(submitState.weekStart))}</div>
+            <button class="mc-weeknav-today" id="adminAvailNext7">Next week</button>
+            <button class="mc-weeknav-arrow" id="adminAvailNext" aria-label="Next week">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
 
           <!-- Shift preset pills — same three presets the operator gets.
@@ -16935,6 +16988,47 @@ function openAdminAvailabilitySubmit(modId) {
         }
         render();
       });
+    });
+
+    // Week navigation — wire the three controls (prev arrow, next-week
+    // pill, next arrow). Each one updates submitState.weekStart and then
+    // calls loadWeekFromCache() to repopulate the picker from whatever
+    // existing row is in the cache for the new week (or to clean
+    // defaults if no row exists yet). Then a render() repaints the UI.
+    //
+    // Note: any in-progress edits to the CURRENT week are discarded on
+    // navigation. This matches the mod app's behavior — submit is the
+    // only commit point. If admin needs to confirm changes across
+    // multiple weeks in one session, they need to save each week before
+    // moving on. Mentioning this in the user-facing summary message
+    // would be over-engineering; admin will figure it out quickly.
+    const prevBtn = overlay.querySelector('#adminAvailPrev');
+    if (prevBtn) prevBtn.addEventListener('click', () => {
+      if (prevBtn.disabled) return;
+      const d = parseYMD(submitState.weekStart);
+      const minMonday = ymdLocal(mondayOf(new Date()));
+      const candidate = ymdLocal(addDays(d, -7));
+      if (candidate < minMonday) return;
+      submitState.weekStart = candidate;
+      loadWeekFromCache();
+      render();
+    });
+    const nextBtn = overlay.querySelector('#adminAvailNext');
+    if (nextBtn) nextBtn.addEventListener('click', () => {
+      const d = parseYMD(submitState.weekStart);
+      submitState.weekStart = ymdLocal(addDays(d, 7));
+      loadWeekFromCache();
+      render();
+    });
+    const next7Btn = overlay.querySelector('#adminAvailNext7');
+    if (next7Btn) next7Btn.addEventListener('click', () => {
+      // "Next week" pill — jump to next Monday relative to today, NOT
+      // relative to the currently viewed week. This matches the mod app
+      // and gives admin a quick way to bounce back if they navigated
+      // far into the future.
+      submitState.weekStart = ymdLocal(mondayOf(addDays(new Date(), 7)));
+      loadWeekFromCache();
+      render();
     });
 
     // Quick selectors (Weekdays, All, Clear) — preserve hours/tags that
