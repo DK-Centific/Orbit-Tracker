@@ -3229,6 +3229,19 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   opacity: 1; pointer-events: all;
   transform: translate(-50%, -50%) scale(1);
 }
+/* The modal markup has an extra <div id="asgnModalContent"> wrapper
+   between .asgn-modal and the rendered head/body/foot. Without this
+   rule, that wrapper breaks the flex layout — .asgn-modal-body's
+   flex:1 + overflow-y:auto stop working because their direct parent
+   isn't a flex container, so the body grows to fit ALL content,
+   the modal's max-height never constrains it, and the foot gets
+   pushed off-screen with no scrollbar.
+   `display: contents` makes the wrapper invisible to layout while
+   keeping the DOM structure intact. The head, body, and foot
+   become direct children of .asgn-modal for sizing purposes —
+   exactly what the flex column layout needs. Supported in all
+   modern browsers (Chrome 65+, Safari 11.1+, Firefox 37+). */
+#asgnModalContent { display: contents; }
 .asgn-modal-head {
   padding: 22px 24px 14px;
   border-bottom: 0.5px solid var(--border);
@@ -8968,7 +8981,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051810';
+const APP_VERSION = '1.2.051811';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -15359,6 +15372,18 @@ async function fetchAssignmentsFromPA() {
           firstName, lastName,
           address: r.address || '',
           phone: r.phonenumber || '',
+          // Recover the participant-specific columns we now write on
+          // every row. Fall back to '' (not undefined) so the read-back
+          // shape matches what saveAssignment produces — keeps the
+          // localKeys-vs-remoteKeys merge math consistent. For rows
+          // written by older builds (before participantEmail/State/
+          // ZipCode existed) these stay empty; the merge then prefers
+          // a local cache entry if it has richer data, so admin's
+          // overrides survive the version transition without a manual
+          // re-save.
+          email:   r.participantEmail   || '',
+          state:   r.participantState   || '',
+          zipCode: r.participantZipCode || '',
         },
         modSnapshots: [],
         status: r.status || 'Booked',
@@ -23698,6 +23723,23 @@ function buildAssignmentExcelRow(a) {
       participantOrbitId: a.participantOrbitId || '',
       address:            (a.participantData && a.participantData.address) || '',
       phonenumber:        (a.participantData && a.participantData.phone) || '',
+      // Participant-specific fields. These are written for EVERY row
+      // (not just override rows) so the participant's contact info
+      // survives a full round-trip through Excel — without these
+      // columns, admin's per-booking overrides for email/state/zip
+      // would only persist in the local cache and would silently
+      // revert to the live-participant value the first time the
+      // local cache got rebuilt from Excel (e.g., another admin's
+      // browser, another session, after a hard refresh). PA flows
+      // drop unknown columns gracefully so adding these here is
+      // safe even before the Excel schema has them; once you add
+      // the columns to your Excel sheet, the data starts persisting.
+      // Names are chosen to be unambiguous from moderator fields
+      // (`personalEmail` exists already as a moderator column, so
+      // we use `participantEmail` etc to avoid collision).
+      participantEmail:   (a.participantData && a.participantData.email) || '',
+      participantState:   (a.participantData && a.participantData.state) || '',
+      participantZipCode: (a.participantData && a.participantData.zipCode) || '',
       teamId:             a.teamId,
       status:             a.status          || 'Booked',
       comment:            commentForExcel,
@@ -23718,6 +23760,14 @@ function buildAssignmentExcelRow(a) {
     participantOrbitId: a.participantOrbitId || '',
     address:            (a.participantData && a.participantData.address) || '',
     phonenumber:        (a.participantData && a.participantData.phone) || '',
+    // See terminal-row block above for the rationale on these three
+    // columns. Same values, written on every per-mod row so the
+    // participant info is recoverable from any single row in Excel
+    // (the read-back groups by assignmentId; reading any row from
+    // the group recovers the full participant snapshot).
+    participantEmail:   (a.participantData && a.participantData.email) || '',
+    participantState:   (a.participantData && a.participantData.state) || '',
+    participantZipCode: (a.participantData && a.participantData.zipCode) || '',
     teamId:             a.teamId,
     status:             a.status          || 'Booked',
     comment:            commentForExcel,
