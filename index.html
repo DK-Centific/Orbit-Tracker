@@ -8890,7 +8890,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051802';
+const APP_VERSION = '1.2.051804';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -13480,25 +13480,32 @@ const EMAILLOG_PA_READ_URL  = '';
 // cleanly without it. Use this if the agreement isn't ready yet or
 // during a transition between hosts.
 // =====================================================================
-// Updated 5/18/2026: the OneDrive direct-file URL (_layouts/15/onedrive.aspx
-// form) didn't resolve correctly for recipients — the short-link form
-// works better. Reverted to the original :b:/g/ short-link, but with a
-// freshly issued ?e=... share token (bgTHkr) since the previous token
-// had expired or been invalidated.
+// Updated 5/18/2026: migrated agreement PDF hosting from SharePoint to
+// Google Drive. The SharePoint short-link form (:b:/g/) required
+// recipients to sign in with a Microsoft account that often didn't
+// match the email address they received the booking on, creating
+// friction. Google Drive's "anyone with the link" sharing is a cleaner
+// fit — no sign-in step at all. The PDF itself is still password-
+// protected at the document level (see AGREEMENT_PDF_PASSWORD below)
+// so the security model is: link gates retrieval, PDF password gates
+// content view.
 //
-// If the new file is NOT password-protected (the old one was, with
-// 'Orbit2026'), clear the AGREEMENT_PDF_PASSWORD constant below — the
-// email body's password line auto-hides when empty.
-const AGREEMENT_PDF_URL = 'https://digitaltechedge-my.sharepoint.com/:b:/g/personal/david_kang_centific_com/IQCYetfbVh05Rq_GwjHOcJ_1AQueP23ghcK9tHi8cKfb_6M?e=bgTHkr';
+// The ?usp=sharing suffix is what authorizes link-based access. If you
+// switch to a different file later, generate the share URL from
+// Drive's "Share" → "Anyone with the link" → "Copy link" — Drive
+// formats it the same way.
+const AGREEMENT_PDF_URL = 'https://drive.google.com/file/d/1IwkaC-Os8sgN0dEE-hv5PYcatNfVVpR1/view?usp=sharing';
 
-// Password gating the PDF. SharePoint prompts the recipient for this
-// after they click the link. We surface it in the email body next to
-// the CTA button so recipients don't have to hunt for it — mobile
-// users especially struggle to switch contexts mid-flow.
+// Password gating the PDF. The PDF file itself is password-protected
+// at the document level (encrypted PDF) — this is independent of where
+// it's hosted. So even though Google Drive's link-based sharing means
+// no sign-in is required to download/open the file in the browser
+// viewer, the recipient still gets a password prompt from the PDF
+// reader before content displays. We surface 'Orbit2026' in the email
+// body next to the CTA so recipients don't have to hunt for it.
 //
-// Set to empty string if the PDF stops requiring a password (e.g.,
-// after migrating to a public host). The email body's password line
-// auto-hides when empty so we don't ship "password: " with no value.
+// If the PDF is ever re-exported without a password, clear this to ''
+// and the password chip auto-hides from the email body.
 const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
 
 // =====================================================================
