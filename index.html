@@ -9107,7 +9107,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052003';
+const APP_VERSION = '1.2.052004';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -11350,6 +11350,176 @@ function pickField(obj, ...candidates) {
 
 // Power Automate flows often wrap the result in various envelopes. Try to
 // find an array of records inside the response no matter how it's nested.
+// =====================================================================
+// Resilient PA fetch — timeout + retry + 202 detection
+// =====================================================================
+// Wraps fetch() with the kind of resilience PA flows actually need.
+// Designed for the loadModerators / loadParticipants / similar
+// "fetch a table from PA" call sites that hit Power Automate Excel
+// read flows. Those flows are slow, throttled, and occasionally
+// flaky, so a bare fetch() leaves admins staring at a spinner that
+// never resolves.
+//
+// Behavior:
+//   • Timeout via AbortController — defaults to 45s. PA's sync flow
+//     ceiling is 2 minutes, but a normal Excel read should never come
+//     close to that. 45s catches "stuck" requests early and lets
+//     retry/error logic take over before the user gives up.
+//   • Retry on transient failures — 429 (throttled), 500/502/503/504
+//     (PA infra hiccups), AbortError-from-timeout, network errors.
+//     Exponential backoff: 1s, 3s, 7s. Stops at 3 attempts total to
+//     avoid a slow-fail spiral.
+//   • 202 detection — PA returns 202 Accepted with a `Location`
+//     header when the flow takes longer than the sync ceiling.
+//     We treat this as an error (rather than silently parsing the
+//     non-array body to []), with a message that points admin at the
+//     likely PA pagination misconfig.
+//   • Caller-supplied AbortSignal — when admin clicks Refresh
+//     mid-fetch, the caller can abort the in-flight request and
+//     start a new one immediately. The helper composes its own
+//     timeout-AbortController with the caller's signal.
+//
+// Returns the parsed JSON body. Throws Error on terminal failure
+// (with a message safe to surface to the user). The error's
+// .isTransient flag is set when the failure was a retryable type
+// that exhausted retries — caller can choose to retry on next
+// admin interaction rather than treating it as a hard failure.
+async function fetchWithRetry(url, opts) {
+  opts = opts || {};
+  const timeoutMs = opts.timeoutMs || 45000;
+  const maxAttempts = opts.maxAttempts || 3;
+  const externalSignal = opts.signal || null;
+  const fetchOpts = { method: opts.method || 'GET' };
+  if (opts.headers) fetchOpts.headers = opts.headers;
+  if (opts.body)    fetchOpts.body    = opts.body;
+
+  // Status codes worth retrying. 429 (rate limit) and 5xx (server-
+  // side transient) match the standard "should I retry?" envelope.
+  // 408 (Request Timeout) included for completeness; PA shouldn't
+  // emit it but proxies sometimes inject it.
+  const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+  // Backoff schedule between attempts. Numbers chosen to give the PA
+  // throttle window (typically 5–10s) time to clear without
+  // bombarding the flow with concurrent retries.
+  const BACKOFF_MS = [1000, 3000, 7000];
+
+  let lastErr = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Compose timeout controller with the caller's signal. If either
+    // fires, the fetch aborts. We track WHY it aborted so we can
+    // distinguish "we timed out and should retry" from "caller
+    // aborted and wants us to stop entirely".
+    const timeoutCtrl = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      timeoutCtrl.abort();
+    }, timeoutMs);
+
+    // Bridge external abort signal into our composite controller.
+    const onExternalAbort = () => timeoutCtrl.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timeoutId);
+        const err = new Error('Request aborted by caller');
+        err.isCallerAbort = true;
+        throw err;
+      }
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
+    try {
+      const res = await fetch(url, { ...fetchOpts, signal: timeoutCtrl.signal });
+      clearTimeout(timeoutId);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+
+      // PA's "still working on it" response. The 202 status code with
+      // a flow callback URL means the flow exceeded the sync timeout.
+      // We DON'T poll the callback (that would extend admin's wait
+      // by another 2 minutes) — instead we surface a clear,
+      // actionable error so admin knows what to fix on the PA side.
+      if (res.status === 202) {
+        const err = new Error('Power Automate flow is taking longer than 2 minutes — likely a pagination or large-table issue. Check the Excel "List rows" action settings.');
+        err.isPAOverlong = true;
+        throw err;
+      }
+
+      // Retry on documented transient statuses. We read the body once
+      // so the next attempt isn't starved by a held connection — the
+      // body bytes are discarded, we just want res.text() to
+      // complete and free the connection back to the pool.
+      if (RETRYABLE_STATUS.has(res.status)) {
+        try { await res.text(); } catch (_) {}
+        lastErr = new Error(`HTTP ${res.status} (transient)`);
+        lastErr.isTransient = true;
+        if (attempt < maxAttempts - 1) {
+          await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+          continue;
+        }
+        throw lastErr;
+      }
+
+      // Any other non-2xx is a hard failure — no retry, surface it.
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      // Happy path: parse and return. JSON parse errors are NOT
+      // retried — the body came back fine, the content's just wrong,
+      // which won't change on retry.
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error('Response was not valid JSON.');
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+
+      // Caller aborted us — propagate without retry. This is the
+      // "admin clicked Refresh mid-fetch" path; the new call's
+      // attempt should run, not us.
+      if (externalSignal && externalSignal.aborted && !timedOut) {
+        const err = new Error('Request aborted by caller');
+        err.isCallerAbort = true;
+        throw err;
+      }
+
+      // Distinguish our timeout (retryable) from non-timeout errors.
+      // AbortError is the spec name for the DOMException thrown by
+      // a fetch when its AbortController fires.
+      const isAbortFromTimeout = timedOut || (e.name === 'AbortError' && !e.isCallerAbort);
+      const isNetworkErr = (e instanceof TypeError) || isAbortFromTimeout;
+
+      if ((isNetworkErr || e.isTransient) && attempt < maxAttempts - 1) {
+        // Mask the raw error message under "Network/transient — retrying";
+        // the surfaced message will be the FINAL attempt's error if
+        // all retries are exhausted, so any one transient failure
+        // doesn't surface a scary "AbortError" mid-recovery.
+        lastErr = isAbortFromTimeout
+          ? new Error(`Timeout after ${timeoutMs/1000}s`)
+          : (e.message ? e : new Error(String(e)));
+        lastErr.isTransient = true;
+        console.warn(`[Orbit] fetchWithRetry attempt ${attempt + 1}/${maxAttempts} failed:`, lastErr.message, '— retrying in', BACKOFF_MS[attempt], 'ms');
+        await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+        continue;
+      }
+
+      // Out of retries OR non-retryable error — surface it.
+      if (isAbortFromTimeout) {
+        const err = new Error(`Request timed out after ${timeoutMs/1000}s`);
+        err.isTransient = true;
+        throw err;
+      }
+      throw e;
+    }
+  }
+
+  // Defensive: shouldn't reach here, but if we do, surface the last error.
+  throw lastErr || new Error('Request failed after retries');
+}
+
 function extractArray(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== 'object') return [];
@@ -12462,49 +12632,71 @@ function renderAdminTabBody() {
 
 /* ----------- Moderators ----------- */
 async function loadModerators(force = false) {
-  if (adminState.modLoading) return;
+  if (adminState.modLoading && !force) return;
   if (adminState.moderators && !force) {
     renderModerators();
     return;
   }
+  // Same force-refresh / abort-in-flight pattern as loadParticipants.
+  // See that function's comments for the full rationale; in short, the
+  // old "if (modLoading) return" guard turned the Refresh button into
+  // a no-op while a slow PA flow was in flight, which is exactly the
+  // "stuck loading" experience the user was hitting.
+  if (force && adminState._modAbortController) {
+    try { adminState._modAbortController.abort(); } catch (_) {}
+  }
+  const abortCtrl = new AbortController();
+  adminState._modAbortController = abortCtrl;
   adminState.modLoading = true;
   adminState.modError = null;
   renderModerators();
   try {
-    const res = await fetch(ADMIN_PA_MODERATORS_URL, { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch (e) { throw new Error('Response was not valid JSON.'); }
+    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
+      method: 'GET',
+      signal: abortCtrl.signal,
+      timeoutMs: 45000,
+      maxAttempts: 3,
+    });
     const arr = extractArray(data);
     adminState.moderators = arr;
   } catch (e) {
+    if (e && e.isCallerAbort) {
+      console.log('[Orbit] Moderators load aborted (force-refresh took over)');
+      return;
+    }
     adminState.modError = e.message || String(e);
-    adminState.moderators = [];
+    // Same safety as loadParticipants: keep last-known-good list when
+    // a retry fails rather than wiping it. Only initial loads where
+    // moderators was null get the empty fallback.
+    if (!adminState.moderators) {
+      adminState.moderators = [];
+    }
   } finally {
-    adminState.modLoading = false;
-    // Re-render the right surface based on where admin is. After my
-    // earlier change that promoted Assignment from a sub-tab to a
-    // top-level tab, this branch was still checking the OLD location
-    // (subtab === 'assignment'). That meant when admin was on the
-    // Assignment tab and mods finished loading, the function would
-    // call renderModerators() — silently NOT updating the Assignment
-    // view, leaving stale data on screen. Two checks now: the new
-    // top-level location and the legacy sub-tab name (in case any
-    // old build still has it cached on the runtime adminState).
-    //
-    // Modal-open guard: same anti-hiccup pattern as elsewhere. If admin
-    // has a booking modal open, defer the page rebuild to avoid a
-    // visible repaint underneath. The data on adminState is already
-    // current; the UI just hasn't been redrawn yet.
-    if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
-      console.log('[Orbit] Moderators load landed during open modal — deferring render');
-      adminState._pendingPostFetchRender = true;
-    } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
-      renderAssignment();
-    } else {
-      renderModerators();
+    if (adminState._modAbortController === abortCtrl) {
+      adminState._modAbortController = null;
+      adminState.modLoading = false;
+      // Re-render the right surface based on where admin is. After my
+      // earlier change that promoted Assignment from a sub-tab to a
+      // top-level tab, this branch was still checking the OLD location
+      // (subtab === 'assignment'). That meant when admin was on the
+      // Assignment tab and mods finished loading, the function would
+      // call renderModerators() — silently NOT updating the Assignment
+      // view, leaving stale data on screen. Two checks now: the new
+      // top-level location and the legacy sub-tab name (in case any
+      // old build still has it cached on the runtime adminState).
+      //
+      // Modal-open guard: same anti-hiccup pattern as elsewhere. If admin
+      // has a booking modal open, defer the page rebuild to avoid a
+      // visible repaint underneath. The data on adminState is already
+      // current; the UI just hasn't been redrawn yet.
+      if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
+        console.log('[Orbit] Moderators load landed during open modal — deferring render');
+        adminState._pendingPostFetchRender = true;
+      } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
+        renderAssignment();
+      } else {
+        renderModerators();
+      }
     }
   }
 }
@@ -12938,22 +13130,38 @@ function modRowHTML(r) {
 
 /* ----------- Participants ----------- */
 async function loadParticipants(force = false) {
-  if (adminState.partLoading) return;
+  // Force refresh semantics: when admin clicks Refresh while a
+  // previous load is in flight, we abort the previous and start a
+  // new one immediately. Without this, the `if (partLoading) return`
+  // guard turned the Refresh button into a no-op whenever a slow
+  // PA flow was already mid-fetch — exactly the "loading is stuck"
+  // experience the user was hitting.
+  if (adminState.partLoading && !force) return;
   if (adminState.participants && !force) {
     renderParticipants();
     return;
   }
+  if (force && adminState._partAbortController) {
+    // Abort the in-flight request. The previous loadParticipants()
+    // will throw with isCallerAbort=true and bail out cleanly without
+    // touching adminState.participants — its finally block also
+    // skips the partLoading=false flip so we don't race with the
+    // new fetch below.
+    try { adminState._partAbortController.abort(); } catch (_) {}
+  }
+  const abortCtrl = new AbortController();
+  adminState._partAbortController = abortCtrl;
   adminState.partLoading = true;
   adminState.partError = null;
   adminState._partPaginationWarning = false;
   renderParticipants();
   try {
-    const res = await fetch(ADMIN_PA_PARTICIPANTS_URL, { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch (e) { throw new Error('Response was not valid JSON.'); }
+    const data = await fetchWithRetry(ADMIN_PA_PARTICIPANTS_URL, {
+      method: 'GET',
+      signal: abortCtrl.signal,
+      timeoutMs: 45000,
+      maxAttempts: 3,
+    });
     const all = extractArray(data);
     // Diagnostic: Power Automate's Excel "List rows present in a table" action
     // returns a max of 256 rows by default. If we get back exactly 256, there's
@@ -13002,37 +13210,57 @@ async function loadParticipants(force = false) {
       } catch (e) {}
     }
   } catch (e) {
-    adminState.partError = e.message || String(e);
-    adminState.participants = [];
-  } finally {
-    adminState.partLoading = false;
-    // Re-render the right tab IF no modal is open. When admin has the
-    // booking modal open (or any other interactive overlay), defer the
-    // re-render until they close it — same anti-hiccup pattern as the
-    // assignment fetcher uses. The data on adminState is already
-    // updated; only the painted UI lags briefly.
-    if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
-      console.log('[Orbit] Participants load landed during open modal — deferring render');
-      adminState._pendingPostFetchRender = true;
-    } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
-      renderAssignment();
-    } else {
-      renderParticipants();
+    // Caller-abort means a force-refresh superseded us. Don't touch
+    // shared state — the new call is responsible for it.
+    if (e && e.isCallerAbort) {
+      console.log('[Orbit] Participants load aborted (force-refresh took over)');
+      return;
     }
-    // If the View Assignment modal is currently open, re-render it so
-    // the now-enriched participantData (with email) lands in the UI
-    // without the admin having to close and re-open the booking.
-    // This covers the timing race where admin clicked a booking before
-    // participants finished loading — the modal showed "No email on
-    // file" stale, and now self-heals. Note: this is a DIFFERENT
-    // re-render path from the page-underneath one above — we're
-    // intentionally re-rendering JUST the modal, which is harmless
-    // (admin is looking at this booking, refreshing its data is
-    // exactly what they want).
-    if (adminState._viewingAsgnId
-        && document.getElementById('asgnModal')
-        && document.getElementById('asgnModal').classList.contains('open')) {
-      try { openViewAssignmentModal(adminState._viewingAsgnId); } catch (_) {}
+    adminState.partError = e.message || String(e);
+    // Don't overwrite a previously-successful participants array with
+    // [] on retry failure — leaves admin with the last-known-good
+    // list rather than wiping it because of a transient hiccup. Only
+    // initial loads (where participants was null) get the empty
+    // fallback so render path picks up the error state.
+    if (!adminState.participants) {
+      adminState.participants = [];
+    }
+  } finally {
+    // Only flip the loading flag if THIS controller is still the
+    // current one. A force-refresh that aborted us already kicked off
+    // a new call that owns _partAbortController now; we shouldn't
+    // touch partLoading or we'd flicker the spinner off prematurely.
+    if (adminState._partAbortController === abortCtrl) {
+      adminState._partAbortController = null;
+      adminState.partLoading = false;
+      // Re-render the right tab IF no modal is open. When admin has the
+      // booking modal open (or any other interactive overlay), defer the
+      // re-render until they close it — same anti-hiccup pattern as the
+      // assignment fetcher uses. The data on adminState is already
+      // updated; only the painted UI lags briefly.
+      if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
+        console.log('[Orbit] Participants load landed during open modal — deferring render');
+        adminState._pendingPostFetchRender = true;
+      } else if (adminState.tab === 'assignment' || adminState.subtab === 'assignment') {
+        renderAssignment();
+      } else {
+        renderParticipants();
+      }
+      // If the View Assignment modal is currently open, re-render it so
+      // the now-enriched participantData (with email) lands in the UI
+      // without the admin having to close and re-open the booking.
+      // This covers the timing race where admin clicked a booking before
+      // participants finished loading — the modal showed "No email on
+      // file" stale, and now self-heals. Note: this is a DIFFERENT
+      // re-render path from the page-underneath one above — we're
+      // intentionally re-rendering JUST the modal, which is harmless
+      // (admin is looking at this booking, refreshing its data is
+      // exactly what they want).
+      if (adminState._viewingAsgnId
+          && document.getElementById('asgnModal')
+          && document.getElementById('asgnModal').classList.contains('open')) {
+        try { openViewAssignmentModal(adminState._viewingAsgnId); } catch (_) {}
+      }
     }
   }
 }
@@ -28566,13 +28794,19 @@ async function doLogin() {
     return;
   }
 
-  // Operator login — must match an orbitLoginId in the Moderators table
+  // Operator login — must match an orbitLoginId in the Moderators table.
+  // Uses the same resilient fetchWithRetry helper as loadModerators so a
+  // transient PA hiccup during login doesn't bounce the user back to
+  // the error state. Login is the most painful spot to hit a slow PA
+  // flow — admin/mod is trying to GET INTO the app, so timeout +
+  // retries matter more than anywhere else.
   setLoginLoading(true);
   try {
-    const res = await fetch(ADMIN_PA_MODERATORS_URL, { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const data = JSON.parse(text);
+    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
+      method: 'GET',
+      timeoutMs: 45000,
+      maxAttempts: 3,
+    });
     const moderators = extractArray(data);
 
     // Find the moderator (case-insensitive match on orbitLoginId)
