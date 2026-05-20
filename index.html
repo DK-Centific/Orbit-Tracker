@@ -9107,7 +9107,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052001';
+const APP_VERSION = '1.2.052002';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -25481,7 +25481,20 @@ function defaultCarouselIdx(assignments) {
 function renderMySessionSection() {
   const el = document.getElementById('mySessionSection');
   if (!el) return;
-  const assignments = getOperatorAssignments();
+  // Filter out terminal-status assignments (Cancelled / Unassigned) from
+  // the sidebar's "Upcoming session" view. Cancelled sessions used to
+  // still appear here (greyed-out with a banner) because the carousel
+  // also serves as a session-history viewer, but the user feedback was
+  // clear: the sidebar should ONLY show real upcoming work the mod
+  // owes. Cancelled sessions stay visible in My Schedule (the weekly
+  // grid view) where the historical context makes sense, and in the
+  // admin's calendar where audit visibility matters.
+  //
+  // Unassigned is filtered for the same reason — if admin removed the
+  // team from a booking, the mod has no commitment to fulfill and the
+  // session shouldn't surface here. Completed stays visible because
+  // it's still useful right after a session ends (handoff context).
+  const assignments = getOperatorAssignments().filter(a => !isTerminalStatus(a.status));
   const team = getOperatorTeam();
   const todayStr = ymd(new Date());
 
@@ -25490,7 +25503,7 @@ function renderMySessionSection() {
       <div class="my-session-section">
         <div class="my-session-eyebrow"><span class="dot"></span> My Session</div>
         <div class="no-assignment-tile">
-          No assignment yet.<br>
+          No sessions scheduled.<br>
           Your admin will schedule you on the calendar.
         </div>
       </div>`;
