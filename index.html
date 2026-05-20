@@ -5065,6 +5065,132 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   .month-cell-week-jump { font-size: 8.5px; padding: 1px 5px; top: 2px; right: 2px; }
   .month-dot { width: 6px; height: 6px; }
 }
+
+/* ---- Month-cell hover popover ---- */
+/* Shows the full list of assignments for a date when admin hovers a
+   cell with bookings. Each row is clickable and opens View Assignment.
+   The popover is a single GLOBAL element (one in the DOM, repositioned
+   per hover target) — cheaper than instantiating a per-cell popover,
+   and avoids any z-index ordering wrinkles with adjacent cells.
+   Hidden by default; show class toggles visibility. */
+.month-day-popover {
+  position: fixed;
+  z-index: 540;  /* above month grid (default 0) but below modal overlay (600) */
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.14s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+.month-day-popover.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
+}
+.month-day-popover-head {
+  padding: 11px 14px 8px;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.month-day-popover-list {
+  display: flex;
+  flex-direction: column;
+}
+.month-day-popover-item {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  text-align: left;
+}
+.month-day-popover-item:last-child { border-bottom: none; }
+.month-day-popover-item:hover { background: var(--bg2); }
+.month-day-popover-item:focus-visible {
+  outline: none;
+  background: var(--bg3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.month-day-popover-item .pop-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+/* Dot colors per status — reuse the existing token names from .month-dot
+   so the popover and the inline cell dots stay visually unified. */
+.month-day-popover-item .pop-dot.status-booked    { background: var(--accent); }
+.month-day-popover-item .pop-dot.status-notified  { background: rgb(20, 184, 166); }
+.month-day-popover-item .pop-dot.status-completed { background: rgb(132, 204, 22); }
+.month-day-popover-item .pop-dot.status-cancelled { background: var(--text3); opacity: 0.5; }
+.month-day-popover-time {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.month-day-popover-team {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 1px;
+  letter-spacing: -0.005em;
+}
+.month-day-popover-participant {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.month-day-popover-participant.is-empty {
+  color: var(--text3);
+  font-style: italic;
+}
+.month-day-popover-status {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  display: inline-block;
+}
+.month-day-popover-item.cancelled .month-day-popover-time,
+.month-day-popover-item.cancelled .month-day-popover-team {
+  text-decoration: line-through;
+  text-decoration-color: var(--text3);
+  color: var(--text2);
+}
+/* Hide on small viewports — on touch/tablet, hover semantics don't apply
+   well and tapping a cell already drills to Day view (richer than this
+   popover). Keeps the codebase simple by not trying to support a
+   touch-tap-shows-popover variant; tap-drills-to-day is the better UX
+   on those devices anyway. */
+@media (max-width: 720px), (hover: none) {
+  .month-day-popover { display: none !important; }
+}
 .cal-list-items {
   display: flex; flex-direction: column; gap: 6px;
 }
@@ -8981,7 +9107,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.051811';
+const APP_VERSION = '1.2.052001';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -13984,7 +14110,7 @@ table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !impo
               Hi <strong style="color:#001528;">{participantName}</strong>,
             </p>
             <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
-              This is a reminder for your Project Orbit session scheduled on <strong style="color:#001528;">{bookedDate}</strong> at <strong style="color:#001528;">{bookedTime}</strong>.
+              This is a reminder for your Project Orbit session scheduled on <strong style="color:#001528;">{bookedDate}</strong>. The moderators will arrive between <strong style="color:#001528;">10:00 – 11:00 AM</strong>.
             </p>
           </td>
         </tr>
@@ -14061,6 +14187,27 @@ table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !impo
             <p style="margin:0 0 14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
               The moderators will come to your home to conduct the session, set up the devices, and guide you through the entire recording process.
             </p>
+
+            <!-- Infographic CTA. Links to a Google Drive-hosted "what to
+                 expect" image so the participant can preview the session
+                 flow visually before the moderators arrive. Styled as a
+                 secondary text link (not a primary button) so it doesn't
+                 compete with the Agreement CTA further down — a small
+                 inline link feels like the right weight for "extra
+                 reading material" content.
+                 We chose Drive's "view" URL (not a direct thumbnail) so
+                 the link works without sign-in for anyone with the
+                 share link AND so the image displays in Drive's viewer,
+                 which is consistently sized across devices. Inlining an
+                 actual <img> tag would be unreliable because email
+                 clients block remote images by default. -->
+            <p style="margin:0 0 14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#3A3A40;">
+              <a href="https://drive.google.com/file/d/1jx4BCe0izWh8mDlKsdkXz-2yuXN9V4qb/view?usp=sharing" target="_blank" rel="noopener" style="color:#0E7A8C; text-decoration:underline; font-weight:600;">
+                See what to expect infographic
+                <span style="display:inline-block; margin-left:4px; vertical-align:-1px;">→</span>
+              </a>
+            </p>
+
             <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; line-height:1.6; color:#3A3A40;">
               During the session, you will be asked to perform simple everyday activities outside your house in the backyard and driveway while mounted cameras record the process.
             </p>
@@ -14314,6 +14461,21 @@ table, td, div, h1, h2, h3, p { font-family: 'Segoe UI', Arial, sans-serif !impo
           </td>
         </tr>
 
+        <!-- Participant arrival / check-in note. Lives directly below the
+             info snapshot so the moderator sees it in the same scroll
+             segment as the details — it cues them on EXACTLY what's
+             expected from them on arrival, and is a friendly reminder
+             to call ahead. The arrival window (10–11 AM) matches the
+             window we tell the participant about in their email so
+             both sides have the same expectation. -->
+        <tr>
+          <td align="left" style="padding:18px 40px 0;">
+            <p style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14.5px; line-height:1.6; color:#3A3A40;">
+              <strong style="color:#001528;">{participantFirstName}</strong> will be expecting your arrival between <strong style="color:#001528;">10:00 – 11:00 AM</strong>. Please make sure to call her before you head over to give a check-in confirmation — this lets her know you're on your way and ensures a smooth arrival.
+            </p>
+          </td>
+        </tr>
+
         <!-- Important callout — equipment + pre-call reminders -->
         <tr>
           <td align="left" style="padding:24px 40px 0;">
@@ -14485,8 +14647,16 @@ function fillModEmailTemplate(template, data) {
   // safe value, and escaping would corrupt the URL.
   const url = data.orbitAppUrl || ORBIT_APP_URL || '#';
   return template
-    .replace(/\{moderatorName\}/g,      safe(data.moderatorName))
-    .replace(/\{participantName\}/g,    safe(data.participantName))
+    .replace(/\{moderatorName\}/g,        safe(data.moderatorName))
+    .replace(/\{participantName\}/g,      safe(data.participantName))
+    // {participantFirstName} powers the arrival/check-in note added
+    // below the details card. We register it as its own token (rather
+    // than reusing {participantName}) so the note reads naturally —
+    // "Jane will be expecting..." not "Jane Doe will be expecting...".
+    // Falls back to "the participant" when no first name is on file,
+    // so the sentence still reads sensibly even on legacy rows that
+    // somehow lack participant data.
+    .replace(/\{participantFirstName\}/g, safe(data.participantFirstName || 'The participant'))
     .replace(/\{bookedDate\}/g,         safe(data.bookedDate))
     .replace(/\{bookedTime\}/g,         safe(data.bookedTime))
     .replace(/\{participantAddress\}/g, safe(data.participantAddress))
@@ -14913,8 +15083,12 @@ async function sendModBookingEmails(assignment) {
     }
 
     const body = fillModEmailTemplate(ORBIT_MOD_EMAIL_TEMPLATE_HTML, {
-      moderatorName:      mi.firstNameForGreeting,
-      participantName:    participantFullName,
+      moderatorName:        mi.firstNameForGreeting,
+      participantName:      participantFullName,
+      // First name only — used by the arrival/check-in note below the
+      // details card. pFirstName is already computed upstream from
+      // participantData.firstName with .trim() applied.
+      participantFirstName: pFirstName,
       bookedDate:         dateLabel,
       bookedTime:         timeLabel,
       participantAddress: address,
@@ -18149,6 +18323,250 @@ function renderCalendarMonthHTML() {
   `;
 }
 
+// =====================================================================
+// MONTH DAY HOVER POPOVER
+// =====================================================================
+// Wires hover behavior to month-view cells: hovering a cell with
+// bookings pops up a list of its assignments, each clickable to open
+// View Assignment for that specific booking.
+//
+// Singleton popover element (one per page) is created lazily on the
+// first call. setup() rewires fresh listeners on each render — the
+// previous month-cell DOM is destroyed and rebuilt each render, so we
+// re-bind. The popover element itself survives across renders so its
+// fade-out transition can finish even if the user navigates away mid-
+// hover.
+// =====================================================================
+function setupMonthDayHoverPopover(body) {
+  let popover = document.getElementById('monthDayHoverPopover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'monthDayHoverPopover';
+    popover.className = 'month-day-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Bookings on this date');
+    document.body.appendChild(popover);
+  }
+
+  // Shared state for the open/close timers. Lives on the function
+  // object so it persists across re-wires (each render calls setup
+  // again, but the state isn't reset — important for keeping a popover
+  // open across re-renders triggered by background polling).
+  if (!setupMonthDayHoverPopover._state) {
+    setupMonthDayHoverPopover._state = {
+      showTimer: null, hideTimer: null,
+      currentCell: null, currentDate: null,
+    };
+  }
+  const state = setupMonthDayHoverPopover._state;
+
+  const SHOW_DELAY = 150;
+  const HIDE_DELAY = 200;
+
+  const clearTimers = () => {
+    if (state.showTimer) { clearTimeout(state.showTimer); state.showTimer = null; }
+    if (state.hideTimer) { clearTimeout(state.hideTimer); state.hideTimer = null; }
+  };
+
+  const hide = () => {
+    clearTimers();
+    popover.classList.remove('open');
+    state.currentCell = null;
+    state.currentDate = null;
+  };
+
+  const scheduleHide = () => {
+    clearTimers();
+    state.hideTimer = setTimeout(() => {
+      popover.classList.remove('open');
+      state.currentCell = null;
+      state.currentDate = null;
+    }, HIDE_DELAY);
+  };
+
+  // Position the popover relative to the hovered cell. Default placement
+  // is "below the cell, aligned to its left edge." Flips to above when
+  // the popover would overflow the viewport bottom, and shifts
+  // horizontally so the right edge clears the viewport. All measured
+  // against the actual rendered popover size (after content is set), so
+  // a 2-row popover and a 12-row popover both place correctly.
+  const position = (cell) => {
+    const cellRect = cell.getBoundingClientRect();
+    // Measure popover dimensions AFTER content is set. We make it
+    // visible-but-invisible for a frame to get the metrics, then
+    // position, then fade in.
+    const popRect = popover.getBoundingClientRect();
+    const popWidth  = popRect.width  || 260;
+    const popHeight = popRect.height || 200;
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    const MARGIN = 8;
+
+    // Default: below the cell, left edge aligned with cell's left edge.
+    let top  = cellRect.bottom + 6;
+    let left = cellRect.left;
+
+    // Flip up if it would overflow the bottom AND there's more room above.
+    const bottomOverflow = top + popHeight + MARGIN - vpH;
+    if (bottomOverflow > 0 && cellRect.top - 6 - popHeight - MARGIN > 0) {
+      top = cellRect.top - 6 - popHeight;
+    }
+
+    // Shift left if it would overflow the right edge.
+    const rightOverflow = left + popWidth + MARGIN - vpW;
+    if (rightOverflow > 0) {
+      left = Math.max(MARGIN, left - rightOverflow);
+    }
+
+    // Clamp to viewport in case nothing else fits — popover stays
+    // entirely visible even if its anchor cell is at the screen edge.
+    top  = Math.max(MARGIN, Math.min(top,  vpH - popHeight - MARGIN));
+    left = Math.max(MARGIN, Math.min(left, vpW - popWidth  - MARGIN));
+
+    popover.style.top  = top  + 'px';
+    popover.style.left = left + 'px';
+  };
+
+  // Build the popover's inner HTML from the cell's date. Pulls the
+  // current assignments list from adminState directly — guarantees the
+  // popover shows the latest data even if a background fetch has
+  // updated the list since the last render.
+  const render = (date) => {
+    const list = (adminState.assignments || [])
+      .filter(a => a && a.date === date && a.status !== 'Unassigned')
+      .sort((a, b) => (a.startMin || 0) - (b.startMin || 0));
+    if (list.length === 0) {
+      popover.innerHTML = '';
+      return false;
+    }
+    const dateObj = parseYMD(date);
+    const dateLabel = dateObj
+      ? dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+      : date;
+
+    const rows = list.map(a => {
+      const team = adminState.teams.find(t => t.id === a.teamId);
+      const teamName = team ? team.name : (a.teamName || 'Unknown team');
+      const partName = a.participantData
+        ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ').trim()
+        : '';
+      const statusKey = a.status === 'Cancelled' ? 'cancelled'
+                      : a.status === 'Completed' ? 'completed'
+                      : a.status === 'Notified'  ? 'notified'
+                      : 'booked';
+      const timeLabel = (typeof fmtTimeOfDay === 'function')
+        ? `${fmtTimeOfDay(a.startMin)} – ${fmtTimeOfDay(a.endMin)}`
+        : `${(a.startMin/60|0)}:${String(a.startMin%60).padStart(2,'0')}`;
+      // Each row is a <button> so it's keyboard-focusable and screen
+      // readers announce it as actionable. The data-asgn-id attribute
+      // is what the click handler reads to open the right modal.
+      return `
+        <button type="button" class="month-day-popover-item ${statusKey === 'cancelled' ? 'cancelled' : ''}" data-asgn-id="${escapeHTML(a.id)}">
+          <span class="pop-dot status-${statusKey}"></span>
+          <span>
+            <span class="month-day-popover-time">${escapeHTML(timeLabel)}</span>
+            <span class="month-day-popover-team">${escapeHTML(teamName)}</span>
+            <span class="month-day-popover-participant ${partName ? '' : 'is-empty'}">${escapeHTML(partName || 'No participant assigned')}</span>
+            <span class="month-day-popover-status" style="color: var(--${
+              statusKey === 'booked'    ? 'accent-ink' :
+              statusKey === 'notified'  ? 'text2' :
+              statusKey === 'completed' ? 'text2' :
+                                          'text3'
+            });">${escapeHTML(a.status || 'Booked')}</span>
+          </span>
+        </button>
+      `;
+    }).join('');
+
+    popover.innerHTML = `
+      <div class="month-day-popover-head">${escapeHTML(dateLabel)} · ${list.length} booking${list.length === 1 ? '' : 's'}</div>
+      <div class="month-day-popover-list">${rows}</div>
+    `;
+
+    // Wire click handlers on the freshly rendered items. Click opens
+    // the View Assignment modal for that booking — same entry point as
+    // any other UI surface that drills into details.
+    popover.querySelectorAll('.month-day-popover-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const asgnId = item.dataset.asgnId;
+        if (!asgnId) return;
+        // Hide the popover BEFORE opening the modal so it doesn't
+        // visually compete with the modal overlay.
+        hide();
+        if (typeof openViewAssignmentModal === 'function') {
+          openViewAssignmentModal(asgnId);
+        }
+      });
+    });
+    return true;
+  };
+
+  // Wire hover on every cell with bookings. (Cells without bookings
+  // don't get a popover — there'd be nothing to show, and the existing
+  // "click empty cell → new assignment modal" flow is the right action
+  // there.) Hover-over fires showTimer; hover-out fires hideTimer with
+  // a delay so admin can move into the popover to click an item.
+  body.querySelectorAll('.month-cell.has-bookings').forEach(cell => {
+    cell.addEventListener('mouseenter', () => {
+      const date = cell.dataset.date;
+      if (!date) return;
+      clearTimers();
+      // If already showing for THIS cell, no-op (covers fast mouse
+      // movements that retrigger mouseenter).
+      if (state.currentCell === cell && popover.classList.contains('open')) return;
+      state.showTimer = setTimeout(() => {
+        const ok = render(date);
+        if (!ok) return;
+        state.currentCell = cell;
+        state.currentDate = date;
+        // Two-step show: first set position with the current dimensions
+        // (might be stale from previous open), then open class triggers
+        // the fade-in. We re-position on the next animation frame using
+        // the freshly-measured popover size, which gives accurate flip-
+        // logic for the second and subsequent opens.
+        position(cell);
+        popover.classList.add('open');
+        requestAnimationFrame(() => position(cell));
+      }, SHOW_DELAY);
+    });
+    cell.addEventListener('mouseleave', scheduleHide);
+  });
+
+  // Keep popover open when admin's cursor enters it, hide when they
+  // leave. This is the "bridging" behavior that lets admin move from
+  // cell into popover to click an item without it disappearing.
+  popover.addEventListener('mouseenter', clearTimers);
+  popover.addEventListener('mouseleave', scheduleHide);
+
+  // Hide on Escape — small accessibility nicety, also helps when admin
+  // is in the modal that the popover spawned and wants to dismiss
+  // anything lingering in the background. Bound once globally (re-bind
+  // on each setup() call is fine because addEventListener dedupes
+  // identical anonymous bindings... actually it doesn't, but the
+  // function reference IS the same since it's defined inside this
+  // closure; addEventListener does dedupe identical listener refs).
+  if (!setupMonthDayHoverPopover._escBound) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && popover.classList.contains('open')) {
+        hide();
+      }
+    });
+    setupMonthDayHoverPopover._escBound = true;
+  }
+
+  // Hide on scroll — the popover is fixed-positioned, so it'd
+  // "float" stationary while the grid scrolls under it. Hiding on
+  // scroll is the simpler answer than reposition-on-scroll (which
+  // would need throttling and edge-case handling).
+  if (!setupMonthDayHoverPopover._scrollBound) {
+    window.addEventListener('scroll', () => {
+      if (popover.classList.contains('open')) hide();
+    }, { passive: true });
+    setupMonthDayHoverPopover._scrollBound = true;
+  }
+}
+
 // LIST VIEW — flat list of all assignments grouped by date
 function renderCalendarListHTML() {
   const sorted = [...adminState.assignments].sort((a, b) => {
@@ -18808,6 +19226,26 @@ function bindAssignmentEvents() {
       }
     });
   });
+
+  // ---- Month-cell hover popover ----
+  // Shows the full list of assignments for a date when admin hovers a
+  // cell with bookings. Clicking a row in the popover opens View
+  // Assignment for that specific booking.
+  //
+  // Implementation details worth flagging:
+  //   - One GLOBAL popover element, reused across all cells. Created
+  //     lazily on first hover, then repositioned per target. Cheaper
+  //     than per-cell popovers and avoids z-index ordering issues.
+  //   - Show delay 150ms, hide delay 200ms — kills flicker when the
+  //     mouse passes across the grid without lingering.
+  //   - Bridging hover from cell → popover keeps it open. Same for
+  //     popover → cell.
+  //   - Positioning is "below + right-aligned to cell" by default;
+  //     flips to above or left when it would overflow the viewport.
+  //   - Only resolves the booking list at hover time (not at render
+  //     time) so adminState.assignments stays the single source of
+  //     truth and the popover always shows current data.
+  setupMonthDayHoverPopover(body);
 
   // Export
   const exportBtn = document.getElementById('exportAsgnBtn');
