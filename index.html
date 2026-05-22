@@ -866,9 +866,19 @@ a.icon-btn:focus-visible {
 }
 
 /* Camera confirmation grid */
+/* Physical-layout grid: 3 columns (Left / Center / Right) × 2 rows
+   (Top / Low). Each camera item is explicitly positioned by its 2-
+   letter code (TL, TC, TR, LL, LC, LR) via inline grid-row/grid-column
+   styles set in the render code. This makes the grid visually mirror
+   the actual camera arrangement on the rig — admin/mod can see at a
+   glance which physical slot they're confirming.
+   Empty cells (where the rig has no camera in a given slot) remain
+   visually empty rather than collapsing — preserves the spatial cues
+   that map to the real rig layout. */
 .camera-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto auto;
   gap: 10px;
 }
 .camera-item {
@@ -2026,7 +2036,10 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
     width: calc(100% - 32px); text-align: center;
   }
   .content { padding: 22px 22px 56px; }
-  .camera-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Camera grid stays 3-column at this breakpoint — its job is to
+     mirror the physical rig layout (Left/Center/Right × Top/Low), so
+     collapsing to 2 columns would lose the spatial mapping that's
+     the whole point of the new layout. */
 }
 
 @media (max-width: 760px) {
@@ -2126,7 +2139,9 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 
 @media (max-width: 480px) {
   .welcome-title { font-size: 24px; }
-  .camera-grid { grid-template-columns: 1fr 1fr; }
+  /* .camera-grid intentionally NOT collapsed here — it must stay
+     3-column at all viewport sizes so the physical Left/Center/Right
+     positions remain readable. The items shrink to fit instead. */
   .login-card { padding: 32px 24px; }
   .actions-bar .right .btn { flex: 1; justify-content: center; }
 }
@@ -9406,14 +9421,48 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052103';
-const RIGS = ['Rig01', 'Rig02'];
-const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
-  acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
-  return acc;
-}, {});
+const APP_VERSION = '1.2.052202';
+// Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
+// has 3. Camera ID convention is `${rig}_<position>` where position is
+// a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
+// letter = L(eft) / C(enter) / R(ight) for horizontal column.
+//
+// Rig A (5 cams): TL, TC, TR across the top row; LL, LR on the bottom
+// (no LC — the bottom-center slot is unused for Rig A).
+// Rig B (3 cams): TL, TR across the top; LC alone on the bottom.
+//
+// The rig name has a literal SPACE in it ("Rig A" not "RigA") per the
+// user's spec — this carries through to the camera IDs as e.g.
+// "Rig A_TL". String IDs handle the space fine; just be aware when
+// inspecting Excel exports or PA payloads.
+const RIGS = ['Rig A', 'Rig B'];
+const RIG_CAMERAS = {
+  'Rig A': ['Rig A_TL', 'Rig A_TC', 'Rig A_TR', 'Rig A_LL', 'Rig A_LR'],
+  'Rig B': ['Rig B_TL', 'Rig B_TR', 'Rig B_LC'],
+};
 // Flat list of all camera IDs (used for state init, completion checks, exports)
 const CAMERAS = RIGS.flatMap(r => RIG_CAMERAS[r]);
+
+// Migration table for sessions started under the previous camera layout.
+// Old IDs (Rig01_TR, Rig02_LL, etc.) get mapped to their nearest new
+// equivalent so in-progress confirmations survive the version transition.
+// Rig01 → Rig A, Rig02 → Rig B. Cameras in the new layout that have no
+// old equivalent (Rig A_TC, Rig B_LC) default to false and must be
+// re-confirmed — that's intentional, they're new physical cameras and
+// should be deliberately verified rather than auto-checked.
+// Cameras that exist in the OLD layout but NOT the new (Rig02_LL,
+// Rig02_LR) are dropped: there's no slot to migrate them into and
+// leaving them in state harmlessly doesn't help anyone.
+const LEGACY_CAMERA_MIGRATION = {
+  'Rig01_TL': 'Rig A_TL',
+  'Rig01_TR': 'Rig A_TR',
+  'Rig01_LL': 'Rig A_LL',
+  'Rig01_LR': 'Rig A_LR',
+  'Rig02_TL': 'Rig B_TL',
+  'Rig02_TR': 'Rig B_TR',
+  // Rig01_TC, Rig01_LC, Rig01_LR were never in the old layout —
+  // no migration needed. Rig02_LL, Rig02_LR are dropped per above.
+};
 
 const EQUIPMENT_LIST = [
   { id: 'tripod',         name: 'Tripod / mounting rig(s)',  qty: '2',  desc: 'The stands that hold all devices.' },
@@ -9763,6 +9812,33 @@ function migrateState(loaded) {
     if (!sd.cameras || typeof sd.cameras !== 'object') sd.cameras = {};
     if (!sd.scenarios || typeof sd.scenarios !== 'object') sd.scenarios = {};
     if (st.requiresCameras) {
+      // ---- One-shot migration from the legacy camera layout ----
+      // Sessions saved under the previous build had keys like
+      // "Rig01_TR" / "Rig02_LL". The new layout uses "Rig A_*" / "Rig B_*"
+      // and is asymmetric (Rig A has 5 cams, Rig B has 3). Walk the
+      // migration table once: for each LEGACY key in current state with
+      // value true, set the corresponding NEW key true. Then delete the
+      // legacy keys — they no longer have a UI to interact with them,
+      // so leaving them would just bloat localStorage and SessionState
+      // payloads.
+      // Migration is idempotent: running it again finds no legacy keys
+      // and does nothing, so loadState() is safe to call repeatedly
+      // (which it is — every visibility change, every sync merge, etc.).
+      for (const oldKey of Object.keys(LEGACY_CAMERA_MIGRATION)) {
+        if (Object.prototype.hasOwnProperty.call(sd.cameras, oldKey)) {
+          const newKey = LEGACY_CAMERA_MIGRATION[oldKey];
+          // If the OLD key was confirmed, carry it to the NEW key, but
+          // don't OVERWRITE a new key that's already confirmed (rare:
+          // mod might have already used a build with the new layout
+          // and confirmed cameras, then a sync brought back state from
+          // a teammate still on the old build — in that case the new
+          // confirmations are the more current truth).
+          if (sd.cameras[oldKey] === true && sd.cameras[newKey] !== true) {
+            sd.cameras[newKey] = true;
+          }
+          delete sd.cameras[oldKey];
+        }
+      }
       CAMERAS.forEach(c => {
         if (typeof sd.cameras[c] !== 'boolean') sd.cameras[c] = false;
       });
@@ -10505,8 +10581,12 @@ function renderStation(key) {
           <div class="rig-group ${rs.done ? 'done' : ''}">
             <div class="rig-group-head">
               <div class="rig-group-title">
+                <!-- Single badge — the new rig names ("Rig A", "Rig B")
+                     are already human-readable, so the old dual badge +
+                     stripped-prefix label is redundant. The .rig-badge
+                     CSS gives the pill look; the badge itself carries
+                     the full name. -->
                 <span class="rig-badge">${rs.rig}</span>
-                <span class="rig-group-name">Rig ${rs.rig.replace(/^Rig0?/, '')}</span>
               </div>
               <span class="rig-group-count ${rs.done ? 'done' : ''}">
                 ${rs.done
@@ -10516,16 +10596,34 @@ function renderStation(key) {
               </span>
             </div>
             <div class="camera-grid">
-              ${rs.cameras.map(cam => `
-                <div class="camera-item ${data.cameras[cam] ? 'checked' : ''}" data-cam="${cam}">
-                  <div class="camera-checkbox">
-                    <svg width="12" height="10" viewBox="0 0 13 10" fill="none">
-                      <path d="M1.5 5L5 8.5L11.5 1.5" stroke="#001114" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+              ${rs.cameras.map(cam => {
+                // Extract the 2-letter position code from the end of
+                // the camera ID. IDs look like "Rig A_TC" / "Rig B_LR";
+                // splitting on the LAST underscore is safest because
+                // the rig name itself contains a space (not an
+                // underscore) so the trailing fragment is the code.
+                // Defensive: if the format ever changes and we can't
+                // extract a valid code, fall back to auto-flow.
+                const pos = String(cam).split('_').pop();
+                const row = pos && pos[0] === 'T' ? 1 : pos && pos[0] === 'L' ? 2 : 'auto';
+                const col = pos && pos[1] === 'L' ? 1
+                          : pos && pos[1] === 'C' ? 2
+                          : pos && pos[1] === 'R' ? 3
+                          : 'auto';
+                const gridStyle = (row !== 'auto' && col !== 'auto')
+                  ? `style="grid-row: ${row}; grid-column: ${col};"`
+                  : '';
+                return `
+                  <div class="camera-item ${data.cameras[cam] ? 'checked' : ''}" data-cam="${cam}" ${gridStyle}>
+                    <div class="camera-checkbox">
+                      <svg width="12" height="10" viewBox="0 0 13 10" fill="none">
+                        <path d="M1.5 5L5 8.5L11.5 1.5" stroke="#001114" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <div class="camera-label">${cam}</div>
                   </div>
-                  <div class="camera-label">${cam}</div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
         `).join('')}
@@ -25495,15 +25593,38 @@ async function flushSessionStateSync() {
       appVersion:     APP_VERSION,
     };
 
-    const res = await fetch(SESSIONSTATE_PA_WRITE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      console.warn('[Orbit] SessionState write failed:', res.status);
+    // Use the resilient fetch helper (same one that loads participants /
+    // moderators). Critical here because SessionState writes happen
+    // every 5s during active sessions — bare fetch() was silently
+    // dropping rows on transient 429/5xx, which was THE root cause of
+    // "mis-sync when team is in session": teammate writes never landed,
+    // the partner's view stayed stuck on old progress.
+    // Shorter timeout (20s vs 45s default) so a stalled write doesn't
+    // hold up the next debounced flush. maxAttempts: 2 keeps total wait
+    // bounded — at 5s debounce, we can afford one retry but not many.
+    if (typeof fetchWithRetry === 'function') {
+      await fetchWithRetry(SESSIONSTATE_PA_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        timeoutMs: 20000,
+        maxAttempts: 2,
+      });
+    } else {
+      // Legacy fallback for older builds without fetchWithRetry.
+      const res = await fetch(SESSIONSTATE_PA_WRITE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        console.warn('[Orbit] SessionState write failed:', res.status);
+      }
     }
   } catch (e) {
+    // Don't surface errors to the user — SessionState sync is
+    // best-effort; localStorage is the authoritative local copy and
+    // the next debounce cycle will retry. Log for debugging.
     console.warn('[Orbit] SessionState write error:', e && e.message);
   } finally {
     _sessionStateSyncState.inflight = false;
@@ -25523,13 +25644,30 @@ async function flushSessionStateSync() {
 async function fetchSessionStateRows() {
   if (!SESSIONSTATE_PA_READ_URL) return null;
   try {
-    const res = await fetch(SESSIONSTATE_PA_READ_URL, { method: 'GET' });
-    if (!res.ok) {
-      console.warn('[Orbit] SessionState read failed:', res.status);
-      return null;
+    // Same resilient fetch as the write path. Read failures used to
+    // silently return null and the polling loop would skip a beat —
+    // teammate progress would appear "stuck" for one or more poll
+    // cycles depending on how many transient 5xx PA returned.
+    // 30s timeout: longer than the write path because reads can take
+    // longer (whole table fetch) but bounded enough that a stalled
+    // read doesn't block subsequent polls.
+    let parsed;
+    if (typeof fetchWithRetry === 'function') {
+      parsed = await fetchWithRetry(SESSIONSTATE_PA_READ_URL, {
+        method: 'GET',
+        timeoutMs: 30000,
+        maxAttempts: 3,
+      });
+    } else {
+      // Legacy fallback for older builds without fetchWithRetry.
+      const res = await fetch(SESSIONSTATE_PA_READ_URL, { method: 'GET' });
+      if (!res.ok) {
+        console.warn('[Orbit] SessionState read failed:', res.status);
+        return null;
+      }
+      const text = await res.text();
+      parsed = JSON.parse(text);
     }
-    const text = await res.text();
-    const parsed = JSON.parse(text);
     // The read flow's Response action returns `value` directly — should
     // be an array. Some PA configurations wrap it in {value: [...]}, so
     // tolerate both shapes for robustness.
@@ -26084,28 +26222,105 @@ function stopWorklogPolling() {
 // User remains in control of when to merge teammate's state. This is
 // critical: silent auto-merge during active editing would clobber the
 // operator's in-progress work.
+// Adaptive polling. The default 45s was tuned for the "did a teammate
+// start without me" case, but the user-reported "mis-sync when team is
+// in session" symptom comes from the opposite case: BOTH teammates
+// are active and admin made a booking change, and the mod's view
+// lags 45s+ before reflecting it.
+//
+// Two-speed cadence:
+//   - ACTIVE  (15s): there's an active assignment AND something has
+//     progress (any station has scenario activity, any equipment is
+//     checked, or participant info is filled). Tighter cadence so
+//     teammate and admin changes reflect quickly.
+//   - IDLE    (45s): no active assignment OR nothing's been touched
+//     yet. The original 45s is fine here — there's no in-progress
+//     work to keep in sync.
+//
+// The cadence is recomputed each tick. If activity starts mid-session
+// the next interval shortens automatically; if the session completes
+// (sessionCompletedAt set) the interval relaxes back to 45s.
+const SESSION_POLL_ACTIVE_MS = 15000;
+const SESSION_POLL_IDLE_MS   = 45000;
+
+function _hasActiveSessionWork() {
+  if (!state) return false;
+  // Completed sessions don't count — work is done, no reason to poll fast.
+  if (state.sessionCompletedAt && state.sessionDate === getPSTDateString()) return false;
+  if (state.participantId && String(state.participantId).trim()) return true;
+  if (state.equipment) {
+    for (const k of Object.keys(state.equipment)) {
+      if (state.equipment[k]) return true;
+    }
+  }
+  if (state.stations) {
+    for (const stKey of Object.keys(state.stations)) {
+      const st = state.stations[stKey] || {};
+      const cams = st.cameras || {};
+      for (const c of Object.keys(cams)) if (cams[c]) return true;
+      const sc = st.scenarios || {};
+      for (const num of Object.keys(sc)) {
+        const row = sc[num];
+        if (!row) continue;
+        if (row.status && row.status !== 'Not Started') return true;
+        if ((row.iterations || 0) > 0) return true;
+        if (row.notes && String(row.notes).trim().length > 0) return true;
+      }
+    }
+  }
+  return false;
+}
+
 let _sessionStatePollInterval = null;
 function startSessionStatePolling() {
   if (_sessionStatePollInterval) return;
   if (!SESSIONSTATE_PA_READ_URL) return;
-  // Don't immediately re-check — the post-login check has already
-  // run. First scheduled poll fires 45s in.
-  _sessionStatePollInterval = setInterval(() => {
+  // Use a recursive setTimeout (not setInterval) so the cadence can
+  // adapt to current activity level on every tick without having to
+  // tear down + rebuild the interval.
+  const scheduleNext = () => {
+    const ms = _hasActiveSessionWork() ? SESSION_POLL_ACTIVE_MS : SESSION_POLL_IDLE_MS;
+    _sessionStatePollInterval = setTimeout(tick, ms);
+  };
+  const tick = () => {
+    _sessionStatePollInterval = null;
     // Only check if the operator app is visible AND there's no banner
     // already showing (don't stack prompts).
     const app = document.getElementById('app');
-    if (!app || app.style.display === 'none') return;
-    if (document.getElementById('teammateSyncOverlay')) return;
+    if (!app || app.style.display === 'none') {
+      scheduleNext();
+      return;
+    }
+    if (document.getElementById('teammateSyncOverlay')) {
+      scheduleNext();
+      return;
+    }
     // Skip if the login welcome modal is showing — don't stack prompts.
     // The welcome modal is the higher-priority message (session state
     // for THIS user), teammate sync is secondary.
-    if (document.getElementById('loginWelcomeOverlay')) return;
-    checkAndOfferTeammateSync().catch(() => { /* silent */ });
-  }, 45000);
+    if (document.getElementById('loginWelcomeOverlay')) {
+      scheduleNext();
+      return;
+    }
+    // Also pull assignment changes — admin may have edited the booking
+    // since we last checked. Without this, an admin-side change (e.g.
+    // participant update, time change, cancellation) wouldn't reach
+    // the active mod for up to 3 minutes (the old MOD_ASGN_REFRESH
+    // interval). Piggybacking the assignment refresh on the
+    // SessionState poll means admin changes land within the active-
+    // poll window (~15s) instead. Best-effort — silent failure.
+    if (typeof refreshModAssignments === 'function' && _hasActiveSessionWork()) {
+      refreshModAssignments({ silent: true }).catch(() => { /* silent */ });
+    }
+    checkAndOfferTeammateSync()
+      .catch(() => { /* silent */ })
+      .finally(scheduleNext);
+  };
+  scheduleNext();
 }
 function stopSessionStatePolling() {
   if (_sessionStatePollInterval) {
-    clearInterval(_sessionStatePollInterval);
+    clearTimeout(_sessionStatePollInterval);
     _sessionStatePollInterval = null;
   }
 }
