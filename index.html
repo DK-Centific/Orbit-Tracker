@@ -4194,7 +4194,11 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+  /* margin-left: auto removed — the legend toggle button (added later)
+     now owns the auto-margin and pushes both itself and the legend
+     contents to the right of the summary text. Keeping margin-left:auto
+     here would create two competing auto-margin children, which only
+     applies to the first one and leaves the legend flush against it. */
 }
 .cal-avail-legend-item {
   display: inline-flex;
@@ -4213,6 +4217,61 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .cal-avail-legend-swatch.avail-all   { background: rgba(34, 197, 94, 0.7); }
 .cal-avail-legend-swatch.avail-some  { background: rgba(251, 191, 36, 0.8); }
 .cal-avail-legend-swatch.avail-none  { background: rgba(239, 68, 68, 0.7); }
+
+/* ---- Cal-summary-bar legend collapse toggle ---- */
+/* Small chevron button next to the summary line lets admin hide the
+   availability legend + team chips. The region is wrapped in
+   #calLegendRegion which toggles between flex (default) and hidden.
+   When collapsed, the chevron rotates 180° to point up — same
+   universal expand/collapse affordance.
+   margin-left: auto on the toggle pushes it to the right of the
+   summary line. The legend region wraps to a new row on narrow
+   viewports thanks to flex-wrap on cal-summary-bar. */
+.cal-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.cal-legend-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg2);
+}
+.cal-legend-toggle:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.cal-legend-toggle-chev {
+  transition: transform 0.18s ease;
+}
+/* Default = expanded; chevron points down (the default SVG path).
+   Collapsed = chevron rotated 180° to point UP, signaling "click to
+   expand". The selector uses aria-expanded so it follows accessibility
+   state, not a CSS-class-only signal — keeps everything in sync. */
+.cal-legend-toggle[aria-expanded="false"] .cal-legend-toggle-chev {
+  transform: rotate(180deg);
+}
+.cal-legend-region {
+  display: contents;  /* lets children flow as direct cal-summary-bar children for layout */
+}
+.cal-legend-region.collapsed {
+  display: none;
+}
+
 .cal-grid-scroll {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
@@ -4784,6 +4843,170 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .cal-list-date.today {
   color: var(--accent-ink);
 }
+/* ---- Calendar drill modal ---- */
+/* Pops up when admin clicks a stat tile or team chip — shows a
+   filtered list of assignments matching that scope (e.g. "all
+   Booked this week" or "Team Alpha's bookings today"). Clicking
+   any item opens the existing View Assignment modal.
+   Visually borrows the popover row styling so the list reads
+   consistently with the month-hover popover. Layered above the
+   calendar via the .cal-drill-modal class which is in the
+   isAnyAsgnModalOpen() selector list so background polling defers. */
+.cal-drill-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  z-index: 590;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.cal-drill-overlay.open { opacity: 1; pointer-events: all; }
+.cal-drill-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.98);
+  z-index: 600;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+  width: min(94vw, 540px);
+  max-height: 78vh;
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.22s ease;
+  overflow: hidden;
+}
+.cal-drill-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+.cal-drill-modal-head {
+  padding: 18px 22px 14px;
+  border-bottom: 0.5px solid var(--border);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  flex-shrink: 0;
+}
+.cal-drill-modal-title {
+  font-size: 16px; font-weight: 600; letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0;
+}
+.cal-drill-modal-sub {
+  font-size: 12.5px; color: var(--text2);
+  margin-top: 4px; letter-spacing: -0.005em;
+}
+.cal-drill-modal-close {
+  width: 28px; height: 28px;
+  border: none; background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 22px; line-height: 1;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.cal-drill-modal-close:hover { background: var(--bg2); color: var(--text); }
+.cal-drill-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cal-drill-modal-empty {
+  padding: 32px 24px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text3);
+  font-style: italic;
+}
+.cal-drill-item {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 22px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  width: 100%;
+  border-left: none; border-right: none; border-top: none;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+.cal-drill-item:last-child { border-bottom: none; }
+.cal-drill-item:hover { background: var(--bg2); }
+.cal-drill-item:focus-visible {
+  outline: none;
+  background: var(--bg3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cal-drill-item-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.cal-drill-item-dot.status-booked    { background: rgb(59, 130, 246); }
+.cal-drill-item-dot.status-notified  { background: rgb(20, 184, 166); }
+.cal-drill-item-dot.status-completed { background: rgb(168, 85, 247); }
+.cal-drill-item-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
+.cal-drill-item-main { min-width: 0; }
+.cal-drill-item-top {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+.cal-drill-item-date {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.cal-drill-item-time {
+  color: var(--text2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-drill-item-detail {
+  font-size: 12.5px;
+  color: var(--text2);
+  margin-top: 3px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+}
+.cal-drill-item-detail strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.cal-drill-item-status {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  color: var(--text2);
+}
+.cal-drill-item-status.status-booked    { background: rgba(59, 130, 246, 0.14);  color: rgb(96, 165, 250); }
+.cal-drill-item-status.status-notified  { background: rgba(20, 184, 166, 0.14);  color: rgb(45, 212, 191); }
+.cal-drill-item-status.status-completed { background: rgba(168, 85, 247, 0.14);  color: rgb(192, 132, 252); }
+.cal-drill-item-status.status-cancelled { background: rgba(239, 68, 68, 0.10);   color: rgb(248, 113, 113); }
+.cal-drill-item.cancelled .cal-drill-item-date,
+.cal-drill-item.cancelled .cal-drill-item-time {
+  text-decoration: line-through;
+  text-decoration-color: var(--text3);
+  color: var(--text2);
+}
+@media (max-width: 600px) {
+  .cal-drill-modal { max-height: 86vh; }
+  .cal-drill-modal-head { padding: 14px 16px 10px; }
+  .cal-drill-item { padding: 11px 16px; }
+}
+
 /* ============================================================
    CALENDAR — STAT TILES
    ============================================================
@@ -4811,6 +5034,60 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   gap: 2px;
   position: relative;
   overflow: hidden;
+}
+/* Clickable variant — applies when the tile has a data-drill attribute
+   (set in the markup when there are matching assignments to drill into).
+   Hover lifts the tile slightly and brightens the background; focus
+   gives a visible ring for keyboard nav. Tiles with no matching
+   assignments stay as static info — no cursor, no hover, no focus
+   ring — so admin doesn't try to click an empty count and get a
+   pointless empty list. */
+.cal-stat-tile[data-drill] {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  /* Remove default button styling — tiles render as <button> for a11y
+     but should look identical to the static div version. */
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+}
+.cal-stat-tile[data-drill]:hover {
+  background: var(--bg2);
+  border-color: var(--text3);
+  transform: translateY(-1px);
+}
+.cal-stat-tile[data-drill]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.cal-stat-tile[data-drill]:active { transform: translateY(0); }
+
+/* Clickable team chips in the cal-summary-bar legend. Same affordance
+   model — chips with bookings in scope get a hover/active look; chips
+   for teams with no bookings in the current view stay decorative. */
+.cal-team-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 0.5px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.cal-team-chip[data-drill] {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+}
+.cal-team-chip[data-drill]:hover {
+  background: var(--bg2);
+  border-color: var(--border-strong);
+}
+.cal-team-chip[data-drill]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
 }
 .cal-stat-tile::before {
   /* Soft accent strip along the left edge — color-codes the tile so
@@ -5027,7 +5304,7 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   flex-shrink: 0;
 }
 .month-dot.status-booked    { background: rgb(59, 130, 246); }     /* blue */
-.month-dot.status-notified  { background: rgb(34, 197, 94); }      /* green */
+.month-dot.status-notified  { background: rgb(20, 184, 166); }     /* teal — matches the Notified stat-tile + popover dot */
 .month-dot.status-completed { background: rgb(168, 85, 247); }     /* purple */
 .month-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
 .month-dot-more {
@@ -5119,10 +5396,24 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   gap: 10px;
   align-items: start;
   padding: 10px 14px;
-  border-bottom: 0.5px solid var(--border);
   cursor: pointer;
   transition: background 0.12s ease;
   text-align: left;
+  /* Reset the native <button> styling so each row inherits the popover's
+     theme. Without these resets the browser applies its default button
+     chrome — light grey background, dark text — which on dark theme
+     produced washed-out near-white rows with unreadable text. Mirrors
+     the same reset .cal-drill-item already had; the popover items were
+     missed when the popover was originally built.
+     Important: `border: none` is set FIRST, then the bottom separator
+     is re-applied — without that order, the bottom border would still
+     be in scope from the original rule and pollute the reset path. */
+  background: transparent;
+  border: none;
+  border-bottom: 0.5px solid var(--border);
+  color: inherit;
+  font: inherit;
+  width: 100%;
 }
 .month-day-popover-item:last-child { border-bottom: none; }
 .month-day-popover-item:hover { background: var(--bg2); }
@@ -5137,12 +5428,20 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   margin-top: 4px;
   flex-shrink: 0;
 }
-/* Dot colors per status — reuse the existing token names from .month-dot
-   so the popover and the inline cell dots stay visually unified. */
-.month-day-popover-item .pop-dot.status-booked    { background: var(--accent); }
+/* Dot colors per status — UNIFIED with the canonical calendar palette
+   used by cal-stat-tile strips (blue / teal / purple / red) and by the
+   month-cell dots, so the SAME status reads as the SAME color anywhere
+   it appears in the calendar. Previously these three surfaces had three
+   different colorways for the same statuses, causing admin confusion
+   ("is this Notified or Completed?"). Now all three agree:
+     Booked     → blue   rgb(59, 130, 246)
+     Notified   → teal   rgb(20, 184, 166)
+     Completed  → purple rgb(168, 85, 247)
+     Cancelled  → muted red rgba(239, 68, 68, 0.55) */
+.month-day-popover-item .pop-dot.status-booked    { background: rgb(59, 130, 246); }
 .month-day-popover-item .pop-dot.status-notified  { background: rgb(20, 184, 166); }
-.month-day-popover-item .pop-dot.status-completed { background: rgb(132, 204, 22); }
-.month-day-popover-item .pop-dot.status-cancelled { background: var(--text3); opacity: 0.5; }
+.month-day-popover-item .pop-dot.status-completed { background: rgb(168, 85, 247); }
+.month-day-popover-item .pop-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
 .month-day-popover-time {
   font-size: 12.5px;
   font-weight: 600;
@@ -9107,7 +9406,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052004';
+const APP_VERSION = '1.2.052103';
 const RIGS = ['Rig01', 'Rig02'];
 const RIG_CAMERAS = RIGS.reduce((acc, rig) => {
   acc[rig] = [`${rig}_TR`, `${rig}_TL`, `${rig}_LR`, `${rig}_LL`];
@@ -11309,6 +11608,15 @@ const adminState = {
   // Availability hub state
   availability: null,        // loaded array of submission rows, or null = not loaded
   _availWeekStart: null,     // YYYY-MM-DD Monday — focused week in the hub
+  // Cal-summary-bar legend collapsed state. Hydrated from localStorage
+  // so admin's preference (hide the legend region for a less cluttered
+  // calendar) survives reloads. Stored as a plain '1' string token
+  // for consistency with other UI prefs; absence of the key means
+  // expanded.
+  _calLegendCollapsed: (() => {
+    try { return localStorage.getItem('orbit_cal_legend_collapsed') === '1'; }
+    catch (_) { return false; }
+  })(),
 };
 
 // Field-name resolver: tolerates camelCase, PascalCase, snake_case,
@@ -11903,26 +12211,52 @@ function computeOverviewMetrics() {
     }
   }
 
-  // ----- Completed vs Remaining (chart 2)
-  // A participant counts as "completed" if at least one of their filtered
-  // assignments has a `session_done` row in the worklog cache.
-  const completedPartIds = new Set();
-  const filteredAsgnIds = new Set(filteredAsgns.map(a => a.id));
-  cache.forEach(row => {
-    if (row.status !== 'session_done') return;
-    if (!filteredAsgnIds.has(row.assignmentId)) return;
-    // Find the assignment to extract the participant key
-    const a = filteredAsgns.find(x => x.id === row.assignmentId);
-    if (!a) return;
-    const pid = a.participantOrbitId || (a.participantData && (a.participantData.email || a.participantData.firstName + '|' + a.participantData.lastName));
-    if (pid) completedPartIds.add(String(pid).toLowerCase());
-  });
-  const completedCount = completedPartIds.size;
-  const remainingCount = Math.max(0, totalParticipants - completedCount);
+  // ----- Booking progress (donut chart)
+  // Calculated from the FILTERED ASSIGNMENT LIST, not the participant
+  // roster. Asked-for behavior: "calculate based on the bookings
+  // completed". So the donut answers "what fraction of bookings in
+  // scope are done?" — a direct progress signal that responds to the
+  // time/team/mod filters above.
+  //
+  // Numerator   = bookings with status === 'Completed' (the explicit
+  //               "this session is finished" state set when the team
+  //               wraps up or admin marks complete).
+  // Denominator = active + completed (i.e. all non-terminal bookings).
+  //               Cancelled and Unassigned are excluded because they
+  //               aren't part of "the work" — keeping them in would
+  //               make the donut percentage drop every time admin
+  //               cancels a booking, which is exactly backwards.
+  //
+  // The earlier implementation pulled from the worklog cache and
+  // counted PARTICIPANTS (one per unique participant ID with any
+  // session_done worklog row). Two issues with that approach:
+  //   (a) Worklog cache is mod-driven (populated by mod check-ins
+  //       and station-done events). It can be empty even when
+  //       bookings are legitimately Completed (admin-marked
+  //       completion, retroactive status updates, etc.).
+  //   (b) Denominator was "all participants on the roster" — so a
+  //       fully-completed batch of 10 bookings on a 100-person
+  //       roster only showed 10% on the donut. Numerator/denominator
+  //       were measuring different units.
+  // The new logic is single-unit (bookings) end-to-end so the
+  // percentage is meaningful at any filter scope.
+  const completedBookings = filteredAsgns.filter(a => a.status === 'Completed');
+  const activeBookings    = filteredAsgns.filter(a =>
+    a.status === 'Booked' || a.status === 'Notified'
+  );
+  const completedCount = completedBookings.length;
+  const remainingCount = activeBookings.length;
+  const progressTotal  = completedCount + remainingCount;
 
   return {
     totalMods, totalLiveTeams, totalParticipants, totalBookings,
     series, completedCount, remainingCount,
+    // Expose the donut-specific denominator so the subtitle and
+    // tooltip can read "K of N" with N matching what the donut
+    // actually divides into. Without this exported field, the
+    // subtitle had to guess from totalParticipants which was the
+    // wrong denominator.
+    progressTotal,
   };
 }
 
@@ -12150,7 +12484,7 @@ function donutChartShellHTML() {
         </div>
         <div class="ov-donut-tooltip" id="ovDonutTooltip" style="display:none;">
           <div class="ov-tooltip-date" id="ovDonutTooltipTitle">Completed</div>
-          <div class="ov-tooltip-row"><span class="ov-tooltip-num" id="ovDonutTooltipNum">0</span><span class="ov-tooltip-label">participants</span></div>
+          <div class="ov-tooltip-row"><span class="ov-tooltip-num" id="ovDonutTooltipNum">0</span><span class="ov-tooltip-label">bookings</span></div>
         </div>
       </div>
       <div class="ov-donut-legend">
@@ -12220,9 +12554,15 @@ function updateOverviewMetrics() {
   // 3. Animate the line chart
   animateLineChart(m.series);
 
-  // 4. Donut sub + tween
+  // 4. Donut sub + tween. Subtitle now reads "K of N bookings done"
+  //    (not "of participants") so it agrees with the donut math.
+  //    Empty-state message also updated — "No bookings in scope"
+  //    rather than "No participants in scope" since the chart's
+  //    denominator is bookings.
   const donutSub = document.getElementById('ovDonutSub');
-  if (donutSub) donutSub.textContent = m.totalParticipants > 0 ? `${m.completedCount} of ${m.totalParticipants} done` : 'No participants in scope';
+  if (donutSub) donutSub.textContent = m.progressTotal > 0
+    ? `${m.completedCount} of ${m.progressTotal} done`
+    : 'No bookings in scope';
   animateDonutChart(m.completedCount, m.remainingCount);
 
   // Cache for next animation
@@ -18023,7 +18363,7 @@ function renderCalendarPanelHTML() {
         </div>
       </div>
       <div class="cal-summary-bar">
-        <span>${(() => {
+        <span class="cal-summary-text">${(() => {
           // Calendar summary line — same logic as the tab badge. Cancelled
           // bookings show as small dots in their day cells but don't add
           // to "N assignments total".
@@ -18032,12 +18372,33 @@ function renderCalendarPanelHTML() {
             ? `${n} assignment${n === 1 ? '' : 's'} total`
             : 'No assignments yet';
         })()}<span class="cal-summary-hint"> · tap any day to assign a participant</span></span>
-        <div class="cal-avail-legend" aria-label="Team availability legend">
-          <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-all"></span>All available</span>
-          <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-some"></span>Partial</span>
-          <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-none"></span>Unavailable</span>
+        <!-- Collapse toggle — legend section can get noisy on workspaces
+             with many teams. Hiding it gives the calendar grid more
+             breathing room without losing the chips entirely (still
+             one click away). State persists across reloads so admin's
+             preference sticks.
+             Whole legend region is wrapped in #calLegendRegion which
+             toggles a "collapsed" class. CSS handles the display:none
+             switch and the chevron rotation. -->
+        <button type="button"
+                id="calLegendToggle"
+                class="cal-legend-toggle"
+                aria-controls="calLegendRegion"
+                aria-expanded="${adminState._calLegendCollapsed ? 'false' : 'true'}"
+                title="${adminState._calLegendCollapsed ? 'Show team & availability legend' : 'Hide legend'}">
+          <svg class="cal-legend-toggle-chev" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="cal-legend-toggle-label">Legend</span>
+        </button>
+        <div id="calLegendRegion" class="cal-legend-region ${adminState._calLegendCollapsed ? 'collapsed' : ''}">
+          <div class="cal-avail-legend" aria-label="Team availability legend">
+            <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-all"></span>All available</span>
+            <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-some"></span>Partial</span>
+            <span class="cal-avail-legend-item"><span class="cal-avail-legend-swatch avail-none"></span>Unavailable</span>
+          </div>
+          ${renderTeamLegendHTML()}
         </div>
-        ${renderTeamLegendHTML()}
       </div>
       ${renderCalendarStatTilesHTML(view, days)}
       <div class="cal-grid-scroll">
@@ -18402,26 +18763,38 @@ function renderCalendarStatTilesHTML(view, days) {
   else if (view === 'week')  scopeLabel = 'this week';
   else if (view === 'month') scopeLabel = 'this month';
   else                       scopeLabel = 'in scope';
+  // Date scope as data attributes — the drill handler reads these to
+  // know what window to filter assignments over. Stored on each tile
+  // so the same handler works regardless of which view rendered them.
+  const scopeDataAttrs = `data-scope-start="${scopeStart}" data-scope-end="${scopeEnd}" data-view="${view}"`;
+  // Each tile is a <button> when it has data to drill into, otherwise
+  // stays a <div> for static display. Empty-count tiles aren't
+  // interactive — drilling into them would produce an empty list,
+  // which is more annoying than useful. The data-drill attribute is
+  // what the click handler matches on AND what the CSS uses to apply
+  // the interactive styling (hover, focus, cursor).
+  const tile = (statusKey, count, label, drillStatus) => {
+    const hasContent = count > 0;
+    const tag = hasContent ? 'button' : 'div';
+    const drillAttr = hasContent && drillStatus
+      ? `data-drill="${drillStatus}" ${scopeDataAttrs}`
+      : '';
+    const typeAttr = hasContent ? 'type="button"' : '';
+    return `
+      <${tag} class="cal-stat-tile cal-stat-${statusKey}" ${typeAttr} ${drillAttr}>
+        <div class="cal-stat-tile-num">${count}</div>
+        <div class="cal-stat-tile-label">${label}</div>
+      </${tag}>`;
+  };
   return `
     <div class="cal-stat-tiles" data-view="${view}">
-      <div class="cal-stat-tile cal-stat-booked">
-        <div class="cal-stat-tile-num">${bookedCount}</div>
-        <div class="cal-stat-tile-label">Booked ${scopeLabel}</div>
-      </div>
-      <!-- Notified vs Pending tile — shows the email-send progress for
-           bookings in scope. Big number = how many bookings have had
-           their confirmation email sent. Small "· X pending" callout
-           in the label tells admin how many still need the initial
-           send. Color-coded teal (cal-stat-notified) to distinguish
-           from the booking-pipeline blue and capacity green. -->
-      <div class="cal-stat-tile cal-stat-notified">
-        <div class="cal-stat-tile-num">${notifiedCount}</div>
-        <div class="cal-stat-tile-label">Notified${pendingNotifyCount > 0 ? ` · <span class="cal-stat-tile-sub">${pendingNotifyCount} pending</span>` : ''}</div>
-      </div>
-      <div class="cal-stat-tile cal-stat-completed">
-        <div class="cal-stat-tile-num">${completedCount}</div>
-        <div class="cal-stat-tile-label">Completed ${scopeLabel}</div>
-      </div>
+      ${tile('booked',    bookedCount,    `Booked ${scopeLabel}`,                                                                'booked')}
+      ${tile('notified',  notifiedCount,  `Notified${pendingNotifyCount > 0 ? ` · <span class="cal-stat-tile-sub">${pendingNotifyCount} pending</span>` : ''}`, 'notified')}
+      ${tile('completed', completedCount, `Completed ${scopeLabel}`,                                                              'completed')}
+      <!-- Available tile is NOT drillable — it's a capacity signal
+           (count of available days / fully-staffed teams), not a list
+           of assignments. There's no "drill into available" concept
+           because the underlying data isn't assignment rows. -->
       <div class="cal-stat-tile cal-stat-available">
         <div class="cal-stat-tile-num">${availableCount}</div>
         <div class="cal-stat-tile-label">${view === 'day' ? 'Teams fully available' : 'Days with team available'}</div>
@@ -18565,6 +18938,327 @@ function renderCalendarMonthHTML() {
 // fade-out transition can finish even if the user navigates away mid-
 // hover.
 // =====================================================================
+// =====================================================================
+// CALENDAR DRILL MODAL
+// =====================================================================
+// Opens a filtered list of assignments matching a given scope —
+// triggered by clicking a stat tile (status filter) or a team chip
+// (team filter). Each list item shows short details (date, time,
+// participant, team, moderators, status) and is clickable to open
+// the existing View Assignment modal for the full detail.
+//
+// Architecture:
+//   - Single global overlay + modal element, created lazily, reused
+//     across opens. Closing removes them from the DOM so we don't
+//     leak listeners between renders.
+//   - Filter is just an object spec; resolution happens at open
+//     time directly against adminState.assignments. Always shows
+//     current data — no caching, no staleness window.
+//   - Composition with parent modal: the parent .asgn-modal opens
+//     when admin drills further into a specific assignment. The
+//     drill modal closes when the parent opens so they don't stack.
+//   - isAnyAsgnModalOpen() includes .cal-drill-modal.open so this
+//     popup correctly defers background polling like other modals.
+// =====================================================================
+function openCalendarDrillModal(spec) {
+  // spec shape: { statusFilter?, teamFilter?, scopeStart, scopeEnd, view, title?, subtitle? }
+  if (!spec) return;
+
+  // Filter assignments. We start from the live list (not a cache)
+  // so the drill always reflects current state — e.g., if admin
+  // just resaved a booking and the status flipped to Notified, the
+  // very next click on the stat tile shows the updated state.
+  const all = adminState.assignments || [];
+  const matching = all.filter(a => {
+    if (!a || !a.date) return false;
+    if (spec.scopeStart && a.date < spec.scopeStart) return false;
+    if (spec.scopeEnd   && a.date > spec.scopeEnd)   return false;
+    // Status filter — accepts a single status string. We treat the
+    // tile labels as the canonical names:
+    //   'booked'    → status === 'Booked'
+    //   'notified'  → status === 'Notified'
+    //   'completed' → status === 'Completed'
+    // No special handling for cancelled here since the stat tiles
+    // don't expose it as a drill target (would be confusing —
+    // cancelled bookings aren't "work to do").
+    if (spec.statusFilter) {
+      const want = spec.statusFilter.toLowerCase();
+      const have = (a.status || 'Booked').toLowerCase();
+      if (want === 'booked' && have !== 'booked')       return false;
+      if (want === 'notified' && have !== 'notified')   return false;
+      if (want === 'completed' && have !== 'completed') return false;
+    } else {
+      // No status filter (team chip case) — exclude terminal statuses
+      // so the team chip drill shows ACTIVE work for that team.
+      // Including Cancelled here would surface stale rows that admin
+      // already moved past.
+      if (a.status === 'Cancelled' || a.status === 'Unassigned') return false;
+    }
+    if (spec.teamFilter) {
+      // Coerce both sides to string before comparing. spec.teamFilter
+      // comes from a DOM data attribute (always string), but a.teamId
+      // is normalized to a Number at fetch time. Strict !== between a
+      // number and string is always true, which silently filtered out
+      // every booking — exactly the "team chip shows empty list" bug
+      // the user was hitting. String-coercion is the same defensive
+      // pattern used by the overview metrics' teamMatch().
+      if (String(a.teamId) !== String(spec.teamFilter)) return false;
+    }
+    return true;
+  });
+
+  // Sort by date then by start time, ascending — admin scans top-to-
+  // bottom in chronological order, which matches their natural
+  // reading flow.
+  matching.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.startMin || 0) - (b.startMin || 0);
+  });
+
+  // Lazy-create / reuse the modal + overlay. We always recreate the
+  // INNER html (rows change per open) but keep the outer shell to
+  // avoid layout thrash and let admin's focus stay where it was
+  // before opening (which is helpful for keyboard users).
+  let overlay = document.getElementById('calDrillOverlay');
+  let modal   = document.getElementById('calDrillModal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'calDrillOverlay';
+    overlay.className = 'cal-drill-overlay';
+    document.body.appendChild(overlay);
+  }
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'calDrillModal';
+    modal.className = 'cal-drill-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    document.body.appendChild(modal);
+  }
+
+  const close = () => {
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    // Wait for the transition to finish before removing — keeps the
+    // fade-out smooth rather than vanishing abruptly.
+    setTimeout(() => {
+      try { overlay.remove(); modal.remove(); } catch (_) {}
+    }, 220);
+  };
+
+  // Build the list HTML. Each row is a <button> so it's keyboard-
+  // focusable and announced as actionable to screen readers.
+  const rows = matching.map(a => {
+    const statusKey = a.status === 'Cancelled' ? 'cancelled'
+                    : a.status === 'Completed' ? 'completed'
+                    : a.status === 'Notified'  ? 'notified'
+                    : 'booked';
+    const team = adminState.teams.find(t => t.id === a.teamId);
+    const teamName = team ? team.name : (a.teamName || 'Unknown team');
+    const partName = a.participantData
+      ? [a.participantData.firstName, a.participantData.lastName].filter(Boolean).join(' ').trim()
+      : '';
+    // Moderators — pull names from the team or from modSnapshots so
+    // the list reads even if the team was deleted after the booking
+    // was made. Truncates to 2 names + "+N" badge when there are
+    // many, otherwise the row would get cluttered.
+    let modNames = [];
+    if (team && Array.isArray(team.primaryIds)) {
+      modNames = team.primaryIds
+        .map(id => {
+          const m = (adminState.moderators || []).find(mm => {
+            const mid = pickField(mm, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'loginId', 'username', 'id');
+            return String(mid || '').toLowerCase() === String(id).toLowerCase();
+          });
+          if (!m) return null;
+          const fn = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name');
+          const ln = pickField(m, 'lastName',  'last_name',  'LastName',  'Last Name');
+          return [fn, ln].filter(Boolean).join(' ').trim();
+        })
+        .filter(Boolean);
+    }
+    if (modNames.length === 0 && Array.isArray(a.modSnapshots)) {
+      modNames = a.modSnapshots
+        .map(m => [m.firstName, m.lastName].filter(Boolean).join(' ').trim())
+        .filter(Boolean);
+    }
+    let modLabel = '—';
+    if (modNames.length === 1) modLabel = modNames[0];
+    else if (modNames.length === 2) modLabel = `${modNames[0]} & ${modNames[1]}`;
+    else if (modNames.length > 2) modLabel = `${modNames[0]}, ${modNames[1]} +${modNames.length - 2}`;
+
+    const dateObj = parseYMD(a.date);
+    const dateLabel = dateObj
+      ? dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      : a.date;
+    const timeLabel = (typeof fmtTimeOfDay === 'function')
+      ? `${fmtTimeOfDay(a.startMin)} – ${fmtTimeOfDay(a.endMin)}`
+      : '';
+
+    return `
+      <button type="button" class="cal-drill-item ${statusKey === 'cancelled' ? 'cancelled' : ''}" data-asgn-id="${escapeHTML(a.id)}">
+        <span class="cal-drill-item-dot status-${statusKey}"></span>
+        <span class="cal-drill-item-main">
+          <span class="cal-drill-item-top">
+            <span class="cal-drill-item-date">${escapeHTML(dateLabel)}</span>
+            ${timeLabel ? `<span class="cal-drill-item-time">${escapeHTML(timeLabel)}</span>` : ''}
+          </span>
+          <span class="cal-drill-item-detail">
+            <strong>${escapeHTML(partName || 'No participant')}</strong> · ${escapeHTML(teamName)} · Mods: ${escapeHTML(modLabel)}
+          </span>
+        </span>
+        <span class="cal-drill-item-status status-${statusKey}">${escapeHTML(a.status || 'Booked')}</span>
+      </button>
+    `;
+  }).join('');
+
+  const title = spec.title || 'Bookings';
+  const subtitle = spec.subtitle || `${matching.length} booking${matching.length === 1 ? '' : 's'}`;
+
+  modal.innerHTML = `
+    <div class="cal-drill-modal-head">
+      <div>
+        <h3 class="cal-drill-modal-title">${escapeHTML(title)}</h3>
+        <div class="cal-drill-modal-sub">${escapeHTML(subtitle)}</div>
+      </div>
+      <button type="button" class="cal-drill-modal-close" id="calDrillCloseBtn" aria-label="Close">×</button>
+    </div>
+    <div class="cal-drill-modal-body">
+      ${matching.length === 0
+        ? `<div class="cal-drill-modal-empty">No matching bookings.</div>`
+        : rows}
+    </div>
+  `;
+
+  // Wire close + item clicks. Item click closes the drill modal first
+  // (so it doesn't stack over the booking modal) then opens View
+  // Assignment for that booking.
+  modal.querySelector('#calDrillCloseBtn').addEventListener('click', close);
+  modal.querySelectorAll('.cal-drill-item').forEach(item => {
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      const asgnId = item.dataset.asgnId;
+      if (!asgnId) return;
+      close();
+      // Defer one frame so the drill modal's close transition starts
+      // before the booking modal opens — feels smoother than the two
+      // modals fighting for the same z-index instantly.
+      setTimeout(() => {
+        if (typeof openViewAssignmentModal === 'function') {
+          openViewAssignmentModal(asgnId);
+        }
+      }, 80);
+    });
+  });
+
+  // Click-outside-overlay closes the modal. Escape too.
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) close();
+  });
+  // Single Escape handler — bind to the modal element so it
+  // auto-detaches when the modal is removed.
+  modal.addEventListener('keydown', e => {
+    if (e.key === 'Escape') close();
+  });
+
+  // Open with transition.
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+    // Focus the close button so screen readers announce the modal
+    // and so Escape works from a known focus point.
+    const closeBtn = modal.querySelector('#calDrillCloseBtn');
+    if (closeBtn) closeBtn.focus();
+  });
+}
+
+// Set up calendar drill listeners on the body. Wires both stat-tile
+// clicks and team-chip clicks. Called from renderAssignment after
+// each render — the targets are re-created on every re-render, so
+// listeners must be rebound. Uses event delegation on the container
+// so we attach ONE listener regardless of tile count.
+function setupCalendarDrillListeners(body) {
+  if (!body) return;
+
+  // Legend collapse toggle — hides/shows the availability swatches +
+  // team chips. Persists in localStorage so the preference survives
+  // reloads. Toggling swaps the `collapsed` class on the region;
+  // CSS handles the actual show/hide via display + the chevron
+  // rotation transform.
+  const legendToggle = body.querySelector('#calLegendToggle');
+  if (legendToggle) {
+    legendToggle.addEventListener('click', () => {
+      const region = body.querySelector('#calLegendRegion');
+      if (!region) return;
+      const nowCollapsed = !region.classList.contains('collapsed');
+      region.classList.toggle('collapsed', nowCollapsed);
+      adminState._calLegendCollapsed = nowCollapsed;
+      legendToggle.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+      legendToggle.setAttribute('title', nowCollapsed ? 'Show team & availability legend' : 'Hide legend');
+      // Persist so the choice sticks across reloads. The key is the
+      // same pattern used by other UI prefs (calView, etc) — stored
+      // as plain string so no JSON.parse needed on hydration.
+      try {
+        if (nowCollapsed) localStorage.setItem('orbit_cal_legend_collapsed', '1');
+        else              localStorage.removeItem('orbit_cal_legend_collapsed');
+      } catch (_) {}
+    });
+  }
+
+  // Stat tiles — match status from data-drill attribute. Available
+  // tile doesn't have data-drill so it falls through naturally.
+  body.querySelectorAll('.cal-stat-tile[data-drill]').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const statusKey = tile.dataset.drill;
+      const scopeStart = tile.dataset.scopeStart;
+      const scopeEnd   = tile.dataset.scopeEnd;
+      const view       = tile.dataset.view;
+      // Build a human-readable title + subtitle. Capitalizes the
+      // status, names the scope (today / this week / this month) so
+      // admin can confirm what they're looking at without parsing
+      // the dates.
+      const titleStatus = statusKey.charAt(0).toUpperCase() + statusKey.slice(1);
+      const scopeLabel = view === 'day'   ? 'today'
+                       : view === 'week'  ? 'this week'
+                       : view === 'month' ? 'this month'
+                       : 'in scope';
+      openCalendarDrillModal({
+        statusFilter: statusKey,
+        scopeStart,
+        scopeEnd,
+        view,
+        title:    `${titleStatus} ${scopeLabel}`,
+        subtitle: `Click any booking for details`,
+      });
+    });
+  });
+  // Team chips — same pattern but team-scoped.
+  body.querySelectorAll('.cal-team-chip[data-drill="team"]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const teamId = chip.dataset.teamId;
+      const scopeStart = chip.dataset.scopeStart;
+      const scopeEnd   = chip.dataset.scopeEnd;
+      const view       = chip.dataset.view;
+      // Same string-coercion as the drill modal's filter. Without it
+      // the team lookup returned undefined (number !== string), the
+      // modal title fell back to "Team · today", and the drill
+      // produced an empty list because the filter comparison
+      // downstream was also broken.
+      const team = (adminState.teams || []).find(t => String(t.id) === String(teamId));
+      const teamName = team ? team.name : 'Team';
+      const scopeLabel = view === 'day' ? 'today' : 'this week';
+      openCalendarDrillModal({
+        teamFilter: teamId,
+        scopeStart,
+        scopeEnd,
+        view,
+        title:    `${teamName} · ${scopeLabel}`,
+        subtitle: `Click any booking for details`,
+      });
+    });
+  });
+}
+
 function setupMonthDayHoverPopover(body) {
   let popover = document.getElementById('monthDayHoverPopover');
   if (!popover) {
@@ -18933,11 +19627,44 @@ function renderListItemHTML(a) {
 // Team color legend in toolbar
 function renderTeamLegendHTML() {
   if (!adminState.teams || adminState.teams.length === 0) return '';
+  // Team chips drill into their bookings only in day/week views. In
+  // month view, the cells already show all bookings via the hover
+  // popover, and a team-scoped drill across an entire month would be
+  // a noisy list — admin's better off using Day or Week navigation.
+  const view = adminState.calView;
+  const drillable = (view === 'day' || view === 'week');
+  let scopeStart = '', scopeEnd = '';
+  if (drillable) {
+    // Same days computation the main renderer uses for the grid.
+    // Pulled inline here rather than extracted to a shared helper
+    // because (a) two call sites is below the deduplication
+    // threshold and (b) the computation is two lines.
+    const anchor = parseYMD(adminState.calAnchor) || new Date();
+    const days = view === 'week'
+      ? Array.from({length: 7}, (_, i) => addDays(startOfWeek(anchor), i))
+      : [anchor];
+    scopeStart = ymd(days[0]);
+    scopeEnd   = ymd(days[days.length - 1]);
+  }
+
   return `
     <span style="display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap;">
       ${adminState.teams.map(t => {
         const c = getTeamColor(t.id);
-        return `<span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: ${c.bg};"></span><span style="color: var(--text2);">${escapeHTML(t.name)}</span></span>`;
+        if (drillable) {
+          // Buttons when drillable, spans otherwise. Empty-bookings
+          // teams still render as buttons — clicking produces an
+          // honest "no bookings for this team in this scope" message
+          // rather than silently dropping the click.
+          return `<button type="button" class="cal-team-chip" data-drill="team" data-team-id="${escapeHTML(t.id)}" data-scope-start="${scopeStart}" data-scope-end="${scopeEnd}" data-view="${view}">
+            <span style="width: 8px; height: 8px; border-radius: 2px; background: ${c.bg};"></span>
+            <span style="color: var(--text2);">${escapeHTML(t.name)}</span>
+          </button>`;
+        }
+        return `<span class="cal-team-chip">
+          <span style="width: 8px; height: 8px; border-radius: 2px; background: ${c.bg};"></span>
+          <span style="color: var(--text2);">${escapeHTML(t.name)}</span>
+        </span>`;
       }).join('')}
       ${adminState.assignments.some(a => !a.teamId || !adminState.teams.find(t => t.id === a.teamId))
         ? `<span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; border: 1px dashed var(--border-strong); background: transparent;"></span><span style="color: var(--text3); font-style: italic;">No team</span></span>`
@@ -19474,6 +20201,12 @@ function bindAssignmentEvents() {
   //     time) so adminState.assignments stays the single source of
   //     truth and the popover always shows current data.
   setupMonthDayHoverPopover(body);
+
+  // Calendar drill listeners — wires the new clickable stat tiles
+  // (Booked / Notified / Completed) and team chips. Drilling into
+  // any of these opens a filtered list of matching bookings; clicking
+  // a list item opens the existing View Assignment modal.
+  setupCalendarDrillListeners(body);
 
   // Export
   const exportBtn = document.getElementById('exportAsgnBtn');
@@ -24114,6 +24847,7 @@ function isAnyAsgnModalOpen() {
       '#recipientChooserModal.open',
       '#bulkResendModal.open',
       '.teammate-sync-modal.open',
+      '.cal-drill-modal.open',
     ];
     for (const sel of selectors) {
       if (document.querySelector(sel)) return true;
