@@ -541,6 +541,210 @@ a.icon-btn:focus-visible {
   align-self: center;
 }
 
+/* Lakitu session link — replaces the old free-text Participant ID
+   input. Renders as a tap target with the orbit ID + external-link
+   icon. Hover brightens to the accent color, signaling "this is a
+   link" rather than a data field. Compact enough to fit alongside
+   the other entry-bar fields without changing their proportions. */
+.entry-lakitu-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  margin: 2px 0 -2px -8px;  /* offset so the click target visually aligns with sibling inputs */
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  max-width: 100%;
+  overflow: hidden;
+}
+.entry-lakitu-link:hover {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.14));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.entry-lakitu-link:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.entry-lakitu-id {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.entry-lakitu-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.entry-lakitu-link:hover .entry-lakitu-icon { opacity: 1; }
+
+/* On-site arrival field — wider than a standard entry-field because
+   the button needs room for "I've arrived" text + icon, and the
+   later live-elapsed pill displays a longer label. */
+.entry-field-arrived {
+  flex: 1.1;
+  min-width: 150px;
+}
+/* "I've arrived" CTA — kicks off the hourly reminder loop. Styled as
+   a soft accent button so it reads as actionable but doesn't compete
+   with primary CTAs elsewhere in the app. */
+.entry-arrived-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  margin: 2px 0 -2px -8px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  background: var(--bg3);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.12s;
+  white-space: nowrap;
+}
+.entry-arrived-btn:hover {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  transform: translateY(-1px);
+}
+.entry-arrived-btn:active { transform: translateY(0); }
+/* Live pill once arrival is set. Subtle teal accent + bumped contrast
+   for the elapsed label so admin sees the "this is live" cue at a
+   glance. */
+.entry-arrived-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  margin: 2px 0 -2px -8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(20, 184, 166, 0.10);
+  border: 0.5px solid rgba(20, 184, 166, 0.40);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.entry-arrived-pill:hover {
+  background: rgba(20, 184, 166, 0.16);
+  border-color: rgba(20, 184, 166, 0.60);
+}
+.entry-arrived-time { font-weight: 600; }
+.entry-arrived-elapsed { color: var(--text2); letter-spacing: 0.01em; }
+
+/* Hourly progress-reminder modal — friendly, dismissable. Layered above
+   most app surfaces (z-index 700) so it surfaces over the equipment/
+   station UI but stays below critical system overlays.
+   Single-button design (just "Got it") because reminders shouldn't
+   feel transactional — the message is the value, not the action.
+   The modal auto-dismisses on click-outside and Escape too. */
+.progress-reminder-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.50);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  z-index: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.progress-reminder-overlay.open { opacity: 1; pointer-events: all; }
+.progress-reminder-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  z-index: 701;
+  width: min(94vw, 440px);
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.40);
+  padding: 28px 28px 24px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.progress-reminder-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+.progress-reminder-icon {
+  width: 56px; height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 16px;
+  background: var(--accent-soft, rgba(0, 240, 255, 0.14));
+  color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center;
+}
+.progress-reminder-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.progress-reminder-sub {
+  font-size: 13.5px;
+  color: var(--text2);
+  margin: 0 0 14px;
+  letter-spacing: -0.005em;
+}
+.progress-reminder-body {
+  font-size: 14px;
+  color: var(--text);
+  margin: 0 0 22px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+.progress-reminder-body strong {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.progress-reminder-actions {
+  display: flex;
+  justify-content: center;
+}
+.progress-reminder-btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 28px;
+  border-radius: 10px;
+  border: 0.5px solid transparent;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.12s;
+}
+.progress-reminder-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink-on-accent, #001528);
+  border-color: var(--accent);
+}
+.progress-reminder-btn.primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.progress-reminder-btn.primary:active { transform: translateY(0); }
+
 
 /* =========================================================
    FIELD COLLECTION EQUIPMENT CHECKER (welcome page)
@@ -4858,6 +5062,526 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .cal-list-date.today {
   color: var(--accent-ink);
 }
+
+/* =====================================================================
+   PERFORMANCE TAB
+   =====================================================================
+   Tile-based view of teams and moderators, with expandable accordions
+   per tile listing bookings (scheduled / in progress / completed) sorted
+   by date or status. Clicking a booking row opens a slide-in panel from
+   the left with per-station timestamps for that session.
+
+   Design language: borrows from the calendar tiles (rounded cards,
+   subtle hover) and the drill modal (list-row layout, status dots).
+   Status palette is the canonical one used everywhere:
+     Booked     → blue  (cyan-leaning rgb(59,130,246))
+     Notified   → teal  (rgb(20,184,166))   — counted as "in progress"
+     Completed  → purple (rgb(168,85,247))
+     Cancelled  → muted red — generally excluded from performance view
+     Unassigned → not shown — no team, no perf data
+   ===================================================================== */
+
+/* Toolbar row at the top of the perf tab: view toggle + search + sort */
+.perf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.perf-toggle {
+  display: inline-flex;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+  padding: 3px;
+}
+.perf-toggle-btn {
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.perf-toggle-btn:hover { color: var(--text); }
+.perf-toggle-btn.active {
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: 0 0 0 0.5px var(--border-strong);
+}
+.perf-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+  position: relative;
+}
+.perf-search-input {
+  width: 100%;
+  font-family: inherit; font-size: 14px;
+  padding: 9px 12px 9px 34px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--input-bg);
+  color: var(--text);
+  letter-spacing: -0.005em;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.perf-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.perf-search-icon {
+  position: absolute;
+  left: 11px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.perf-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+/* Tiles are <details> elements so expand/collapse is built-in. The
+   tile-head is a <summary> wearing the visual chrome. */
+.perf-tile {
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.perf-tile:hover { border-color: var(--border-strong); }
+.perf-tile[open] {
+  border-color: var(--accent-soft, rgba(0, 240, 255, 0.32));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+  /* Span all columns when expanded so the booking list has full width
+     to breathe. Without this, expanded tiles compete with neighbors
+     in the grid and create awkward jagged heights. */
+  grid-column: 1 / -1;
+}
+.perf-tile-head {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  border-bottom: 0.5px solid transparent;
+  transition: background 0.12s, border-color 0.18s;
+}
+.perf-tile-head::-webkit-details-marker { display: none; }
+.perf-tile-head:hover { background: var(--bg2); }
+.perf-tile[open] .perf-tile-head {
+  border-bottom-color: var(--border);
+}
+.perf-tile-avatar {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+  color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.02em;
+  /* Initials get the colored fill; we keep the dark theme by using
+     accent-soft as background instead of accent (full-strength
+     accent on dark theme produces a too-bright eye-catch). */
+}
+.perf-tile-avatar.mod {
+  background: rgba(168, 85, 247, 0.16);
+  color: rgb(192, 132, 252);
+}
+.perf-tile-title-block {
+  min-width: 0;
+}
+.perf-tile-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perf-tile-sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perf-tile-stats {
+  display: flex; gap: 8px; align-items: center;
+  flex-shrink: 0;
+}
+.perf-stat-chip {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.perf-stat-chip.completed { background: rgba(168, 85, 247, 0.14); color: rgb(192, 132, 252); }
+.perf-stat-chip.inprogress { background: rgba(20, 184, 166, 0.14); color: rgb(45, 212, 191); }
+.perf-stat-chip.scheduled  { background: rgba(59, 130, 246, 0.14); color: rgb(96, 165, 250); }
+.perf-stat-chip.zero { opacity: 0.45; }
+.perf-tile-chevron {
+  width: 18px; height: 18px;
+  color: var(--text3);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  margin-left: 6px;
+}
+.perf-tile[open] .perf-tile-chevron { transform: rotate(180deg); }
+
+/* Sort/filter strip inside the expanded tile */
+.perf-tile-body {
+  padding: 14px 16px 16px;
+}
+.perf-sort-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.perf-sort-label {
+  color: var(--text3);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-size: 10.5px;
+}
+.perf-sort-btn {
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  letter-spacing: -0.005em;
+  padding: 4px 10px;
+  border: 0.5px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.perf-sort-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.perf-sort-btn.active {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.14));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.perf-sort-divider {
+  width: 1px; height: 14px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+/* Booking list — each row is a <button> for keyboard accessibility */
+.perf-booking-list {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.perf-booking-row {
+  display: grid;
+  grid-template-columns: 10px 1.2fr 1fr 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+  background: transparent;
+  border-left: none; border-right: none; border-top: none;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  width: 100%;
+}
+.perf-booking-row:last-child { border-bottom: none; }
+.perf-booking-row:hover { background: var(--bg2); }
+.perf-booking-row:focus-visible {
+  outline: none;
+  background: var(--bg3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.perf-booking-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+.perf-booking-dot.status-booked    { background: rgb(59, 130, 246); }
+.perf-booking-dot.status-notified  { background: rgb(20, 184, 166); }
+.perf-booking-dot.status-completed { background: rgb(168, 85, 247); }
+.perf-booking-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
+.perf-booking-participant {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.perf-booking-meta {
+  font-size: 12.5px;
+  color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+  letter-spacing: -0.005em;
+}
+.perf-booking-date {
+  font-size: 12.5px;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.perf-booking-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--bg2);
+  color: var(--text2);
+  white-space: nowrap;
+}
+.perf-booking-status-pill.status-booked    { background: rgba(59, 130, 246, 0.14); color: rgb(96, 165, 250); }
+.perf-booking-status-pill.status-notified  { background: rgba(20, 184, 166, 0.14); color: rgb(45, 212, 191); }
+.perf-booking-status-pill.status-completed { background: rgba(168, 85, 247, 0.14); color: rgb(192, 132, 252); }
+.perf-booking-status-pill.status-cancelled { background: rgba(239, 68, 68, 0.10); color: rgb(248, 113, 113); }
+
+/* Search-match emphasis for booking rows. When admin's search term
+   matches a participant name, the row gets a .matched class which
+   layers a subtle left-edge accent bar + bg tint. The matching
+   characters in the participant name are wrapped in <mark> for a
+   secondary, more precise emphasis. Together these give two-level
+   feedback: "this row is the result" (the row tint) AND "here's
+   where it matched" (the mark). */
+.perf-booking-row.matched {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.08));
+  /* Inset left border via box-shadow so the row keeps its grid
+     layout (a regular border-left would shift the contents). */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.perf-booking-row.matched:hover {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.14));
+}
+.perf-match-hl {
+  background: rgba(0, 240, 255, 0.22);
+  color: var(--accent-ink);
+  padding: 0 2px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+[data-theme="light"] .perf-match-hl {
+  background: rgba(0, 150, 175, 0.18);
+}
+
+/* Lakitu pill — used inline in the row for Completed/In Progress */
+.perf-lakitu-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  padding: 4px 9px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--bg2);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.perf-lakitu-pill:hover {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.14));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Empty state */
+.perf-empty {
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--text3);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Slide-in detail panel from the LEFT — per user spec */
+.perf-panel-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.40);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  z-index: 580;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.perf-panel-overlay.open { opacity: 1; pointer-events: all; }
+.perf-panel {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 581;
+  width: min(440px, 90vw);
+  background: var(--card-bg);
+  border-right: 0.5px solid var(--border-strong);
+  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.30);
+  transform: translateX(-100%);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.perf-panel.open { transform: translateX(0); }
+.perf-panel-head {
+  padding: 18px 20px 16px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+.perf-panel-head-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+.perf-panel-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.perf-panel-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  color: var(--text);
+  margin: 0;
+}
+.perf-panel-close {
+  width: 30px; height: 30px;
+  border: none; background: transparent;
+  color: var(--text2);
+  font-size: 24px; line-height: 1;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.perf-panel-close:hover { background: var(--bg2); color: var(--text); }
+.perf-panel-meta-grid {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  row-gap: 4px;
+  column-gap: 10px;
+  margin-top: 10px;
+}
+.perf-panel-meta-key {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding-top: 3px;
+}
+.perf-panel-meta-val {
+  font-size: 13.5px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  line-height: 1.5;
+}
+.perf-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px 20px;
+  min-height: 0;
+}
+.perf-panel-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin: 14px 0 8px;
+}
+.perf-panel-section-title:first-child { margin-top: 0; }
+.perf-station-list {
+  display: flex; flex-direction: column;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.perf-station-item {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 13px;
+  border-bottom: 0.5px solid var(--border);
+}
+.perf-station-item:last-child { border-bottom: none; }
+.perf-station-icon {
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  background: var(--bg2);
+  color: var(--text2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+.perf-station-item.done .perf-station-icon {
+  background: rgba(168, 85, 247, 0.16);
+  color: rgb(192, 132, 252);
+}
+.perf-station-item.partial .perf-station-icon {
+  background: rgba(20, 184, 166, 0.16);
+  color: rgb(45, 212, 191);
+}
+.perf-station-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.perf-station-sub {
+  font-size: 11.5px;
+  color: var(--text2);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.perf-station-timestamp {
+  font-size: 11.5px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.perf-station-timestamp.done { color: rgb(192, 132, 252); }
+
+/* Responsive — tiles wrap, search expands full-width */
+@media (max-width: 560px) {
+  .perf-toolbar { gap: 8px; }
+  .perf-search { max-width: none; flex-basis: 100%; order: 99; }
+  .perf-booking-row {
+    grid-template-columns: 10px 1fr auto;
+    grid-template-rows: auto auto;
+    row-gap: 4px;
+  }
+  .perf-booking-meta, .perf-booking-date {
+    grid-column: 2 / span 2;
+  }
+  .perf-booking-status-pill, .perf-lakitu-pill {
+    grid-row: 1;
+  }
+}
+
 /* ---- Calendar drill modal ---- */
 /* Pops up when admin clicks a stat tile or team chip — shows a
    filtered list of assignments matching that scope (e.g. "all
@@ -9421,7 +10145,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052202';
+const APP_VERSION = '1.2.052602';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -9620,6 +10344,11 @@ function defaultState() {
     equipment: {},
     equipmentCollapsed: false,
     stations: {},
+    // Hourly-reminder anchor + dedupe (see loadState's defaults for
+    // the full rationale). Both stay empty/zero-length until the mod
+    // clicks "Arrived at participant" in the entry bar.
+    arrivedAt: '',
+    remindersShown: [],
   };
   // Initialize equipment as unpacked
   EQUIPMENT_LIST.forEach(it => { s.equipment[it.id] = false; });
@@ -9864,6 +10593,16 @@ function migrateState(loaded) {
   if (!loaded.modProfile || typeof loaded.modProfile !== 'object') loaded.modProfile = null;
   if (typeof loaded.sessionDate !== 'string') loaded.sessionDate = todayISO();
   if (loaded.theme !== 'dark' && loaded.theme !== 'light') loaded.theme = 'dark';
+  // On-site arrival marker. Set when the mod clicks "Arrived at
+  // participant" in the entry bar — anchors the hourly progress-
+  // reminder loop. Empty string = not yet arrived (no reminders fire).
+  // Reminders fire at arrivedAt + 1h, +2h, ... up to PROGRESS_REMINDER_MAX_HOUR.
+  if (typeof loaded.arrivedAt !== 'string') loaded.arrivedAt = '';
+  // Hour-marks already acknowledged (array of integers 1, 2, 3, ...).
+  // Stored as an array (not a Set) because state is JSON-serialized to
+  // localStorage and Sets don't survive JSON.stringify. Idempotent
+  // include checks turn it into Set-like behavior at use time.
+  if (!Array.isArray(loaded.remindersShown)) loaded.remindersShown = [];
 
   return loaded;
 }
@@ -10246,6 +10985,39 @@ function entryTeamCellHTML() {
 }
 
 function entryBarHTML() {
+  // Resolve participant orbit ID + name from the active assignment so we
+  // can build a Lakitu link. The session ID is auto-populated from the
+  // assignment record — the mod no longer has to type it manually. This
+  // both prevents typos AND replaces a step that was easy to forget,
+  // since "the PID is the link target" is the same info the entry bar
+  // was asking for anyway.
+  const activeAsgn = (typeof getOperatorAssignment === 'function')
+    ? getOperatorAssignment() : null;
+  const orbitId = (activeAsgn && activeAsgn.participantOrbitId)
+    || state.participantId  // legacy fallback for mid-session sessions
+    || '';
+  // Keep state.participantId in sync with the resolved orbit ID. Other
+  // downstream code (exports, snapshots, sync payloads) reads
+  // state.participantId, so backfilling it here means everything keeps
+  // working without per-call-site changes. Only writes when there's a
+  // value AND it'd actually change something — avoids spurious
+  // saveState() churn on every render.
+  if (orbitId && state.participantId !== orbitId) {
+    state.participantId = orbitId;
+    if (typeof saveState === 'function') saveState();
+  }
+  const lakituUrl = (typeof buildLakituUrl === 'function')
+    ? buildLakituUrl(orbitId) : '';
+  const hasLakitu = !!orbitId;
+
+  // Arrival marker + live elapsed counter. Once mod clicks "Arrived",
+  // the button transforms into a live "Arrived 10:23 AM · 1h 04m"
+  // pill that ticks every minute (driven by an interval bound in
+  // bindEntryFields). Until they click it, the reminder timer doesn't
+  // run — explicit opt-in avoids spamming mods who haven't actually
+  // started yet (e.g. opened the app over breakfast).
+  const arrivedStr = state.arrivedAt ? renderArrivedPillHTML(state.arrivedAt) : '';
+
   return `
     <div class="entry-bar">
       <div class="entry-field">
@@ -10254,8 +11026,16 @@ function entryBarHTML() {
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field">
-        <label>Participant ID</label>
-        <input id="ent_pid" type="text" placeholder="Place the PID here." value="${escapeHTML(state.participantId)}" autocapitalize="characters" autocorrect="off">
+        <label>Lakitu session</label>
+        ${hasLakitu
+          ? `<a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="entry-lakitu-link" title="Open this participant in Lakitu">
+               <span class="entry-lakitu-id">${escapeHTML(orbitId)}</span>
+               <svg class="entry-lakitu-icon" width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                 <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+               </svg>
+             </a>`
+          : `<div class="field-readonly" style="color: var(--text3); font-style: italic;">No active booking</div>`
+        }
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field">
@@ -10272,15 +11052,112 @@ function entryBarHTML() {
         <label>Session Date</label>
         <div class="field-readonly">${todayPretty()}</div>
       </div>
+      <div class="entry-divider"></div>
+      <!-- Arrival affordance — wide enough to hold either the call-to-
+           action button OR the live elapsed-time pill once clicked.
+           Living inside .entry-field-arrived (a slightly wider variant)
+           so the layout doesn't reflow when the button transforms. -->
+      <div class="entry-field entry-field-arrived">
+        <label>On-site</label>
+        ${state.arrivedAt
+          ? arrivedStr
+          : `<button type="button" id="ent_arrived_btn" class="entry-arrived-btn" title="Mark that you've arrived at the participant's home — starts the hourly progress check-in reminders">
+               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                 <path d="M8 2a4 4 0 014 4c0 3-4 8-4 8s-4-5-4-8a4 4 0 014-4z" stroke="currentColor" stroke-width="1.5"/>
+                 <circle cx="8" cy="6" r="1.4" fill="currentColor"/>
+               </svg>
+               I've arrived
+             </button>`
+        }
+      </div>
     </div>
   `;
 }
 
+// Render the "Arrived 10:23 AM · 1h 04m" pill. Live-tickers in
+// bindEntryFields call this on a 60s interval and swap the inner HTML.
+// Pulled out so the renderer and the ticker share one source of truth
+// for formatting.
+function renderArrivedPillHTML(arrivedAtISO) {
+  const arrived = new Date(arrivedAtISO);
+  if (isNaN(arrived.getTime())) return '';
+  const arrivedLabel = arrived.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const now = Date.now();
+  const elapsedMs = Math.max(0, now - arrived.getTime());
+  const elapsedMin = Math.floor(elapsedMs / 60000);
+  const h = Math.floor(elapsedMin / 60);
+  const m = elapsedMin % 60;
+  const elapsedLabel = h > 0
+    ? `${h}h ${String(m).padStart(2, '0')}m`
+    : `${m}m`;
+  // The pill itself is clickable — opens a small popover offering
+  // "Undo arrival" (resets state.arrivedAt + clears remindersShown).
+  // Without an undo path, an accidental click would have no recovery
+  // short of digging into devtools.
+  return `<button type="button" id="ent_arrived_pill" class="entry-arrived-pill" title="Click to undo arrival">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="color: rgb(45, 212, 191);">
+              <path d="M2 8l3.5 3.5L14 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="entry-arrived-time">${escapeHTML(arrivedLabel)}</span>
+            <span class="entry-arrived-elapsed">· ${escapeHTML(elapsedLabel)}</span>
+          </button>`;
+}
+
 function bindEntryFields() {
-  const pid = document.getElementById('ent_pid');
   const pn = document.getElementById('ent_pname');
-  if (pid)   pid.addEventListener('input',   e => { state.participantId = e.target.value; saveState(); });
-  if (pn)    pn.addEventListener('input',    e => { state.participantName = e.target.value; saveState(); });
+  if (pn) pn.addEventListener('input', e => { state.participantName = e.target.value; saveState(); });
+
+  // Arrived button — sets arrivedAt = now and kicks off the reminder
+  // loop. Re-renders the entry bar in place to show the elapsed pill.
+  const arrivedBtn = document.getElementById('ent_arrived_btn');
+  if (arrivedBtn) {
+    arrivedBtn.addEventListener('click', () => {
+      state.arrivedAt = new Date().toISOString();
+      state.remindersShown = []; // fresh start for this session
+      saveState();
+      // Re-render the entry bar to swap button → pill. Cheapest path:
+      // re-render the whole current view so the entry bar updates
+      // without us needing to know its container's ID. This is what
+      // every other entry-bar update does too.
+      if (typeof render === 'function') render();
+      // Kick the reminder loop now so the user can see it running.
+      schedulePerHourReminder();
+    });
+  }
+
+  // Arrived pill — click to undo. Confirmation modal-less here
+  // because undoing arrival is harmless (just resets the timer);
+  // the immediate visual feedback (pill → button) tells admin the
+  // click registered.
+  const arrivedPill = document.getElementById('ent_arrived_pill');
+  if (arrivedPill) {
+    arrivedPill.addEventListener('click', () => {
+      // Confirm to prevent accidental loss of timing data — but cheap
+      // native confirm() is fine here. The undo is a "I clicked the
+      // wrong thing earlier" recovery, not a routine action.
+      if (!confirm('Undo arrival? The progress-reminder timer will reset.')) return;
+      state.arrivedAt = '';
+      state.remindersShown = [];
+      saveState();
+      stopPerHourReminder();
+      if (typeof render === 'function') render();
+    });
+  }
+
+  // Live tick — refresh the elapsed-time label every 60 seconds so
+  // it stays current without re-rendering anything else.
+  if (arrivedPill && !bindEntryFields._tickInterval) {
+    bindEntryFields._tickInterval = setInterval(() => {
+      const pill = document.getElementById('ent_arrived_pill');
+      if (!pill || !state.arrivedAt) {
+        clearInterval(bindEntryFields._tickInterval);
+        bindEntryFields._tickInterval = null;
+        return;
+      }
+      pill.outerHTML = renderArrivedPillHTML(state.arrivedAt);
+      bindEntryFields(); // re-attach listeners on the new node
+    }, 60000);
+  }
 }
 
 function equipmentCardHTML() {
@@ -11715,6 +12592,26 @@ const adminState = {
     try { return localStorage.getItem('orbit_cal_legend_collapsed') === '1'; }
     catch (_) { return false; }
   })(),
+  // ---- Performance tab state ----
+  // perfView: 'teams' | 'mods' — which tile collection is shown
+  // perfSearch: text filter applied to tile titles + subs
+  // perfExpanded: Set of tile IDs that are currently expanded
+  //   (so re-renders preserve which tiles admin has opened). Stored as
+  //   plain JS Set since it's session-scoped — admin re-opens tab,
+  //   they re-pick which tiles to expand. Persisting felt like more
+  //   surprise than help (e.g. team renamed, tile no longer in list).
+  // perfSort: per-tile sort spec keyed by tile ID, e.g.
+  //   { 'team-3': { key: 'date',   dir: 'desc' },
+  //     'mod-jane': { key: 'status', dir: 'asc' } }
+  // perfSessionStateRows: cached SessionState rows (admin pulls them
+  //   on Performance-tab visit; one shared cache used to enrich the
+  //   side panel's per-station detail). Null = not yet fetched.
+  perfView: 'teams',
+  perfSearch: '',
+  perfExpanded: new Set(),
+  perfSort: {},
+  perfSessionStateRows: null,
+  _perfSSFetching: false,
 };
 
 // Field-name resolver: tolerates camelCase, PascalCase, snake_case,
@@ -12359,6 +13256,946 @@ function computeOverviewMetrics() {
 }
 
 // ----- Renderers
+// =====================================================================
+// PERFORMANCE TAB
+// =====================================================================
+// Tile view of teams + moderators with expandable booking lists, sort
+// controls, and a slide-in detail panel showing per-station progress.
+// Wired into renderAdmin via `adminState.tab === 'performance'`.
+//
+// Data sources:
+//   - adminState.teams        — team roster
+//   - adminState.moderators   — moderator roster
+//   - adminState.assignments  — bookings (status, date, participant, mods)
+//   - SessionState rows (fetched once on tab visit) — per-station progress
+//     with timestamps; powers the side panel detail.
+// =====================================================================
+
+// Configurable Lakitu URL. The pattern uses {orbitId} as a placeholder
+// for the participant ID — admin can search Lakitu by orbit login. If
+// your Lakitu instance uses a different key, swap the path here. We
+// store this as a const rather than a setting because changing it
+// app-wide is a rare event (it's the institution's metadata tool URL).
+const LAKITU_BASE_URL = 'https://lakitu.centific.com/participant/{orbitId}';
+
+function buildLakituUrl(orbitId) {
+  // Falls back to the base URL if no participant ID — admin can paste
+  // the ID manually on the Lakitu landing page. Better than a broken
+  // link to a 404'd participant page.
+  if (!orbitId) return LAKITU_BASE_URL.replace('/{orbitId}', '');
+  return LAKITU_BASE_URL.replace('{orbitId}', encodeURIComponent(orbitId));
+}
+
+// Test whether a booking's participant name matches a search term.
+// Lower-cased substring match — same convention as the team/mod
+// name match logic elsewhere in this tab. Returns false for falsy
+// search terms (don't surface every booking just because admin hit
+// Backspace on the search box).
+function perfBookingMatchesParticipant(a, search) {
+  if (!search || !a || !a.participantData) return false;
+  const pd = a.participantData;
+  const full = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim().toLowerCase();
+  if (!full) return false;
+  return full.includes(search);
+}
+
+// Wrap the matching substring of `text` in <mark> for inline visual
+// emphasis. Returns HTML-safe output — the non-matching portions are
+// HTML-escaped, the wrapper is the only literal markup. Used inside
+// matched booking rows so admin sees exactly which characters they
+// hit on. If the search isn't present in the text (e.g., this row
+// was already filtered in for other reasons), falls back to plain
+// escaped text.
+function highlightMatch(text, search) {
+  const safe = escapeHTML(String(text == null ? '' : text));
+  if (!search) return safe;
+  const lcText = String(text).toLowerCase();
+  const idx = lcText.indexOf(search);
+  if (idx < 0) return safe;
+  // Recompute indices on the escaped string. Cheap approach: rebuild
+  // the result in three parts using the ORIGINAL text positions then
+  // escape each segment. Avoids issues where the original text
+  // contains HTML-sensitive chars (& < >) and escapeHTML expands them
+  // — splitting on the escaped string would land at the wrong column.
+  const before = String(text).slice(0, idx);
+  const match  = String(text).slice(idx, idx + search.length);
+  const after  = String(text).slice(idx + search.length);
+  return escapeHTML(before) + '<mark class="perf-match-hl">' + escapeHTML(match) + '</mark>' + escapeHTML(after);
+}
+
+// Classify an assignment into one of three buckets for the perf view.
+// Cancelled / Unassigned are excluded entirely — they aren't performance
+// signal.
+function classifyBookingForPerf(a) {
+  if (!a) return null;
+  if (a.status === 'Cancelled' || a.status === 'Unassigned') return null;
+  if (a.status === 'Completed') return 'completed';
+  // Notified = an active booking with the email out, treated as "in
+  // progress" because the team has committed to it and may already
+  // be working. Booked = scheduled but not yet notified, also in
+  // the "scheduled" sense unless there's actual station progress.
+  // The actual fine-grained "started but not done" detection comes
+  // from SessionState rows — but at the booking-list level we use
+  // status as the proxy.
+  if (a.status === 'Notified') return 'inprogress';
+  return 'scheduled'; // 'Booked' (or anything else not Cancelled/Completed)
+}
+
+// Compute initials for an avatar — first letter of first two words.
+function perfInitials(name) {
+  if (!name) return '?';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+}
+
+// Get short display name for a mod row from the moderators table.
+function perfModName(m) {
+  const fn = pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name');
+  const ln = pickField(m, 'lastName',  'last_name',  'LastName',  'Last Name');
+  return [fn, ln].filter(Boolean).join(' ').trim();
+}
+
+function perfModId(m) {
+  return pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId',
+                      'loginId', 'username', 'id', 'email');
+}
+
+// Resolve moderators belonging to a team (primary + backup).
+function perfTeamMembers(team) {
+  const allMods = adminState.moderators || [];
+  const idsLower = id => String(id || '').toLowerCase();
+  const matchMod = id => allMods.find(m => idsLower(perfModId(m)) === idsLower(id));
+  const primary = (team.primaryIds || []).map(matchMod).filter(Boolean);
+  const backup  = (team.backupIds  || []).map(matchMod).filter(Boolean);
+  return { primary, backup };
+}
+
+// All bookings for a team — used in team-tile expansion.
+function perfTeamBookings(teamId) {
+  return (adminState.assignments || []).filter(a =>
+    a && String(a.teamId) === String(teamId) && classifyBookingForPerf(a)
+  );
+}
+
+// All bookings a mod was on (primary or backup at time of booking).
+// We check modSnapshots (the captured team-at-booking-time) so a mod
+// removed from the team after-the-fact still shows their historical
+// session.
+function perfModBookings(modOrbitId) {
+  const lc = String(modOrbitId || '').toLowerCase();
+  return (adminState.assignments || []).filter(a => {
+    if (!a || !classifyBookingForPerf(a)) return false;
+    // Match via modSnapshots if present (most accurate — captures
+    // historical team membership at booking time).
+    if (Array.isArray(a.modSnapshots) && a.modSnapshots.length > 0) {
+      return a.modSnapshots.some(s =>
+        String(s.orbitLoginId || s.orbitId || '').toLowerCase() === lc
+      );
+    }
+    // Fall back to current team's roster if no snapshot.
+    const team = (adminState.teams || []).find(t => String(t.id) === String(a.teamId));
+    if (!team) return false;
+    const ids = [...(team.primaryIds || []), ...(team.backupIds || [])];
+    return ids.some(id => String(id || '').toLowerCase() === lc);
+  });
+}
+
+// Sort comparator factory. spec: { key: 'date'|'status', dir: 'asc'|'desc' }
+function perfBookingComparator(spec) {
+  const dir = spec.dir === 'asc' ? 1 : -1;
+  // Status ordering for the 'status' sort: completed → inprogress →
+  // scheduled. Within a status, fall back to date desc (newest first)
+  // so admin can see the most recent items inside each status bucket.
+  const STATUS_RANK = { completed: 0, inprogress: 1, scheduled: 2 };
+  return (a, b) => {
+    if (spec.key === 'status') {
+      const ra = STATUS_RANK[classifyBookingForPerf(a)] || 99;
+      const rb = STATUS_RANK[classifyBookingForPerf(b)] || 99;
+      if (ra !== rb) return (ra - rb) * dir;
+      // Secondary key: date desc within same status.
+      const da = a.date || '';
+      const db = b.date || '';
+      if (da !== db) return da < db ? 1 : -1;
+      return 0;
+    }
+    // Default: date sort (with start time as tiebreaker).
+    const da = a.date || '';
+    const db = b.date || '';
+    if (da !== db) return da < db ? -dir : dir;
+    const ta = a.startMin || 0;
+    const tb = b.startMin || 0;
+    return (ta - tb) * dir;
+  };
+}
+
+async function ensurePerfSessionStateRows() {
+  // Fetch SessionState rows once per Performance tab visit. Cached on
+  // adminState so re-renders (search-as-you-type, sort changes) don't
+  // re-fetch. Returns the cached rows or pulls fresh ones.
+  if (Array.isArray(adminState.perfSessionStateRows)) return adminState.perfSessionStateRows;
+  if (adminState._perfSSFetching) return [];
+  adminState._perfSSFetching = true;
+  try {
+    if (typeof fetchSessionStateRows === 'function') {
+      const rows = await fetchSessionStateRows();
+      adminState.perfSessionStateRows = Array.isArray(rows) ? rows : [];
+    } else {
+      adminState.perfSessionStateRows = [];
+    }
+  } catch (e) {
+    console.warn('[Orbit] Performance: SessionState fetch failed', e && e.message);
+    adminState.perfSessionStateRows = [];
+  } finally {
+    adminState._perfSSFetching = false;
+  }
+  return adminState.perfSessionStateRows;
+}
+
+function renderPerformance(body) {
+  // Auto-load adjacent data the tab needs. Most likely already loaded
+  // (admin lands here via the top-tab; assignments/teams come from
+  // the assignment tab's loader). But cover the cold-load case.
+  if (!adminState.moderators) loadModerators(false);
+  if (!adminState.assignments || !adminState.teams) {
+    const stored = loadAssignmentData();
+    if (stored) {
+      adminState.teams = stored.teams;
+      adminState.assignments = stored.assignments;
+    }
+  }
+  ensurePerfSessionStateRows().then(() => {
+    // Lightweight refresh once SS data lands — only update side panel
+    // if it's currently open (so admin gets the timestamps appearing
+    // shortly after they clicked). No need to re-render the tile list
+    // since SS data doesn't affect tile-level stats.
+    const panel = document.getElementById('perfPanel');
+    if (panel && panel.classList.contains('open') && panel.dataset.asgnId) {
+      openPerformancePanel(panel.dataset.asgnId);
+    }
+  });
+
+  const view = adminState.perfView || 'teams';
+  const search = (adminState.perfSearch || '').trim().toLowerCase();
+
+  body.innerHTML = `
+    <div class="perf-toolbar">
+      <div class="perf-toggle" role="tablist">
+        <button type="button" class="perf-toggle-btn ${view === 'teams' ? 'active' : ''}" data-perf-view="teams">Teams</button>
+        <button type="button" class="perf-toggle-btn ${view === 'mods' ? 'active' : ''}" data-perf-view="mods">Moderators</button>
+      </div>
+      <div class="perf-search">
+        <svg class="perf-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <input type="search" class="perf-search-input" id="perfSearchInput"
+               placeholder="Search ${view === 'teams' ? 'teams, members, or participants' : 'moderators or participants'}…"
+               value="${escapeHTML(adminState.perfSearch || '')}">
+      </div>
+    </div>
+    <div id="perfTileGrid" class="perf-tile-grid">${renderPerfTilesHTML(view, search)}</div>
+  `;
+
+  // Wire toolbar
+  body.querySelectorAll('[data-perf-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminState.perfView = btn.dataset.perfView;
+      // Clear search on view switch — keeping "John" filtering for
+      // teams when admin flips to moderators would be confusing.
+      // Same for the open-expansion set: tile IDs are namespaced by
+      // view (team-X vs mod-Y) so they don't collide, but the open
+      // set might still leak between views. Cheap to clear.
+      adminState.perfSearch = '';
+      adminState.perfExpanded = new Set();
+      renderPerformance(body);
+    });
+  });
+  const searchInput = body.querySelector('#perfSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      adminState.perfSearch = e.target.value;
+      // Re-render ONLY the tile grid (not the whole tab) — keeps the
+      // input focused and the cursor in place as admin types.
+      const grid = document.getElementById('perfTileGrid');
+      if (grid) {
+        grid.innerHTML = renderPerfTilesHTML(adminState.perfView, e.target.value.trim().toLowerCase());
+        wirePerfTileGrid(grid);
+      }
+    });
+  }
+  wirePerfTileGrid(document.getElementById('perfTileGrid'));
+}
+
+function renderPerfTilesHTML(view, search) {
+  if (view === 'teams') return renderPerfTeamTilesHTML(search);
+  return renderPerfModTilesHTML(search);
+}
+
+function renderPerfTeamTilesHTML(search) {
+  const teams = adminState.teams || [];
+  // Search matches: team name OR any member's name (mod name/email) OR
+  // any participant name in the team's bookings.
+  //
+  // Lets admin find the team a specific participant has been booked
+  // with — common workflow: "Where's Jane Smith's session at? Who's
+  // running it?" Admin types "Jane Smith", the team(s) Jane has been
+  // booked with surface, and they auto-expand so the matching row
+  // is immediately visible rather than buried inside a collapsed tile.
+  //
+  // Tracks the match reason (participant-only vs name/member) so the
+  // tile-render step knows whether to auto-expand. Tiles that match
+  // ONLY by participant get auto-expanded; tiles matching by team
+  // name preserve their normal expanded/collapsed state to avoid
+  // surprising admin who was already browsing a specific tile.
+  const matchByParticipantOnly = new Set();
+  const filtered = teams.filter(t => {
+    if (!search) return true;
+    const nameHit = (t.name || '').toLowerCase().includes(search);
+    if (nameHit) return true;
+    const { primary, backup } = perfTeamMembers(t);
+    const memberHit = [...primary, ...backup].some(m => {
+      const name = perfModName(m).toLowerCase();
+      const email = String(pickField(m, 'email', 'centificEmail', 'personalEmail') || '').toLowerCase();
+      return name.includes(search) || email.includes(search);
+    });
+    if (memberHit) return true;
+    // Last check: any booking with a participant matching the search.
+    const bookings = perfTeamBookings(t.id);
+    const partHit = bookings.some(a => perfBookingMatchesParticipant(a, search));
+    if (partHit) {
+      matchByParticipantOnly.add(`team-${t.id}`);
+      return true;
+    }
+    return false;
+  });
+
+  if (filtered.length === 0) {
+    return `<div class="perf-empty" style="grid-column: 1 / -1;">${
+      search ? `No teams match "${escapeHTML(search)}".` : 'No teams yet. Create one in the Assignment tab to start tracking performance.'
+    }</div>`;
+  }
+
+  return filtered.map(t => {
+    const tileId = `team-${t.id}`;
+    // Auto-expand if the tile only matched via a participant — admin's
+    // expected result IS the matching row, so showing it immediately
+    // is the user-friendly default. Manual expansion (perfExpanded
+    // set) still wins for tiles that match by other criteria.
+    const open = adminState.perfExpanded.has(tileId) || matchByParticipantOnly.has(tileId);
+    const { primary, backup } = perfTeamMembers(t);
+    const bookings = perfTeamBookings(t.id);
+    const completed  = bookings.filter(a => classifyBookingForPerf(a) === 'completed').length;
+    const inprogress = bookings.filter(a => classifyBookingForPerf(a) === 'inprogress').length;
+    const scheduled  = bookings.filter(a => classifyBookingForPerf(a) === 'scheduled').length;
+    const memberCount = primary.length + backup.length;
+    const memberSub = memberCount > 0
+      ? `${memberCount} member${memberCount === 1 ? '' : 's'}`
+      : 'No members assigned';
+
+    return `
+      <details class="perf-tile" data-tile-id="${tileId}" ${open ? 'open' : ''}>
+        <summary class="perf-tile-head">
+          <div class="perf-tile-avatar">${escapeHTML(perfInitials(t.name))}</div>
+          <div class="perf-tile-title-block">
+            <div class="perf-tile-title">${escapeHTML(t.name || 'Untitled team')}</div>
+            <div class="perf-tile-sub">${escapeHTML(memberSub)}</div>
+          </div>
+          <div class="perf-tile-stats">
+            <span class="perf-stat-chip completed ${completed === 0 ? 'zero' : ''}" title="Completed sessions">${completed} done</span>
+            <span class="perf-stat-chip inprogress ${inprogress === 0 ? 'zero' : ''}" title="In-progress sessions">${inprogress} live</span>
+            <span class="perf-stat-chip scheduled ${scheduled === 0 ? 'zero' : ''}" title="Scheduled sessions">${scheduled} next</span>
+            <svg class="perf-tile-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </summary>
+        ${open ? renderPerfTileBodyHTML(tileId, bookings, t, search) : ''}
+      </details>
+    `;
+  }).join('');
+}
+
+function renderPerfModTilesHTML(search) {
+  const mods = adminState.moderators || [];
+  // Same shape as the team filter: name/email match OR any booking
+  // with a matching participant name. Participant-only matches
+  // auto-expand the tile so the matching booking row is visible.
+  const matchByParticipantOnly = new Set();
+  const filtered = mods.filter(m => {
+    if (!search) return true;
+    const name = perfModName(m).toLowerCase();
+    const email = String(pickField(m, 'email', 'centificEmail', 'personalEmail') || '').toLowerCase();
+    if (name.includes(search) || email.includes(search)) return true;
+    const orbitId = perfModId(m);
+    const bookings = perfModBookings(orbitId);
+    const partHit = bookings.some(a => perfBookingMatchesParticipant(a, search));
+    if (partHit) {
+      const tileId = `mod-${orbitId || perfModName(m)}`;
+      matchByParticipantOnly.add(tileId);
+      return true;
+    }
+    return false;
+  });
+
+  if (filtered.length === 0) {
+    return `<div class="perf-empty" style="grid-column: 1 / -1;">${
+      search ? `No moderators match "${escapeHTML(search)}".` : 'No moderators loaded yet.'
+    }</div>`;
+  }
+
+  return filtered.map(m => {
+    const orbitId = perfModId(m);
+    const tileId = `mod-${orbitId || perfModName(m)}`;
+    // Same auto-expand rule as teams — participant-only matches open
+    // the tile so the matching row surfaces immediately.
+    const open = adminState.perfExpanded.has(tileId) || matchByParticipantOnly.has(tileId);
+    const name = perfModName(m) || '(no name)';
+    // Resolve team membership — a mod may be on multiple teams.
+    const memberOf = (adminState.teams || []).filter(t => {
+      const lc = String(orbitId || '').toLowerCase();
+      return [...(t.primaryIds || []), ...(t.backupIds || [])]
+        .some(id => String(id || '').toLowerCase() === lc);
+    });
+    const teamSub = memberOf.length > 0
+      ? memberOf.map(t => t.name).join(' · ')
+      : 'Not on a team';
+
+    const bookings = perfModBookings(orbitId);
+    const completed  = bookings.filter(a => classifyBookingForPerf(a) === 'completed').length;
+    const inprogress = bookings.filter(a => classifyBookingForPerf(a) === 'inprogress').length;
+    const scheduled  = bookings.filter(a => classifyBookingForPerf(a) === 'scheduled').length;
+
+    return `
+      <details class="perf-tile" data-tile-id="${tileId}" ${open ? 'open' : ''}>
+        <summary class="perf-tile-head">
+          <div class="perf-tile-avatar mod">${escapeHTML(perfInitials(name))}</div>
+          <div class="perf-tile-title-block">
+            <div class="perf-tile-title">${escapeHTML(name)}</div>
+            <div class="perf-tile-sub">${escapeHTML(teamSub)}</div>
+          </div>
+          <div class="perf-tile-stats">
+            <span class="perf-stat-chip completed ${completed === 0 ? 'zero' : ''}" title="Completed sessions">${completed} done</span>
+            <span class="perf-stat-chip inprogress ${inprogress === 0 ? 'zero' : ''}" title="In-progress sessions">${inprogress} live</span>
+            <span class="perf-stat-chip scheduled ${scheduled === 0 ? 'zero' : ''}" title="Scheduled sessions">${scheduled} next</span>
+            <svg class="perf-tile-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </summary>
+        ${open ? renderPerfTileBodyHTML(tileId, bookings, null, search) : ''}
+      </details>
+    `;
+  }).join('');
+}
+
+function renderPerfTileBodyHTML(tileId, bookings, team, search) {
+  // Default sort spec — date descending so newest sessions surface first.
+  // Stored per-tile so admin can have different sorts open simultaneously.
+  const sort = adminState.perfSort[tileId] || { key: 'date', dir: 'desc' };
+  const sorted = [...bookings].sort(perfBookingComparator(sort));
+
+  if (sorted.length === 0) {
+    return `<div class="perf-tile-body">
+      <div class="perf-empty">No sessions yet. Bookings appear here once they're added in the Assignment tab.</div>
+    </div>`;
+  }
+
+  // Sort UI — two key axes (date/status) × two directions.
+  const sortBtn = (key, label, dir) => {
+    const active = sort.key === key && sort.dir === dir;
+    return `<button type="button" class="perf-sort-btn ${active ? 'active' : ''}" data-sort-key="${key}" data-sort-dir="${dir}">${escapeHTML(label)}</button>`;
+  };
+
+  return `
+    <div class="perf-tile-body">
+      <div class="perf-sort-row">
+        <span class="perf-sort-label">Sort</span>
+        ${sortBtn('date', 'Newest', 'desc')}
+        ${sortBtn('date', 'Oldest', 'asc')}
+        <span class="perf-sort-divider"></span>
+        ${sortBtn('status', 'Status', 'asc')}
+      </div>
+      <div class="perf-booking-list">
+        ${sorted.map(a => renderPerfBookingRowHTML(a, team, search)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderPerfBookingRowHTML(a, team, search) {
+  const cls = classifyBookingForPerf(a);
+  const statusKey = a.status === 'Cancelled' ? 'cancelled'
+                  : a.status === 'Completed' ? 'completed'
+                  : a.status === 'Notified'  ? 'notified'
+                  : 'booked';
+  const pd = a.participantData || {};
+  const participant = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'No participant';
+  // Resolve team name from a.teamId — covers cases where this row
+  // came from the moderator tile and we don't have a specific team
+  // context passed in.
+  const tName = team ? team.name : (() => {
+    const t = (adminState.teams || []).find(x => String(x.id) === String(a.teamId));
+    return t ? t.name : (a.teamName || '');
+  })();
+  // Mod label — show first 2 names + "+N" badge for larger teams,
+  // same convention as the cal-drill modal.
+  const allMods = adminState.moderators || [];
+  const matchMod = id => allMods.find(m => String(perfModId(m) || '').toLowerCase() === String(id || '').toLowerCase());
+  const tCurrent = (adminState.teams || []).find(x => String(x.id) === String(a.teamId));
+  const modIds = tCurrent ? (tCurrent.primaryIds || []) : [];
+  const modNames = modIds.map(id => {
+    const m = matchMod(id);
+    return m ? perfModName(m) : null;
+  }).filter(Boolean);
+  let modLabel = '—';
+  if (modNames.length === 1) modLabel = modNames[0];
+  else if (modNames.length === 2) modLabel = `${modNames[0]} & ${modNames[1]}`;
+  else if (modNames.length > 2) modLabel = `${modNames[0]}, ${modNames[1]} +${modNames.length - 2}`;
+
+  const dateObj = parseYMD(a.date);
+  const dateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    : a.date;
+
+  // Lakitu pill only for completed/in-progress. Stops event-propagation
+  // on click so the row's click-to-open-panel handler doesn't also
+  // fire (would race the new tab opening with the panel sliding in).
+  const lakituUrl = buildLakituUrl(a.participantOrbitId);
+  const showLakitu = (cls === 'completed' || cls === 'inprogress');
+  const lakituHTML = showLakitu
+    ? `<a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="perf-lakitu-pill" data-stop-row-click onclick="event.stopPropagation()">
+         Lakitu
+         <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
+           <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+         </svg>
+       </a>`
+    : `<span style="width: 1px;"></span>`; // placeholder to keep grid columns aligned
+
+  // Highlight match: if the current search term matches THIS booking's
+  // participant, the row gets a .matched class for the visual cue (left
+  // border bar + subtle bg tint) AND the participant name is wrapped
+  // with <mark> on the matching substring so admin's eye finds it
+  // immediately even in a long list of similar names.
+  const isMatch = search && perfBookingMatchesParticipant(a, search);
+  const participantDisplay = isMatch
+    ? highlightMatch(participant, search)
+    : escapeHTML(participant);
+
+  return `
+    <button type="button" class="perf-booking-row ${isMatch ? 'matched' : ''}" data-asgn-id="${escapeHTML(a.id)}">
+      <span class="perf-booking-dot status-${statusKey}"></span>
+      <span class="perf-booking-participant">${participantDisplay}</span>
+      <span class="perf-booking-meta">${escapeHTML(tName + (modLabel !== '—' ? ` · ${modLabel}` : ''))}</span>
+      <span class="perf-booking-date">${escapeHTML(dateLabel)}</span>
+      <span class="perf-booking-status-pill status-${statusKey}">${escapeHTML(a.status || 'Booked')}</span>
+      ${lakituHTML}
+    </button>
+  `;
+}
+
+function wirePerfTileGrid(grid) {
+  if (!grid) return;
+  // Tile expand/collapse — preserve the open-set so re-renders (sort
+  // changes, search updates) don't snap tiles back to closed.
+  grid.querySelectorAll('.perf-tile').forEach(tile => {
+    tile.addEventListener('toggle', () => {
+      const id = tile.dataset.tileId;
+      if (!id) return;
+      if (tile.open) {
+        adminState.perfExpanded.add(id);
+        // Lazy-render the body on first open — saves on initial paint
+        // when admin has many tiles. The `summary` template renders
+        // empty body when not open; we inject the body now.
+        if (!tile.querySelector('.perf-tile-body')) {
+          // Re-render by reaching the parent grid and refreshing JUST
+          // this tile. Simpler: replace innerHTML of the tile minus
+          // the summary.
+          const tileId = id;
+          // Determine the source bookings/team again
+          let bookings, team = null;
+          if (tileId.startsWith('team-')) {
+            const teamIdStr = tileId.slice('team-'.length);
+            const t = (adminState.teams || []).find(x => String(x.id) === teamIdStr);
+            if (t) { team = t; bookings = perfTeamBookings(t.id); }
+          } else if (tileId.startsWith('mod-')) {
+            const orbitId = tileId.slice('mod-'.length);
+            bookings = perfModBookings(orbitId);
+          }
+          if (Array.isArray(bookings)) {
+            const summary = tile.querySelector('summary');
+            // Forward the current search term so highlight + matched
+            // class stay consistent if admin opens a tile manually
+            // mid-search.
+            const curSearch = (adminState.perfSearch || '').trim().toLowerCase();
+            const bodyHTML = renderPerfTileBodyHTML(tileId, bookings, team, curSearch);
+            // Replace any non-summary child with the body
+            const oldBody = tile.querySelector('.perf-tile-body');
+            if (oldBody) oldBody.remove();
+            summary.insertAdjacentHTML('afterend', bodyHTML);
+            wirePerfTileBody(tile);
+          }
+        } else {
+          wirePerfTileBody(tile);
+        }
+      } else {
+        adminState.perfExpanded.delete(id);
+      }
+    });
+    // Already-open tiles need their bodies wired on initial render
+    if (tile.open) wirePerfTileBody(tile);
+  });
+}
+
+function wirePerfTileBody(tile) {
+  // Sort button clicks
+  tile.querySelectorAll('.perf-sort-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation(); // don't bubble to the summary (would toggle the tile)
+      const tileId = tile.dataset.tileId;
+      adminState.perfSort[tileId] = {
+        key: btn.dataset.sortKey,
+        dir: btn.dataset.sortDir,
+      };
+      // Re-render just the tile body
+      let bookings, team = null;
+      if (tileId.startsWith('team-')) {
+        const teamIdStr = tileId.slice('team-'.length);
+        const t = (adminState.teams || []).find(x => String(x.id) === teamIdStr);
+        if (t) { team = t; bookings = perfTeamBookings(t.id); }
+      } else if (tileId.startsWith('mod-')) {
+        const orbitId = tileId.slice('mod-'.length);
+        bookings = perfModBookings(orbitId);
+      }
+      if (Array.isArray(bookings)) {
+        const oldBody = tile.querySelector('.perf-tile-body');
+        // Forward the live search term so re-renders triggered by
+        // sort changes preserve the matched-row highlight. Without
+        // this, hitting a sort button mid-search would wipe the
+        // visual cue admin was relying on.
+        const curSearch = (adminState.perfSearch || '').trim().toLowerCase();
+        const newBody = renderPerfTileBodyHTML(tileId, bookings, team, curSearch);
+        if (oldBody) oldBody.outerHTML = newBody;
+        wirePerfTileBody(tile);
+      }
+    });
+  });
+  // Booking row clicks — open the slide-in panel
+  tile.querySelectorAll('.perf-booking-row').forEach(row => {
+    row.addEventListener('click', e => {
+      // If the click landed on the Lakitu pill (or any element with
+      // data-stop-row-click), don't open the panel.
+      if (e.target.closest('[data-stop-row-click]')) return;
+      const asgnId = row.dataset.asgnId;
+      if (!asgnId) return;
+      openPerformancePanel(asgnId);
+    });
+  });
+}
+
+// =====================================================================
+// Slide-in performance detail panel (from the LEFT, per user spec)
+// =====================================================================
+function openPerformancePanel(asgnId) {
+  const a = (adminState.assignments || []).find(x => x.id === asgnId);
+  if (!a) return;
+
+  // Lazy-create overlay + panel singletons. Reused on subsequent opens
+  // so the slide-in transition starts from a known DOM position.
+  let overlay = document.getElementById('perfPanelOverlay');
+  let panel   = document.getElementById('perfPanel');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'perfPanelOverlay';
+    overlay.className = 'perf-panel-overlay';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) closePerformancePanel();
+    });
+  }
+  if (!panel) {
+    panel = document.createElement('aside');
+    panel.id = 'perfPanel';
+    panel.className = 'perf-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-labelledby', 'perfPanelTitle');
+    document.body.appendChild(panel);
+  }
+
+  // Track which asgn the panel currently shows (used by the
+  // SessionState late-arrival re-render — see ensurePerfSessionStateRows).
+  panel.dataset.asgnId = asgnId;
+
+  // Build the panel content. Header: participant + team + date.
+  // Body: per-station list pulled from SessionState (filtered to this
+  // booking's assignmentId). For scheduled bookings with no SS data,
+  // show just the booking info — no station detail yet.
+  const cls = classifyBookingForPerf(a);
+  const pd = a.participantData || {};
+  const participant = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'No participant';
+  const team = (adminState.teams || []).find(x => String(x.id) === String(a.teamId));
+  const teamName = team ? team.name : (a.teamName || 'Unknown team');
+  const dateObj = parseYMD(a.date);
+  const dateLabel = dateObj
+    ? dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : a.date;
+  const timeLabel = (typeof fmtTimeOfDay === 'function')
+    ? `${fmtTimeOfDay(a.startMin)} – ${fmtTimeOfDay(a.endMin)}`
+    : '';
+  const statusKey = a.status === 'Cancelled' ? 'cancelled'
+                  : a.status === 'Completed' ? 'completed'
+                  : a.status === 'Notified'  ? 'notified'
+                  : 'booked';
+  const lakituUrl = buildLakituUrl(a.participantOrbitId);
+  const showLakitu = (cls === 'completed' || cls === 'inprogress');
+
+  // Per-station detail.
+  // For scheduled bookings, we show "Session not started yet" instead
+  // of the station list. For active/completed sessions we synthesize
+  // per-station progress from SessionState rows.
+  let stationDetailHTML;
+  if (cls === 'scheduled') {
+    stationDetailHTML = `
+      <div class="perf-panel-section-title">Session</div>
+      <div class="perf-empty">Session hasn't started yet. Station progress will appear here once the team begins work.</div>
+    `;
+  } else {
+    stationDetailHTML = renderPerfStationListHTML(a);
+  }
+
+  panel.innerHTML = `
+    <div class="perf-panel-head">
+      <div class="perf-panel-head-top">
+        <div style="min-width: 0;">
+          <div class="perf-panel-eyebrow">${escapeHTML(a.status || 'Booked')}${a.id ? ` · ${escapeHTML(String(a.id).slice(0, 8))}` : ''}</div>
+          <h2 class="perf-panel-title" id="perfPanelTitle">${escapeHTML(participant)}</h2>
+        </div>
+        <button type="button" class="perf-panel-close" id="perfPanelCloseBtn" aria-label="Close">×</button>
+      </div>
+      <div class="perf-panel-meta-grid">
+        <div class="perf-panel-meta-key">Team</div>
+        <div class="perf-panel-meta-val">${escapeHTML(teamName)}</div>
+        <div class="perf-panel-meta-key">Date</div>
+        <div class="perf-panel-meta-val">${escapeHTML(dateLabel)}${timeLabel ? ` · ${escapeHTML(timeLabel)}` : ''}</div>
+        ${pd.address ? `
+          <div class="perf-panel-meta-key">Address</div>
+          <div class="perf-panel-meta-val">${escapeHTML(pd.address)}${pd.state ? `, ${escapeHTML(pd.state)}` : ''}${pd.zipCode ? ` ${escapeHTML(pd.zipCode)}` : ''}</div>
+        ` : ''}
+        ${pd.phone ? `
+          <div class="perf-panel-meta-key">Phone</div>
+          <div class="perf-panel-meta-val">${escapeHTML(pd.phone)}</div>
+        ` : ''}
+      </div>
+      ${showLakitu ? `
+        <div style="margin-top: 14px;">
+          <a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="perf-lakitu-pill" style="font-size: 12.5px; padding: 6px 12px;">
+            Open in Lakitu
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+              <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </div>
+      ` : ''}
+    </div>
+    <div class="perf-panel-body">
+      ${stationDetailHTML}
+    </div>
+  `;
+
+  panel.querySelector('#perfPanelCloseBtn').addEventListener('click', closePerformancePanel);
+
+  // Open with transition. Two-step (overlay first, then panel) so the
+  // backdrop appears slightly before the slide-in starts — visually
+  // cues admin that something heavier is about to load.
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    panel.classList.add('open');
+    panel.querySelector('#perfPanelCloseBtn').focus();
+  });
+
+  // Escape closes. Bind once globally (idempotent — re-attached every
+  // open is fine, removeEventListener with the same closure works).
+  if (!openPerformancePanel._escBound) {
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        const p = document.getElementById('perfPanel');
+        if (p && p.classList.contains('open')) closePerformancePanel();
+      }
+    });
+    openPerformancePanel._escBound = true;
+  }
+}
+
+function closePerformancePanel() {
+  const overlay = document.getElementById('perfPanelOverlay');
+  const panel = document.getElementById('perfPanel');
+  if (overlay) overlay.classList.remove('open');
+  if (panel)   { panel.classList.remove('open'); delete panel.dataset.asgnId; }
+}
+
+function renderPerfStationListHTML(a) {
+  // Pull per-station data from SessionState rows for this assignment.
+  // We collapse all teammates' rows down to a single timeline — pick
+  // the latest row per station (by lastActive) and read its
+  // cameras/scenarios state. This way admin sees "what's done" rather
+  // than "who did what" — performance, not attribution.
+  const rows = (adminState.perfSessionStateRows || []).filter(r =>
+    String(r.assignmentId || '') === String(a.id || '')
+  );
+
+  // No rows yet — likely SS hasn't loaded or session hasn't really
+  // started. Surface the right empty-state message.
+  if (rows.length === 0) {
+    return `
+      <div class="perf-panel-section-title">Stations</div>
+      <div class="perf-empty">
+        ${adminState.perfSessionStateRows == null
+          ? 'Loading station data…'
+          : 'No station progress reported yet.'}
+      </div>
+    `;
+  }
+
+  // Aggregate the latest state from all rows. Each row has stateJson
+  // containing { cameras, stations: {Station1: {cameras, scenarios}, ...},
+  // stationCompletedAt: {Station1: ISO}, etc }. We keep the FRESHEST
+  // value per field by walking rows in lastActive-descending order
+  // and only filling when not already set.
+  rows.sort((x, y) => String(y.lastActive || '').localeCompare(String(x.lastActive || '')));
+  const merged = { stations: {} };
+  for (const r of rows) {
+    let st;
+    try { st = JSON.parse(r.stateJson || '{}'); } catch (_) { continue; }
+    if (st.stations) {
+      for (const key of Object.keys(st.stations)) {
+        if (!merged.stations[key]) merged.stations[key] = st.stations[key];
+      }
+    }
+    // Carry through ancillary fields used below (completedAt map).
+    if (st.stationCompletedAt && !merged.stationCompletedAt) merged.stationCompletedAt = st.stationCompletedAt;
+    if (st.sessionStartedAt && !merged.sessionStartedAt) merged.sessionStartedAt = st.sessionStartedAt;
+    if (st.sessionCompletedAt && !merged.sessionCompletedAt) merged.sessionCompletedAt = st.sessionCompletedAt;
+  }
+
+  // Build the station rows — use STATIONS constant if available, else
+  // derive station list from the merged data.
+  const stationKeys = (typeof STATIONS !== 'undefined' && Array.isArray(STATIONS))
+    ? STATIONS.map(s => s.key)
+    : Object.keys(merged.stations || {});
+
+  const items = stationKeys.map(key => {
+    const sd = (merged.stations && merged.stations[key]) || {};
+    const completedAt = (merged.stationCompletedAt || {})[key] || null;
+    // Determine status:
+    //   - completedAt present     → done
+    //   - any scenario activity   → partial
+    //   - otherwise               → not started
+    let status = 'notstarted';
+    if (completedAt) status = 'done';
+    else if (sd.scenarios) {
+      for (const num of Object.keys(sd.scenarios)) {
+        const sc = sd.scenarios[num] || {};
+        if ((sc.iterations || 0) > 0 || (sc.status && sc.status !== 'Not Started') || (sc.notes && String(sc.notes).trim())) {
+          status = 'partial';
+          break;
+        }
+      }
+    }
+    // Also count: scenarios with any iterations
+    let activeScenarios = 0;
+    let totalIterations = 0;
+    if (sd.scenarios) {
+      for (const num of Object.keys(sd.scenarios)) {
+        const sc = sd.scenarios[num] || {};
+        if ((sc.iterations || 0) > 0) {
+          activeScenarios++;
+          totalIterations += sc.iterations;
+        }
+      }
+    }
+    const camsConfirmed = sd.cameras
+      ? Object.values(sd.cameras).filter(Boolean).length
+      : 0;
+
+    // Display name — extract station number from key, e.g. "Station1" → "1"
+    const displayName = (typeof STATIONS !== 'undefined' && Array.isArray(STATIONS))
+      ? (STATIONS.find(s => s.key === key)?.label || key)
+      : key;
+
+    const tsLabel = completedAt
+      ? (() => {
+          const d = new Date(completedAt);
+          if (isNaN(d.getTime())) return '';
+          return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+            + ' · '
+            + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        })()
+      : '';
+
+    // Sub-line: scenario activity + camera count
+    const parts = [];
+    if (activeScenarios > 0) parts.push(`${activeScenarios} scenario${activeScenarios === 1 ? '' : 's'} · ${totalIterations} iter`);
+    if (camsConfirmed > 0)   parts.push(`${camsConfirmed} cams confirmed`);
+    const sub = parts.join(' · ') || (status === 'notstarted' ? 'Not started' : '');
+
+    return {
+      key, displayName, status, completedAt, tsLabel, sub,
+    };
+  });
+
+  // Sort by completion timestamp (completed first, oldest→newest within
+  // completed; then partial; then not-started). Within "not started"
+  // keep the STATIONS-order so admin sees the natural session flow.
+  items.sort((x, y) => {
+    if (x.status === 'done' && y.status === 'done') {
+      return String(x.completedAt || '').localeCompare(String(y.completedAt || ''));
+    }
+    const rank = { done: 0, partial: 1, notstarted: 2 };
+    return (rank[x.status] || 9) - (rank[y.status] || 9);
+  });
+
+  return `
+    ${merged.sessionStartedAt ? `
+      <div class="perf-panel-section-title">Session</div>
+      <div style="font-size: 12.5px; color: var(--text2); margin-bottom: 6px;">
+        Started ${escapeHTML(new Date(merged.sessionStartedAt).toLocaleString())}
+      </div>
+      ${merged.sessionCompletedAt ? `
+        <div style="font-size: 12.5px; color: rgb(192, 132, 252); margin-bottom: 12px;">
+          Completed ${escapeHTML(new Date(merged.sessionCompletedAt).toLocaleString())}
+        </div>
+      ` : `
+        <div style="font-size: 12.5px; color: rgb(45, 212, 191); margin-bottom: 12px;">
+          In progress
+        </div>
+      `}
+    ` : ''}
+    <div class="perf-panel-section-title">Stations</div>
+    <div class="perf-station-list">
+      ${items.map(it => `
+        <div class="perf-station-item ${it.status === 'done' ? 'done' : it.status === 'partial' ? 'partial' : ''}">
+          <div class="perf-station-icon">
+            ${it.status === 'done'
+              ? `<svg width="14" height="11" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+              : it.status === 'partial'
+                ? `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M6 4v2.5l1.5 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`
+                : `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.4" opacity="0.5"/></svg>`
+            }
+          </div>
+          <div>
+            <div class="perf-station-name">${escapeHTML(it.displayName)}</div>
+            ${it.sub ? `<div class="perf-station-sub">${escapeHTML(it.sub)}</div>` : ''}
+          </div>
+          <div class="perf-station-timestamp ${it.status === 'done' ? 'done' : ''}">${escapeHTML(it.tsLabel)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 function renderOverview(body) {
   // Lazy-load missing data so the dashboard works even when the admin opens
   // Overview as their first action.
@@ -13014,18 +14851,7 @@ function renderAdminTabBody() {
     return;
   }
   if (adminState.tab === 'performance') {
-    body.innerHTML = `
-      <div class="card" style="padding: 64px 24px; text-align: center;">
-        <div style="width: 48px; height: 48px; margin: 0 auto 16px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center;">
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style="color: var(--accent-ink)">
-            <rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>
-            <path d="M7 11h8M7 14h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px;">Performance</div>
-        <div style="font-size: 14px; color: var(--text2); letter-spacing: -0.005em;">Coming soon.</div>
-      </div>
-    `;
+    renderPerformance(body);
     return;
   }
   // Assignment as a top-level tab. Previously lived under Moderator Hub as
@@ -16777,8 +18603,38 @@ async function fetchAssignmentsFromPA() {
   if (isAnyAsgnModalOpen()) {
     console.log('[Orbit] Fetch landed during open modal — deferring render until modal closes');
     adminState._pendingPostFetchRender = true;
-  } else if (typeof renderAdmin === 'function' && document.getElementById('adminApp')?.classList.contains('active')) {
-    renderAdmin();
+  } else if (document.getElementById('adminApp')?.classList.contains('active')) {
+    // Admin app is mounted. Decide whether to nuke-and-rebuild the
+    // whole DOM or surgically update.
+    //
+    // Bug we're fixing: renderAdmin() does `c.innerHTML = ...` on the
+    // entire #adminContent container, destroying every interactive
+    // element underneath — including the focused search input on the
+    // Performance tab. The user-reported symptom was "I'm typing in
+    // the search bar and after a few seconds I get clicked out."
+    // Mechanism: admin lands on Assignment, fetch kicks off, admin
+    // switches to Performance, starts typing. A few seconds later the
+    // initial-load Assignment fetch (or a 60s poll fired before tab
+    // switch) completes, renderAdmin() fires, the search input gets
+    // destroyed and recreated empty.
+    //
+    // Fix: only call renderAdmin() when admin is actually viewing the
+    // Assignment tab — that's the only tab whose rendered content
+    // depends on the freshly-merged assignment list. On any other tab,
+    // adminState already has the new data; the next render of that
+    // tab will pick it up automatically. We just surgically update
+    // the assignment-count badge in the top tab strip so admin sees
+    // the new total without us touching the rest of the page.
+    if (adminState.tab === 'assignment' && typeof renderAdmin === 'function') {
+      renderAdmin();
+    } else {
+      // Surgical update — refresh just the count badge in the top tab
+      // strip. activeAssignmentCount() reads from adminState directly
+      // so it picks up the new data. Empty string when zero so the
+      // badge dot doesn't render an "0" pill.
+      const badge = document.getElementById('topAsgnCount');
+      if (badge) badge.textContent = activeAssignmentCount() || '';
+    }
   }
   if (typeof renderMySessionSection === 'function') renderMySessionSection();
 
@@ -25518,6 +27374,13 @@ function extractSyncableState(s) {
     // re-deriving it from station states. Used by the login welcome
     // modal to show the "Today's session is completed" prompt.
     sessionCompletedAt: s.sessionCompletedAt || null,
+    // Arrival marker — useful for teammates to know "the team is
+    // on-site, not still en route." Synced to cloud so teammates
+    // can see it across devices. We intentionally do NOT sync
+    // remindersShown because that's per-device personal dismissal
+    // state — cross-pollinating it would mean Alice's "I saw the
+    // 1h reminder" stops Bob from seeing his own reminder.
+    arrivedAt:          s.arrivedAt          || '',
   };
 }
 
@@ -25752,6 +27615,24 @@ function mergeTeammateState(syncableState) {
     const current  = String(state.sessionCompletedAt || '');
     if (!current || incoming > current) {
       state.sessionCompletedAt = incoming;
+    }
+  }
+  // Arrival marker — EARLIEST wins. If a teammate already stamped
+  // arrival at 10:23 AM and another arrives at 10:31, the team
+  // arrival anchor stays at 10:23 (whoever got there first is when
+  // the team was on-site). This also propagates the arrival timer
+  // to a teammate who didn't click "I've arrived" themselves —
+  // their reminders kick off from the team's earliest arrival,
+  // which is the useful behavior (they're on the same session).
+  if (syncableState.arrivedAt) {
+    const incoming = String(syncableState.arrivedAt);
+    const current  = String(state.arrivedAt || '');
+    if (!current || incoming < current) {
+      state.arrivedAt = incoming;
+      // Don't carry remindersShown — they're personal device state.
+      // Reset the local list so this device gets its own reminder
+      // stream from the (possibly earlier) team arrival anchor.
+      state.remindersShown = [];
     }
   }
   if (syncableState.equipment)          state.equipment          = { ...state.equipment, ...syncableState.equipment };
@@ -26325,6 +28206,181 @@ function stopSessionStatePolling() {
   }
 }
 
+// =====================================================================
+// HOURLY PROGRESS-REMINDER
+// =====================================================================
+// Once mod taps "I've arrived" in the entry bar, state.arrivedAt is
+// stamped and this scheduler kicks off. Every hour from arrival
+// (1h, 2h, 3h, ... up to PROGRESS_REMINDER_MAX_HOUR), a friendly
+// reminder modal pops asking the mod to keep their progress logged.
+//
+// Durability across app reloads:
+//   - The hour-mark anchor is state.arrivedAt (persisted to local-
+//     storage), not a transient setInterval count.
+//   - state.remindersShown tracks which hour-marks already fired
+//     (also persisted). When the app reopens, we look at elapsed
+//     hours since arrival, compute which marks are due AND not yet
+//     shown, and fire the most recent unshown one.
+//   - sessionCompletedAt stops the loop — once the session is
+//     wrapped up, no more reminders fire even if the timer
+//     would otherwise be due.
+// =====================================================================
+
+const PROGRESS_REMINDER_INTERVAL_MS = 60_000;
+// Stop reminders past hour N. Picked 8h as a generous upper bound —
+// matches a long full workday. If sessions ever routinely run past
+// 8h, raise this. The cap prevents an indefinitely-open app from
+// spamming reminders all night if state.arrivedAt was left set.
+const PROGRESS_REMINDER_MAX_HOUR = 8;
+
+let _progressReminderTimer = null;
+
+function elapsedHoursSinceArrival() {
+  if (!state || !state.arrivedAt) return -1;
+  const t = new Date(state.arrivedAt).getTime();
+  if (isNaN(t)) return -1;
+  const ms = Date.now() - t;
+  if (ms < 0) return -1;
+  return Math.floor(ms / 3600000); // whole hours elapsed
+}
+
+function nextDueReminderHour() {
+  // Returns the largest hour-mark (1..PROGRESS_REMINDER_MAX_HOUR) that
+  // (a) has elapsed since arrival AND (b) hasn't already been shown.
+  // Returning the LARGEST means a mod who reopens the app at hour 3
+  // gets the "3h" reminder ONCE, not three reminders in a row for
+  // hours 1, 2, and 3 — which would be annoying and counter-productive
+  // (the message is "log your progress now", not "look how much time
+  // has passed"). The earlier-hour marks are added to remindersShown
+  // anyway so they don't fire later.
+  if (!state || !state.arrivedAt) return null;
+  // Stop if session is already complete.
+  if (state.sessionCompletedAt) return null;
+  const elapsed = elapsedHoursSinceArrival();
+  if (elapsed < 1) return null;
+  const cap = Math.min(elapsed, PROGRESS_REMINDER_MAX_HOUR);
+  const shown = new Set((state.remindersShown || []).map(Number));
+  for (let h = cap; h >= 1; h--) {
+    if (!shown.has(h)) return h;
+  }
+  return null;
+}
+
+function schedulePerHourReminder() {
+  stopPerHourReminder();
+  if (!state || !state.arrivedAt) return;
+  // Tick every minute. Cheap because the function is just a couple
+  // of date math operations + a guard. We could compute the next
+  // exact hour boundary and setTimeout to it, but minute-tick is
+  // more resilient to clock changes, sleep/wake cycles, and missed
+  // ticks (admin closed the app, reopened 2 hours later).
+  const tick = () => {
+    const dueHour = nextDueReminderHour();
+    if (dueHour != null) {
+      showProgressReminderModal(dueHour);
+    }
+    // Continue ticking unless the session is done.
+    if (state && state.sessionCompletedAt) {
+      stopPerHourReminder();
+      return;
+    }
+    _progressReminderTimer = setTimeout(tick, PROGRESS_REMINDER_INTERVAL_MS);
+  };
+  // Run first tick immediately (catches re-opens past the 1h mark)
+  // then continue on the minute interval.
+  tick();
+}
+
+function stopPerHourReminder() {
+  if (_progressReminderTimer) {
+    clearTimeout(_progressReminderTimer);
+    _progressReminderTimer = null;
+  }
+}
+
+function showProgressReminderModal(hourMark) {
+  // Don't stack reminders. If one is already showing, mark this hour
+  // as "shown" anyway (the mod is presumably looking at the previous
+  // one, no need to re-prompt later for this same hour).
+  if (document.getElementById('progressReminderOverlay')) {
+    addReminderShown(hourMark);
+    return;
+  }
+  // Build the overlay + modal lazily. Single-use — we destroy it on
+  // dismiss so the next reminder gets a clean DOM (avoids any
+  // listener-leak weirdness across opens).
+  const overlay = document.createElement('div');
+  overlay.id = 'progressReminderOverlay';
+  overlay.className = 'progress-reminder-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'progress-reminder-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'progressReminderTitle');
+  const hourLabel = hourMark === 1 ? '1 hour' : `${hourMark} hours`;
+  modal.innerHTML = `
+    <div class="progress-reminder-icon">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.6" opacity="0.4"/>
+        <path d="M16 8v8l5 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2 class="progress-reminder-title" id="progressReminderTitle">Quick check-in</h2>
+    <p class="progress-reminder-sub">It's been ${escapeHTML(hourLabel)} since you arrived.</p>
+    <p class="progress-reminder-body">
+      Make sure to record your progression in the app —
+      <strong>tick cameras, log scenarios, mark stations done, save notes.</strong>
+      Keeping the app current means your teammates see live progress and your work is captured even if you step away.
+    </p>
+    <div class="progress-reminder-actions">
+      <button type="button" id="progressReminderOk" class="progress-reminder-btn primary">Got it</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+
+  const dismiss = () => {
+    addReminderShown(hourMark);
+    overlay.classList.remove('open');
+    modal.classList.remove('open');
+    setTimeout(() => {
+      try { overlay.remove(); modal.remove(); } catch (_) {}
+    }, 240);
+  };
+
+  modal.querySelector('#progressReminderOk').addEventListener('click', dismiss);
+  // Click outside closes. Escape too.
+  overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
+  const escHandler = e => {
+    if (e.key === 'Escape') {
+      dismiss();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+
+  // Fade in
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+    const btn = modal.querySelector('#progressReminderOk');
+    if (btn) btn.focus();
+  });
+}
+
+function addReminderShown(hourMark) {
+  if (!state) return;
+  if (!Array.isArray(state.remindersShown)) state.remindersShown = [];
+  // Also mark every earlier hour as shown so a mod returning at hour 4
+  // doesn't get a separate "you missed the 1h and 2h reminders" stream
+  // when they next look at the app. The latest hour-mark is the right
+  // signal; earlier ones are subsumed.
+  for (let h = 1; h <= hourMark; h++) {
+    if (!state.remindersShown.includes(h)) state.remindersShown.push(h);
+  }
+  if (typeof saveState === 'function') saveState();
+}
+
 /* =====================================================================
    OPERATOR — Assignment awareness
    ===================================================================== */
@@ -26453,6 +28509,13 @@ function startModAssignmentRefresh() {
     const age = Date.now() - _modAsgnLastFetchAt;
     if (age > MOD_ASGN_STALE_THRESHOLD_MS) {
       refreshModAssignments({ silent: true });
+    }
+    // Also re-arm the hourly reminder check. If the tab was background-
+    // ed long enough that a new hour mark elapsed, this fires the
+    // due reminder immediately on tab return — exactly the "logging
+    // back in" trigger the user asked for.
+    if (typeof schedulePerHourReminder === 'function') {
+      schedulePerHourReminder();
     }
   });
 }
@@ -28856,6 +30919,13 @@ function startApp() {
   // without requiring a login. Started here (not at app init) so it
   // only runs in the operator context — admin app doesn't need this.
   if (typeof startSessionStatePolling === 'function') startSessionStatePolling();
+  // Boot the hourly progress-reminder loop. If state.arrivedAt is
+  // empty, schedulePerHourReminder is a no-op — the loop only runs
+  // when the mod has actually clicked "I've arrived". When the app
+  // reopens with state.arrivedAt already set (mod was working, closed
+  // the tab, came back), this picks up where it left off using
+  // remindersShown to avoid re-firing already-acknowledged hours.
+  if (typeof schedulePerHourReminder === 'function') schedulePerHourReminder();
   // PST midnight watcher — resets a completed yesterday's session
   // when the day changes, then re-runs the welcome check so the
   // operator sees their next-session or no-session prompt for the
