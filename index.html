@@ -747,6 +747,291 @@ a.icon-btn:focus-visible {
 
 
 /* =========================================================
+   CALIBRATION RECORDING GUIDE MODAL
+   =========================================================
+   Surfaces the on-site recording DOs/DON'Ts in a single
+   bottom-sheet-style modal. Always reachable via an icon
+   button in the moderator nav so a mod mid-recording can
+   pull up the guide without losing scroll position. The
+   trigger button is hidden on the admin nav since admins
+   don't record.
+
+   Information architecture:
+   - One scrollable modal, no tabs (sections are short)
+   - Sections in order of mental flow:
+     1. General requirements (every-recording basics)
+     2. Checkerboard handling (physical setup)
+     3. Air Calibration (CAL_EXT)
+     4. Ground Calibration (CAL_GND)
+     5. Scenario 20 floor markings (special case)
+     6. Pre-recording checklist (final sanity check)
+   - Each section shows DOs and DON'Ts as paired columns
+     on desktop, stacked on mobile
+   ========================================================= */
+.cal-guide-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  z-index: 800;  /* above progress reminder (701) but below toasts (~900) */
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.cal-guide-overlay.open { opacity: 1; pointer-events: all; }
+
+.cal-guide-modal {
+  position: fixed;
+  z-index: 801;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.97);
+  width: min(96vw, 880px);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);  /* dvh on Android keyboard */
+  display: flex; flex-direction: column;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.50);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: hidden;  /* keep inner scroll contained */
+}
+.cal-guide-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.cal-guide-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+  background: var(--card-bg);
+}
+.cal-guide-header-title {
+  font-size: 17px; font-weight: 700;
+  letter-spacing: -0.022em;
+  color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+}
+.cal-guide-header-sub {
+  font-size: 12.5px; font-weight: 500;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  margin-top: 3px;
+}
+.cal-guide-header-icon {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.cal-guide-close {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  color: var(--text2);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.16s, color 0.16s, border-color 0.16s;
+  flex-shrink: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-guide-close:hover {
+  background: var(--bg4);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.cal-guide-body {
+  padding: 8px 24px 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Disable scroll chaining so swipes inside the modal don't pull-to-
+     refresh on Android Chrome or scroll the underlying page on iOS. */
+  overscroll-behavior: contain;
+  flex: 1; min-height: 0;
+}
+
+.cal-guide-banner {
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  border: 0.5px solid var(--amber-border);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.45;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.cal-guide-banner-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cal-guide-section {
+  margin-top: 22px;
+}
+.cal-guide-section:first-of-type {
+  margin-top: 8px;
+}
+.cal-guide-section-title {
+  font-size: 14px; font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  margin: 0 0 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cal-guide-section-title .emoji {
+  /* Keep emoji at consistent visual weight regardless of font rendering */
+  font-size: 16px;
+  line-height: 1;
+  filter: grayscale(0);
+}
+
+.cal-guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .cal-guide-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.cal-guide-col {
+  background: var(--bg3);
+  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  padding: 10px 12px;
+}
+.cal-guide-col-head {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.cal-guide-col.do .cal-guide-col-head {
+  color: var(--green-text);
+}
+.cal-guide-col.dont .cal-guide-col-head {
+  color: #ef4444;  /* matches the canonical Cancelled-red but full-strength */
+}
+[data-theme="light"] .cal-guide-col.dont .cal-guide-col-head { color: #c0382b; }
+
+.cal-guide-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+  gap: 7px;
+}
+.cal-guide-item {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  padding-left: 18px;
+  position: relative;
+}
+.cal-guide-item::before {
+  position: absolute;
+  left: 0; top: 1px;
+  font-weight: 700;
+  font-size: 11px;
+}
+.cal-guide-col.do .cal-guide-item::before {
+  content: '✔';
+  color: var(--green-text);
+}
+.cal-guide-col.dont .cal-guide-item::before {
+  content: '✖';
+  color: #ef4444;
+}
+[data-theme="light"] .cal-guide-col.dont .cal-guide-item::before { color: #c0382b; }
+
+.cal-guide-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* Pre-recording checklist (single-column list instead of DO/DON'T pair) */
+.cal-guide-checklist {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  background: var(--bg3);
+  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  padding: 12px 14px;
+}
+.cal-guide-checklist-item {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  padding-left: 22px;
+  position: relative;
+}
+.cal-guide-checklist-item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 3px;
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  border: 1.4px solid var(--border-strong);
+  background: var(--card-bg);
+}
+
+.cal-guide-footer {
+  flex-shrink: 0;
+  padding: 14px 24px;
+  border-top: 0.5px solid var(--border);
+  background: var(--bg2);
+  font-size: 12.5px;
+  color: var(--text2);
+  text-align: center;
+  letter-spacing: -0.005em;
+  line-height: 1.45;
+}
+
+/* Nav trigger button — sits alongside the other icon-btn buttons in the
+   mod nav. Uses the same dimensions as the existing icon-btn pattern so
+   it doesn't disrupt the nav's visual rhythm. */
+.nav-calguide-btn {
+  /* Inherits .icon-btn base styles; this rule reserved for future
+     accent tweaks if we want the button to draw more attention. */
+}
+
+/* On narrow phones, drop modal max-width and let it stretch closer to
+   the viewport edges. Saves precious horizontal space for the DO/DON'T
+   pair on screens around 360-400px wide. */
+@media (max-width: 480px) {
+  .cal-guide-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .cal-guide-header { padding: 16px 18px 12px; }
+  .cal-guide-body   { padding: 6px 18px 16px; }
+  .cal-guide-footer { padding: 12px 18px; }
+}
+
+
+/* =========================================================
    FIELD COLLECTION EQUIPMENT CHECKER (welcome page)
    ========================================================= */
 .equipment-card-head {
@@ -1139,6 +1424,137 @@ a.icon-btn:focus-visible {
 .confirm-banner.unlocked {
   background: var(--green-bg); color: var(--green-text);
   border: 0.5px solid rgba(34,197,94,0.30);
+}
+
+/* ---------------------------------------------------------------------
+   Collapsible camera-confirmation card
+   ---------------------------------------------------------------------
+   The camera confirmation card can be collapsed once all cameras are
+   ticked so it stops occupying ~half the viewport on Stations 1–3 when
+   the moderator is mid-recording. Auto-collapses the moment the FINAL
+   camera flips to confirmed (transitioning into the "all confirmed"
+   state); user can manually expand/collapse via the chevron button in
+   the card title row.
+
+   Design notes:
+   - The chevron button is .camera-card-toggle. Always visible in the
+     title row but the icon rotates 180° via .collapsed.
+   - The collapsible region is .camera-card-body. When the card has
+     .collapsed, the body is hidden via display:none (not max-height:0)
+     because the body contains a dynamic number of rig-groups whose
+     heights aren't fixed.
+   - When collapsed, a slim summary chip (.camera-summary-chip) appears
+     in the title row showing "All confirmed ✓" so the moderator still
+     gets at-a-glance feedback without expanding the section.
+   --------------------------------------------------------------------- */
+.card.camera-card .card-title {
+  /* Push the chevron to the far right by stretching the title text */
+  justify-content: space-between;
+}
+.camera-card-title-left {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1; min-width: 0;
+}
+.camera-card-title-right {
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.camera-summary-chip {
+  /* Always laid out — appearance is driven by opacity / max-width so we
+     get a smooth horizontal slide-in when the card collapses, instead of
+     the chip snapping in via a display toggle. Inline-flex when on screen
+     so the inner icon + label align together. */
+  display: inline-flex;
+  align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  border: 0.5px solid rgba(34,197,94,0.30);
+  white-space: nowrap;
+  overflow: hidden;
+  /* Hidden / zero-width state when the card is expanded */
+  opacity: 0;
+  max-width: 0;
+  padding: 4px 0;            /* keep vertical padding so transitions to/from horizontal padding are smooth */
+  border-left-width: 0;
+  border-right-width: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease,
+              max-width 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+              padding 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+              border-left-width 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+              border-right-width 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.card.camera-card.collapsed .camera-summary-chip {
+  opacity: 1;
+  max-width: 240px;          /* generous; chip is ~120px in practice */
+  padding: 4px 10px;
+  border-left-width: 0.5px;
+  border-right-width: 0.5px;
+  pointer-events: all;
+  /* Tiny delay so the chip slides in just AFTER the body has begun folding,
+     creating a "section yields, badge takes its place" rhythm. */
+  transition-delay: 0.08s;
+}
+.camera-card-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.camera-card-toggle:hover {
+  background: var(--bg4);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.camera-card-toggle svg {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.card.camera-card.collapsed .camera-card-toggle svg {
+  /* Chevron points down when expanded; rotate so it points right when collapsed.
+     Duration matches the body slide so the two motions resolve together. */
+  transform: rotate(-90deg);
+}
+.camera-card-body {
+  /* Wraps card-desc + rig-groups + confirm-banner. Animated via
+     max-height + opacity + translateY rather than display:none so the
+     fold/unfold reads as a continuous motion.
+
+     `max-height: 1500px` is a ceiling that comfortably exceeds the
+     real content height (~500-700px even with two rig groups + the
+     banner on mobile). The deceleration curve spends very little of
+     its duration on the "empty" portion between actual content height
+     and the ceiling, so there's no visible lag. */
+  overflow: hidden;
+  max-height: 1500px;
+  opacity: 1;
+  transform: translateY(0);
+  /* Expand direction (entering this state):
+     - max-height grows first
+     - opacity comes in slightly delayed so content reveals as space opens up
+     - transform settles smoothly */
+  transition: max-height 0.34s cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 0.22s ease 0.10s,
+              transform 0.30s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.card.camera-card.collapsed .camera-card-body {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  /* Collapse direction (entering this state):
+     - opacity fades out fast (no delay) so content visually departs first
+     - then max-height closes the door */
+  transition: max-height 0.30s cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 0.14s ease,
+              transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* Scenario table */
@@ -9739,6 +10155,24 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
         <div class="avatar" id="userAvatar">??</div>
         <span class="who" id="userName">Operator</span>
       </div>
+      <!-- Calibration Recording Guide trigger — opens a modal listing the
+           DOs/DON'Ts for on-site calibration recording. Placed BEFORE the
+           Lakitu button so the "guidance / reference" action sits ahead of
+           the "go do the thing" action — feels like reading the recipe
+           before opening the oven. Visible only on the mod nav (admins
+           don't record so they don't need it on theirs). The modal's
+           contents are documented in the cal-guide CSS section. -->
+      <button class="icon-btn nav-calguide-btn" id="navCalGuideBtn"
+              aria-label="Open calibration recording guide"
+              title="Calibration recording guide (DOs &amp; DON'Ts)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <!-- "Open book" / guide icon. Two facing pages with a spine. -->
+          <path d="M2 3.5h4.5a1 1 0 011 1V13L6 12H2.5a.5.5 0 01-.5-.5v-8z"
+                stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="M14 3.5H9.5a1 1 0 00-1 1V13L10 12h3.5a.5.5 0 00.5-.5v-8z"
+                stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <!-- Lakitu quick link — opens Amazon's session console in a new tab.
            Placed before the Refresh button so it sits in a predictable
            "external action" zone alongside other utility buttons. The
@@ -10145,7 +10579,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052603';
+const APP_VERSION = '1.2.052802';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -10199,27 +10633,40 @@ const EQUIPMENT_LIST = [
   { id: 'lux_meter',      name: 'Lux meter',                 qty: '1',  desc: 'A device that measures the light value, used to enter the value in the Lakitu app for the metadata section.' },
 ];
 
-const STATIONS_1_5_SCENARIOS = [
-  { num: '01', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground' },
-  { num: '02', id: '11',      name: 'Multiple people and vehicles in multiple FOVs' },
-  { num: '03', id: '4',       name: 'Multiple people move across camera FOVs' },
-  { num: '04', id: '15',      name: 'Multiple vehicles move simultaneously' },
-  { num: '05', id: '5',       name: 'Person delivers package' },
-  { num: '06', id: '7',       name: 'Person drives vehicle away from driveway' },
-  { num: '07', id: '3',       name: 'Person moves across camera FOVs' },
-  { num: '08', id: '2',       name: 'Person moves away from the camera' },
-  { num: '09', id: '1',       name: 'Person moves towards the camera' },
-  { num: '10', id: '18',      name: 'Person occluded by short bush or wall' },
-  { num: '11', id: '17',      name: 'Person occluded by vehicle' },
-  { num: '12', id: '9',       name: 'Person opens vehicle trunk or door' },
-  { num: '13', id: '8',       name: 'Person parks vehicle on driveway' },
-  { num: '14', id: '6',       name: 'Person picks up package' },
-  { num: '15', id: '10',      name: 'Person walking while vehicle moving' },
-  { num: '16', id: '12',      name: 'Vehicle driven on the street' },
-  { num: '17', id: '16',      name: 'Vehicle light flashes at night' },
-  { num: '18', id: '19',      name: 'Vehicle occluded by short bush or wall' },
-  { num: '19', id: '13',      name: 'Vehicle parks in front of house and starts moving' },
-  { num: '20', id: '14',      name: 'Vehicle slows and parks in front of house' },
+// Master scenario list for Stations 1–3. Order matches the spec
+// handed down by the study: calibration scenarios first (Air, then
+// Ground), then capture scenarios 1–20 in numeric id order. The
+// display `num` is purely the row position in the table; `id` is the
+// logical scenario identifier and is what surfaces in Excel exports,
+// Lakitu, and any cross-system reporting.
+//
+// IMPORTANT: scenario state in localStorage is keyed by `num` (not
+// `id`). If this list's ordering changes again, in-progress sessions
+// will see their data shift positions. Brand-new sessions are
+// unaffected. See `loadState()` / `s.stations[k].scenarios[sc.num]`.
+const STATIONS_1_3_SCENARIOS = [
+  { num: '01', id: 'CAL_EXT', name: 'Extrinsic Calibration — Checkerboard in Air' },
+  { num: '02', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground' },
+  { num: '03', id: '1',       name: 'Person moves towards the camera' },
+  { num: '04', id: '2',       name: 'Person moves away from the camera' },
+  { num: '05', id: '3',       name: 'Person moves across camera FOVs' },
+  { num: '06', id: '4',       name: 'Multiple people move across camera FOVs' },
+  { num: '07', id: '5',       name: 'Person delivers package' },
+  { num: '08', id: '6',       name: 'Person picks up package' },
+  { num: '09', id: '7',       name: 'Person drives vehicle away from driveway' },
+  { num: '10', id: '8',       name: 'Person parks vehicle on driveway' },
+  { num: '11', id: '9',       name: 'Person opens vehicle trunk or door' },
+  { num: '12', id: '10',      name: 'Person walking while vehicle moving' },
+  { num: '13', id: '11',      name: 'Multiple people and vehicles in multiple FOVs' },
+  { num: '14', id: '12',      name: 'Vehicle driven on the street' },
+  { num: '15', id: '13',      name: 'Vehicle parks in front of house and starts moving' },
+  { num: '16', id: '14',      name: 'Vehicle slows and parks in front of house' },
+  { num: '17', id: '15',      name: 'Multiple vehicles move simultaneously' },
+  { num: '18', id: '16',      name: 'Vehicle light flashes at night' },
+  { num: '19', id: '17',      name: 'Person occluded by vehicle' },
+  { num: '20', id: '18',      name: 'Person occluded by short bush or wall' },
+  { num: '21', id: '19',      name: 'Vehicle occluded by short bush or wall' },
+  { num: '22', id: '20',      name: 'Background with stationary objects (no moving objects)' },
 ];
 
 const STATIONS = [
@@ -10246,34 +10693,31 @@ const STATIONS = [
       { num: '01', id: 'CAL_PHONE', name: 'Rig Surroundings — Phone Video' },
     ],
   },
-  // Station 1 — uses a curated subset of the master list (originals 01-06, 18, 20)
+  // Third "Station 0" — House Enrollment. Single indoor scan scenario
+  // (id "21"). Labelled Station 0c in the sidebar and exports per the
+  // i === 0 ? '0a' : i === 1 ? '0b' : i === 2 ? '0c' formula used
+  // wherever the index drives the display tag.
   {
-    key: 'station1',
-    label: 'Station 1',
-    sub: `${RIGS.join(' + ')} · 8 scenarios`,
-    type: 'capture',
-    statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
-    requiresCameras: true,
+    key: 'station0_house',
+    label: 'Station 0',
+    sub: 'House Enrollment',
+    type: 'cal',
+    statusOptions: ['Not Started', 'Calibrated'],
+    requiresCameras: false,
     scenarios: [
-      { num: '01', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground' },
-      { num: '02', id: '11',      name: 'Multiple people and vehicles in multiple FOVs' },
-      { num: '03', id: '4',       name: 'Multiple people move across camera FOVs' },
-      { num: '04', id: '15',      name: 'Multiple vehicles move simultaneously' },
-      { num: '05', id: '5',       name: 'Person delivers package' },
-      { num: '06', id: '7',       name: 'Person drives vehicle away from driveway' },
-      { num: '18', id: '19',      name: 'Vehicle occluded by short bush or wall' },
-      { num: '20', id: '14',      name: 'Vehicle slows and parks in front of house' },
+      { num: '01', id: '21', name: 'Indoor home scan' },
     ],
   },
-  // Stations 2 and 3 keep the full 20-scenario master list
-  ...[2,3].map(n => ({
+  // Stations 1, 2, 3 all use the same 22-scenario master list:
+  // CAL_EXT + CAL_GND + the 20 capture scenarios in numeric id order.
+  ...[1, 2, 3].map(n => ({
     key: `station${n}`,
     label: `Station ${n}`,
-    sub: `${RIGS.join(' + ')} · 20 scenarios`,
+    sub: `${RIGS.join(' + ')} · 22 scenarios`,
     type: 'capture',
     statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
     requiresCameras: true,
-    scenarios: STATIONS_1_5_SCENARIOS,
+    scenarios: STATIONS_1_3_SCENARIOS,
   })),
 ];
 
@@ -10331,6 +10775,28 @@ function isScenarioSkipMissingNote(sc) {
    ===================================================================== */
 let state = defaultState();
 let currentStationKey = null;
+
+// Per-station UI state for the camera-confirmation card's expand/collapse.
+// Keys: station.key (e.g. 'station1', 'station2', 'station3').
+// Values: true (force collapsed), false (force expanded), or undefined (auto).
+// Auto-mode means: collapsed iff all cameras are already checked on render.
+// This state is intentionally device-local and not persisted — on reload,
+// it resets to "auto", which Just Works: stations with all cameras checked
+// will start collapsed (clean view), stations with pending cameras will
+// start expanded (work visible). Manual user overrides (clicking the
+// chevron) flip into the "true" or "false" state and persist for the
+// rest of the current page load only.
+const cameraCardCollapsed = {};
+
+// Resolves the effective collapse state given the station key and whether
+// all cameras are currently confirmed. Single source of truth for both
+// the renderer and the click handlers.
+function isCameraCardCollapsed(stationKey, allChecked) {
+  const v = cameraCardCollapsed[stationKey];
+  if (v === true) return true;
+  if (v === false) return false;
+  return allChecked;  // auto: collapse iff all confirmed
+}
 
 function defaultState() {
   const s = {
@@ -10717,7 +11183,7 @@ function renderSidebar() {
   list.innerHTML = STATIONS.map((st, i) => {
     const status = getStationStatus(st.key);
     const isActive = currentStationKey === st.key;
-    const num = i === 0 ? '0a' : i === 1 ? '0b' : String(i - 1);
+    const num = i === 0 ? '0a' : i === 1 ? '0b' : i === 2 ? '0c' : String(i - 2);
     return `
       <div class="station-item ${isActive ? 'active' : ''}" data-key="${st.key}">
         <div class="station-num">${num}</div>
@@ -10899,6 +11365,7 @@ function renderWelcomeWorklogBannerHTML() {
   const stationLabelMap = {
     station_0a_done: 'Station 0a complete',
     station_0b_done: 'Station 0b complete',
+    station_0c_done: 'Station 0c complete',
     station_1_done:  'Station 1 complete',
     station_2_done:  'Station 2 complete',
     station_3_done:  'Station 3 complete',
@@ -10913,7 +11380,7 @@ function renderWelcomeWorklogBannerHTML() {
       <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar.</div>
     </div>
     <div class="welcome-worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 6).map(step => {
+      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="welcome-worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
@@ -11406,7 +11873,7 @@ function renderStation(key) {
   const data = state.stations[key];
   const c = document.getElementById('content');
   const idx = STATIONS.findIndex(s => s.key === key);
-  const tag = idx === 0 ? 'Station 0a' : idx === 1 ? 'Station 0b' : `Station ${idx - 1}`;
+  const tag = idx === 0 ? 'Station 0a' : idx === 1 ? 'Station 0b' : idx === 2 ? 'Station 0c' : `Station ${idx - 2}`;
 
   let html = `
     <div class="section-title">
@@ -11428,74 +11895,104 @@ function renderStation(key) {
       count: RIG_CAMERAS[rig].filter(c => data.cameras[c]).length,
       total: RIG_CAMERAS[rig].length,
     }));
+    // Resolve collapse state. Default behavior: collapsed iff all cameras
+    // are already confirmed (auto), but a manual toggle by the user
+    // overrides for the rest of this page load.
+    const collapsed = isCameraCardCollapsed(station.key, allChecked);
+    const confirmedCount = CAMERAS.filter(c => data.cameras[c]).length;
     html += `
-      <div class="card">
+      <div class="card camera-card ${collapsed ? 'collapsed' : ''}" data-station-key="${station.key}">
         <div class="card-title">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="color:var(--accent-ink)">
-            <rect x="2" y="4.5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
-            <circle cx="8" cy="8.5" r="2" stroke="currentColor" stroke-width="1.4"/>
-            <path d="M5.5 4.5l1-1.5h3l1 1.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-          </svg>
-          Camera confirmation
-        </div>
-        <div class="card-desc">
-          Confirm all cameras are functional and metadata defined in Lakitu for this station — per rig:
-        </div>
-        ${rigStatus.map(rs => `
-          <div class="rig-group ${rs.done ? 'done' : ''}">
-            <div class="rig-group-head">
-              <div class="rig-group-title">
-                <!-- Single badge — the new rig names ("Rig A", "Rig B")
-                     are already human-readable, so the old dual badge +
-                     stripped-prefix label is redundant. The .rig-badge
-                     CSS gives the pill look; the badge itself carries
-                     the full name. -->
-                <span class="rig-badge">${rs.rig}</span>
-              </div>
-              <span class="rig-group-count ${rs.done ? 'done' : ''}">
-                ${rs.done
-                  ? `<svg width="11" height="9" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> All confirmed`
-                  : `${rs.count} / ${rs.total} confirmed`
-                }
-              </span>
-            </div>
-            <div class="camera-grid">
-              ${rs.cameras.map(cam => {
-                // Extract the 2-letter position code from the end of
-                // the camera ID. IDs look like "Rig A_TC" / "Rig B_LR";
-                // splitting on the LAST underscore is safest because
-                // the rig name itself contains a space (not an
-                // underscore) so the trailing fragment is the code.
-                // Defensive: if the format ever changes and we can't
-                // extract a valid code, fall back to auto-flow.
-                const pos = String(cam).split('_').pop();
-                const row = pos && pos[0] === 'T' ? 1 : pos && pos[0] === 'L' ? 2 : 'auto';
-                const col = pos && pos[1] === 'L' ? 1
-                          : pos && pos[1] === 'C' ? 2
-                          : pos && pos[1] === 'R' ? 3
-                          : 'auto';
-                const gridStyle = (row !== 'auto' && col !== 'auto')
-                  ? `style="grid-row: ${row}; grid-column: ${col};"`
-                  : '';
-                return `
-                  <div class="camera-item ${data.cameras[cam] ? 'checked' : ''}" data-cam="${cam}" ${gridStyle}>
-                    <div class="camera-checkbox">
-                      <svg width="12" height="10" viewBox="0 0 13 10" fill="none">
-                        <path d="M1.5 5L5 8.5L11.5 1.5" stroke="#001114" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                    </div>
-                    <div class="camera-label">${cam}</div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
+          <div class="camera-card-title-left">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="color:var(--accent-ink); flex-shrink: 0;">
+              <rect x="2" y="4.5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="8" cy="8.5" r="2" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M5.5 4.5l1-1.5h3l1 1.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            </svg>
+            <span>Camera confirmation</span>
           </div>
-        `).join('')}
-        <div class="confirm-banner ${allChecked ? 'unlocked' : 'locked'}">
-          ${allChecked
-            ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L7 12L13 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> All cameras confirmed across both rigs — scenario recording is unlocked.`
-            : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="4" y="7" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" stroke-width="1.4"/></svg> Tick all ${CAMERAS.length} cameras (across both rigs) to unlock scenarios.`
-          }
+          <div class="camera-card-title-right">
+            <!-- Summary chip only renders when the card is collapsed.
+                 If we got here with collapsed=true and allChecked=true
+                 (the common auto-collapse path), show the cheery green
+                 "All confirmed" message. If a user manually collapsed
+                 with cameras still pending, surface the count instead. -->
+            <span class="camera-summary-chip">
+              ${allChecked
+                ? `<svg width="11" height="9" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> All confirmed`
+                : `${confirmedCount} / ${CAMERAS.length} confirmed`}
+            </span>
+            <button class="camera-card-toggle" type="button"
+                    data-station-key="${station.key}"
+                    aria-label="${collapsed ? 'Expand camera confirmation' : 'Collapse camera confirmation'}"
+                    aria-expanded="${collapsed ? 'false' : 'true'}"
+                    title="${collapsed ? 'Expand' : 'Collapse'}">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="camera-card-body">
+          <div class="card-desc">
+            Confirm all cameras are functional and metadata defined in Lakitu for this station — per rig:
+          </div>
+          ${rigStatus.map(rs => `
+            <div class="rig-group ${rs.done ? 'done' : ''}">
+              <div class="rig-group-head">
+                <div class="rig-group-title">
+                  <!-- Single badge — the new rig names ("Rig A", "Rig B")
+                       are already human-readable, so the old dual badge +
+                       stripped-prefix label is redundant. The .rig-badge
+                       CSS gives the pill look; the badge itself carries
+                       the full name. -->
+                  <span class="rig-badge">${rs.rig}</span>
+                </div>
+                <span class="rig-group-count ${rs.done ? 'done' : ''}">
+                  ${rs.done
+                    ? `<svg width="11" height="9" viewBox="0 0 13 10" fill="none"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> All confirmed`
+                    : `${rs.count} / ${rs.total} confirmed`
+                  }
+                </span>
+              </div>
+              <div class="camera-grid">
+                ${rs.cameras.map(cam => {
+                  // Extract the 2-letter position code from the end of
+                  // the camera ID. IDs look like "Rig A_TC" / "Rig B_LR";
+                  // splitting on the LAST underscore is safest because
+                  // the rig name itself contains a space (not an
+                  // underscore) so the trailing fragment is the code.
+                  // Defensive: if the format ever changes and we can't
+                  // extract a valid code, fall back to auto-flow.
+                  const pos = String(cam).split('_').pop();
+                  const row = pos && pos[0] === 'T' ? 1 : pos && pos[0] === 'L' ? 2 : 'auto';
+                  const col = pos && pos[1] === 'L' ? 1
+                            : pos && pos[1] === 'C' ? 2
+                            : pos && pos[1] === 'R' ? 3
+                            : 'auto';
+                  const gridStyle = (row !== 'auto' && col !== 'auto')
+                    ? `style="grid-row: ${row}; grid-column: ${col};"`
+                    : '';
+                  return `
+                    <div class="camera-item ${data.cameras[cam] ? 'checked' : ''}" data-cam="${cam}" ${gridStyle}>
+                      <div class="camera-checkbox">
+                        <svg width="12" height="10" viewBox="0 0 13 10" fill="none">
+                          <path d="M1.5 5L5 8.5L11.5 1.5" stroke="#001114" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </div>
+                      <div class="camera-label">${cam}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+          <div class="confirm-banner ${allChecked ? 'unlocked' : 'locked'}">
+            ${allChecked
+              ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L7 12L13 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> All cameras confirmed across both rigs — scenario recording is unlocked.`
+              : `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="4" y="7" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" stroke-width="1.4"/></svg> Tick all ${CAMERAS.length} cameras (across both rigs) to unlock scenarios.`
+            }
+          </div>
         </div>
       </div>
     `;
@@ -11582,9 +12079,86 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
   c.querySelectorAll('.camera-item').forEach(el => {
     el.addEventListener('click', () => {
       const cam = el.dataset.cam;
+      // Snapshot whether every camera was already confirmed BEFORE this
+      // click. If the click is what flips us into the "all confirmed"
+      // state, that's the auto-collapse trigger.
+      const wasAllChecked = CAMERAS.every(c => data.cameras[c]);
       data.cameras[cam] = !data.cameras[cam];
+      const nowAllChecked = CAMERAS.every(c => data.cameras[c]);
       saveState();
+
+      const stationKey = currentStationKey;
+
+      // Auto-collapse on the false → true "all confirmed" transition.
+      // To make the slide animation actually play, we render the card in
+      // the OPPOSITE state first (still expanded), then on the next
+      // animation frame flip both the override and the .collapsed class
+      // — at that point the CSS sees a real state change and runs the
+      // max-height/opacity/transform transition.
+      if (!wasAllChecked && nowAllChecked) {
+        cameraCardCollapsed[stationKey] = false;  // force expanded for this render
+        renderApp();
+        requestAnimationFrame(() => {
+          cameraCardCollapsed[stationKey] = true;  // persist intent so future renders honor it
+          const card = document.querySelector(`.camera-card[data-station-key="${stationKey}"]`);
+          if (card) {
+            card.classList.add('collapsed');
+            const tBtn = card.querySelector('.camera-card-toggle');
+            if (tBtn) {
+              tBtn.setAttribute('aria-expanded', 'false');
+              tBtn.setAttribute('aria-label', 'Expand camera confirmation');
+              tBtn.setAttribute('title', 'Expand');
+            }
+          }
+        });
+        return;
+      }
+
+      // Auto-expand on the true → false transition (user unchecked a
+      // camera after all were confirmed). Same rAF trick in reverse —
+      // render in collapsed state, then transition out to expanded.
+      if (wasAllChecked && !nowAllChecked) {
+        cameraCardCollapsed[stationKey] = true;   // force collapsed for this render
+        renderApp();
+        requestAnimationFrame(() => {
+          cameraCardCollapsed[stationKey] = false;
+          const card = document.querySelector(`.camera-card[data-station-key="${stationKey}"]`);
+          if (card) {
+            card.classList.remove('collapsed');
+            const tBtn = card.querySelector('.camera-card-toggle');
+            if (tBtn) {
+              tBtn.setAttribute('aria-expanded', 'true');
+              tBtn.setAttribute('aria-label', 'Collapse camera confirmation');
+              tBtn.setAttribute('title', 'Collapse');
+            }
+          }
+        });
+        return;
+      }
+
+      // Normal click — no collapse state change, just update the camera grid.
       renderApp();
+    });
+  });
+
+  // Bind camera-card collapse toggle (chevron in the title row).
+  // Mutate the DOM directly instead of calling renderApp(): tearing the
+  // card down and rebuilding it would skip the CSS transition entirely
+  // (a fresh element starts at its final state with no `from` value).
+  // Updating the class + aria attrs in place lets the transition play.
+  c.querySelectorAll('.camera-card-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const stationKey = btn.dataset.stationKey;
+      if (!stationKey) return;
+      const card = btn.closest('.camera-card');
+      if (!card) return;
+      const willBeCollapsed = !card.classList.contains('collapsed');
+      cameraCardCollapsed[stationKey] = willBeCollapsed;  // persist for future re-renders
+      card.classList.toggle('collapsed', willBeCollapsed);
+      btn.setAttribute('aria-expanded', willBeCollapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', willBeCollapsed ? 'Expand camera confirmation' : 'Collapse camera confirmation');
+      btn.setAttribute('title', willBeCollapsed ? 'Expand' : 'Collapse');
     });
   });
 
@@ -11931,7 +12505,7 @@ function exportExcel() {
       const total = st.scenarios.length;
       const done = Object.values(data.scenarios).filter(s => isScenarioComplete(s)).length;
       const stStatus = getStationStatus(st.key);
-      const tag = i === 0 ? 'Station 0a' : i === 1 ? 'Station 0b' : `Station ${i - 1}`;
+      const tag = i === 0 ? 'Station 0a' : i === 1 ? 'Station 0b' : i === 2 ? 'Station 0c' : `Station ${i - 2}`;
       return [`${tag} — ${st.sub}`, st.type === 'cal' ? 'Calibration' : 'Capture', prettyStatus(stStatus), `${done} / ${total}`];
     }),
   ];
@@ -11942,7 +12516,7 @@ function exportExcel() {
   // Per-station sheets
   STATIONS.forEach((st, i) => {
     const data = state.stations[st.key];
-    const tag = i === 0 ? 'Station 0a Calibration' : i === 1 ? 'Station 0b Enrollment' : `Station ${i - 1}`;
+    const tag = i === 0 ? 'Station 0a Calibration' : i === 1 ? 'Station 0b Enrollment' : i === 2 ? 'Station 0c House Enrollment' : `Station ${i - 2}`;
     const rows = [];
 
     // Header block
@@ -20382,12 +20956,18 @@ function renderTeamGridHTML(days) {
   // Build a per-assignment "latest worklog status" map so each cell can
   // derive its display state in O(1). Higher-priority statuses overwrite
   // lower ones (session_done > station_3_done > ... > check_in).
+  // NB: station_0a/0b/0c are all "in session" but we still want their
+  // numeric ordering preserved so the latest status of a moderator who
+  // has completed Station 0a (but not 0b/0c) reads correctly.
   const statusPriority = {
-    'session_done': 5,
-    'station_3_done': 4,
-    'station_2_done': 3,
-    'station_1_done': 2,
-    'check_in': 1,
+    'session_done':    8,
+    'station_3_done':  7,
+    'station_2_done':  6,
+    'station_1_done':  5,
+    'station_0c_done': 4,
+    'station_0b_done': 3,
+    'station_0a_done': 2,
+    'check_in':        1,
   };
   const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
   const asgnLatestStatus = new Map();
@@ -24834,6 +25414,7 @@ function openViewAssignmentModal(asgnId) {
                       arrived: 'Arrived',
                       station_0a_done: 'Station 0a ✓',
                       station_0b_done: 'Station 0b ✓',
+                      station_0c_done: 'Station 0c ✓',
                       station_1_done:  'Station 1 ✓',
                       station_2_done:  'Station 2 ✓',
                       station_3_done:  'Station 3 ✓',
@@ -26789,6 +27370,7 @@ function isAnyAsgnModalOpen() {
       '#bulkResendModal.open',
       '.teammate-sync-modal.open',
       '.cal-drill-modal.open',
+      '#calGuideModal.open',
     ];
     for (const sel of selectors) {
       if (document.querySelector(sel)) return true;
@@ -27279,8 +27861,8 @@ function bindAdminMenu() {
    WORKLOG — Live session status tracking
    =====================================================================
    Each operator action in a session pushes a row to the Worklog table.
-   Status events: arrived, station_0a_done, station_0b_done, station_1_done,
-   station_2_done, station_3_done, session_done.
+   Status events: arrived, station_0a_done, station_0b_done, station_0c_done,
+   station_1_done, station_2_done, station_3_done, session_done.
    Same-team teammates see each other's progression via the live-status cache.
    ===================================================================== */
 
@@ -27681,6 +28263,7 @@ const WORKLOG_STATUS_LABELS = {
   arrived:           'Check-in',
   station_0a_done:   'In session',
   station_0b_done:   'In session',
+  station_0c_done:   'In session',
   station_1_done:    'In session',
   station_2_done:    'In session',
   station_3_done:    'In session',
@@ -27689,7 +28272,7 @@ const WORKLOG_STATUS_LABELS = {
 
 // Ordering for "what is the latest status" calculations
 const WORKLOG_STATUS_ORDER = [
-  'arrived', 'station_0a_done', 'station_0b_done',
+  'arrived', 'station_0a_done', 'station_0b_done', 'station_0c_done',
   'station_1_done', 'station_2_done', 'station_3_done',
   'session_done',
 ];
@@ -27698,6 +28281,7 @@ const WORKLOG_STATUS_ORDER = [
 const STATION_KEY_TO_STATUS = {
   station0_cal:    'station_0a_done',
   station0_enroll: 'station_0b_done',
+  station0_house:  'station_0c_done',
   station1:        'station_1_done',
   station2:        'station_2_done',
   station3:        'station_3_done',
@@ -28368,6 +28952,286 @@ function addReminderShown(hourMark) {
   if (typeof saveState === 'function') saveState();
 }
 
+
+/* =====================================================================
+   CALIBRATION RECORDING GUIDE — DOs & DON'Ts modal
+   =====================================================================
+   Reachable from the mod nav (#navCalGuideBtn). Builds the overlay +
+   modal DOM lazily on first open. Subsequent opens reuse the same
+   nodes — much cheaper than tearing down the (modest-size) DOM tree
+   each time, and removes any risk of double-bound listeners.
+
+   Content is sourced from the Calibration Video Recording Guide doc
+   (uploaded by DK 5/28/26). Sections preserve the doc's grouping but
+   are reordered for the mental flow of an on-site mod:
+     General → Checkerboard → Air Cal → Ground Cal → Scenario 20 →
+     Pre-Recording Checklist.
+   ===================================================================== */
+
+// Data — kept as a top-level const inside the function's closure so the
+// DOM build is a pure transform of static data. Editable in one place.
+const CAL_GUIDE_SECTIONS = [
+  {
+    emoji: '📋',
+    title: 'General Requirements — Every Station, Every Time',
+    note: 'The timestamp must appear in the top-right corner of the frame on every recording type.',
+    dos: [
+      'Record BOTH Air Calibration and Ground Calibration at every station',
+      'Ensure the timestamp is visible on the top-right corner of every recording',
+      'Verify that all cameras on all rigs have a clear view of the checkerboard before starting',
+      'Confirm the setup area is ready before initiating calibration recording',
+    ],
+    donts: [
+      'Skip either Air or Ground Calibration — both are mandatory',
+      'Start recording without verifying the timestamp is displayed',
+      'Proceed if any of the cameras cannot see the checkerboard',
+      'Rush through setup — rejections cost more time than careful prep',
+    ],
+  },
+  {
+    emoji: '🏁',
+    title: 'Checkerboard Handling — General Rules',
+    dos: [
+      'Hold the checkerboard at the very edge so all squares are fully visible',
+      'Ensure all 4 sides of the board are clearly visible in the frame',
+      'Keep the checkerboard closer to the cameras for better visibility',
+      'Reposition your fingers if they begin to overlap the pattern',
+      'Confirm the board is fully within the FOV of all cameras on all rigs',
+    ],
+    donts: [
+      'Let fingers cover any part of the checkerboard pattern',
+      'Hold the board by the middle — edges only',
+      'Position the board too far away from the cameras',
+      'Proceed if any corner or edge of the checkerboard is cut off',
+      'Assume that one camera angle works for all cameras — verify each one',
+    ],
+  },
+  {
+    emoji: '🌬️',
+    title: 'Air Calibration (CAL_EXT)',
+    note: 'Air calibration covers 3 movement directions: Left, Right, and Up. All movements must be captured clearly by all cameras on all rigs in a single session.',
+    dos: [
+      'Move the checkerboard to the RIGHT across the full camera field',
+      'Move the checkerboard to the LEFT across the full camera field',
+      'Move the checkerboard UP through the full camera field',
+      'Ensure all cameras on all rigs capture the board in all 3 movement directions',
+      'Move slowly and smoothly so the board is sharp in every frame',
+      'Keep the board perpendicular and fully visible throughout movement',
+    ],
+    donts: [
+      'Only move in one direction — all 3 axes (L/R/Up) are required',
+      'Move too fast — the board must be clearly captured at all positions',
+      'Tilt or rotate the board during movement',
+      'Stop movement before reaching the edge of the camera field',
+      'Partially obscure the board with your body during sweeps',
+    ],
+  },
+  {
+    emoji: '🟫',
+    title: 'Ground Calibration (CAL_GND)',
+    dos: [
+      'Place the checkerboard flat on the ground surface',
+      'Position the board in the SHADE — avoid direct sunlight',
+      'Keep the board closer to the rig for better camera coverage',
+      'Ensure all four edges and corners are visible to all cameras on all rigs',
+      'Verify the board is on a flat, even surface before recording',
+      'Double-check the board has not moved before confirming the take',
+    ],
+    donts: [
+      'Place the board on an uneven or sloped surface (max allowed incline: 5°)',
+      'Record in direct sunlight — glare ruins the calibration data',
+      'Position the board too far from the cameras',
+      'Prop the board at an angle instead of flat on the ground',
+      'Start recording if any edge of the board is outside the FOV',
+    ],
+  },
+  {
+    emoji: '📐',
+    title: 'Scenario 20 — Floor Markings',
+    note: 'Blue dot markers and marking tape are included in your kit. Blue dots mark 3 ft interval positions. Tape lines extend from the rig base.',
+    dos: [
+      'Place ground markings starting from the base of the rig',
+      'Mark every 3 ft interval all the way out from the rig',
+      'Use the marking tape provided in the kit for distance lines',
+      'Use the blue tape dots provided in the kit for interval markers',
+      'Verify all markings are straight and evenly spaced before recording',
+      'Keep floor markings clearly visible and unobstructed during recording',
+    ],
+    donts: [
+      'Skip floor markings for Scenario 20',
+      'Use irregular intervals — must be exactly every 3 ft',
+      'Use tape not provided in the kit (different colors / types)',
+      'Cover or obscure the tape markings with equipment or bags',
+      'Record before confirming the full marking sequence is in place',
+    ],
+  },
+];
+
+// Pre-recording quick checklist — single column rather than DO/DON'T pair.
+const CAL_GUIDE_CHECKLIST = [
+  'Timestamp is visible on the top-right of the camera feed',
+  'All cameras on all rigs are operational and positioned correctly',
+  'Checkerboard is clean, undamaged, and fully visible',
+  'AIR CALIBRATION: recorded with Left, Right, and Up movements',
+  'GROUND CALIBRATION: board flat, in shade, close to rig',
+  'Checkerboard held at edges — no fingers over the pattern',
+  'SCENARIO 20 ONLY: Floor markings placed every 3 ft from rig base',
+  'SCENARIO 20 ONLY: Blue dot markers and tape from kit are used',
+];
+
+// Builds the modal DOM once. Cached on window so subsequent opens are
+// just a class toggle.
+function buildCalGuideModal() {
+  if (document.getElementById('calGuideOverlay')) return;  // already built
+
+  const overlay = document.createElement('div');
+  overlay.id = 'calGuideOverlay';
+  overlay.className = 'cal-guide-overlay';
+
+  const modal = document.createElement('div');
+  modal.id = 'calGuideModal';
+  modal.className = 'cal-guide-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'calGuideTitle');
+
+  // --- Header ---
+  const sectionsHTML = CAL_GUIDE_SECTIONS.map(sec => `
+    <div class="cal-guide-section">
+      <h3 class="cal-guide-section-title">
+        <span class="emoji" aria-hidden="true">${sec.emoji}</span>
+        <span>${escapeHTML(sec.title)}</span>
+      </h3>
+      <div class="cal-guide-grid">
+        <div class="cal-guide-col do">
+          <div class="cal-guide-col-head">
+            <svg width="11" height="9" viewBox="0 0 13 10" fill="none" aria-hidden="true"><path d="M1.5 5L5 8.5L11.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            DO
+          </div>
+          <ul class="cal-guide-list">
+            ${sec.dos.map(it => `<li class="cal-guide-item">${escapeHTML(it)}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="cal-guide-col dont">
+          <div class="cal-guide-col-head">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            DON'T
+          </div>
+          <ul class="cal-guide-list">
+            ${sec.donts.map(it => `<li class="cal-guide-item">${escapeHTML(it)}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+      ${sec.note ? `<div class="cal-guide-note">${escapeHTML(sec.note)}</div>` : ''}
+    </div>
+  `).join('');
+
+  const checklistHTML = `
+    <div class="cal-guide-section">
+      <h3 class="cal-guide-section-title">
+        <span class="emoji" aria-hidden="true">✅</span>
+        <span>Pre-Recording Checklist — Quick Reference</span>
+      </h3>
+      <ul class="cal-guide-checklist">
+        ${CAL_GUIDE_CHECKLIST.map(it => `<li class="cal-guide-checklist-item">${escapeHTML(it)}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+
+  modal.innerHTML = `
+    <div class="cal-guide-header">
+      <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+        <div class="cal-guide-header-icon">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="M2 3.5h4.5a1 1 0 011 1V13L6 12H2.5a.5.5 0 01-.5-.5v-8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            <path d="M14 3.5H9.5a1 1 0 00-1 1V13L10 12h3.5a.5.5 0 00.5-.5v-8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div style="min-width: 0;">
+          <div class="cal-guide-header-title" id="calGuideTitle">Calibration Recording Guide</div>
+          <div class="cal-guide-header-sub">DOs &amp; DON'Ts · For on-site moderators</div>
+        </div>
+      </div>
+      <button type="button" class="cal-guide-close" id="calGuideCloseBtn" aria-label="Close guide">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="cal-guide-body">
+      <div class="cal-guide-banner">
+        <span class="cal-guide-banner-icon">⚠️</span>
+        <span><strong>Recording rejections delay the entire study.</strong> Follow this guide at every station before starting any scenario recording.</span>
+      </div>
+      ${sectionsHTML}
+      ${checklistHTML}
+    </div>
+    <div class="cal-guide-footer">
+      Questions? Reach out to your study coordinator before recording. When in doubt, ask.
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+
+  // Listeners (bound once at build time)
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) closeCalGuideModal();
+  });
+  modal.querySelector('#calGuideCloseBtn').addEventListener('click', closeCalGuideModal);
+}
+
+function openCalGuideModal() {
+  buildCalGuideModal();
+  const overlay = document.getElementById('calGuideOverlay');
+  const modal = document.getElementById('calGuideModal');
+  if (!overlay || !modal) return;
+
+  // Reset scroll to top each time so re-opens always land on the
+  // ⚠️ banner / General Requirements (not where they left off scrolled).
+  const body = modal.querySelector('.cal-guide-body');
+  if (body) body.scrollTop = 0;
+
+  // Wire up Escape-to-close. Stored on a property so the inverse
+  // (closeCalGuideModal) can remove the same handler reference.
+  if (!modal._escHandler) {
+    modal._escHandler = e => {
+      if (e.key === 'Escape') closeCalGuideModal();
+    };
+  }
+  document.addEventListener('keydown', modal._escHandler);
+
+  // Open
+  requestAnimationFrame(() => {
+    overlay.classList.add('open');
+    modal.classList.add('open');
+    const closeBtn = modal.querySelector('#calGuideCloseBtn');
+    if (closeBtn) closeBtn.focus();
+  });
+}
+
+function closeCalGuideModal() {
+  const overlay = document.getElementById('calGuideOverlay');
+  const modal = document.getElementById('calGuideModal');
+  if (!overlay || !modal) return;
+  overlay.classList.remove('open');
+  modal.classList.remove('open');
+  if (modal._escHandler) {
+    document.removeEventListener('keydown', modal._escHandler);
+  }
+}
+
+// Wire up the nav trigger. Bind once on DOMContentLoaded so it's
+// ready before the mod app even renders.
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('navCalGuideBtn');
+  if (btn) btn.addEventListener('click', e => {
+    e.preventDefault();
+    openCalGuideModal();
+  });
+});
+
+
 /* =====================================================================
    OPERATOR — Assignment awareness
    ===================================================================== */
@@ -29027,6 +29891,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
   const stationLabelMap = {
     station_0a_done: 'Station 0a complete',
     station_0b_done: 'Station 0b complete',
+    station_0c_done: 'Station 0c complete',
     station_1_done:  'Station 1 complete',
     station_2_done:  'Station 2 complete',
     station_3_done:  'Station 3 complete',
@@ -29043,7 +29908,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>
     ${teammateName ? `<div class="worklog-teammate-hint">Updated by ${escapeHTML(teammateName.split(' ')[0])}</div>` : ''}
     <div class="worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 6).map(step => {
+      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
