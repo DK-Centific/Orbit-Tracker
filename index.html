@@ -10145,7 +10145,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052602';
+const APP_VERSION = '1.2.052603';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -10985,30 +10985,19 @@ function entryTeamCellHTML() {
 }
 
 function entryBarHTML() {
-  // Resolve participant orbit ID + name from the active assignment so we
-  // can build a Lakitu link. The session ID is auto-populated from the
-  // assignment record — the mod no longer has to type it manually. This
-  // both prevents typos AND replaces a step that was easy to forget,
-  // since "the PID is the link target" is the same info the entry bar
-  // was asking for anyway.
-  const activeAsgn = (typeof getOperatorAssignment === 'function')
-    ? getOperatorAssignment() : null;
-  const orbitId = (activeAsgn && activeAsgn.participantOrbitId)
-    || state.participantId  // legacy fallback for mid-session sessions
-    || '';
-  // Keep state.participantId in sync with the resolved orbit ID. Other
-  // downstream code (exports, snapshots, sync payloads) reads
-  // state.participantId, so backfilling it here means everything keeps
-  // working without per-call-site changes. Only writes when there's a
-  // value AND it'd actually change something — avoids spurious
-  // saveState() churn on every render.
-  if (orbitId && state.participantId !== orbitId) {
-    state.participantId = orbitId;
-    if (typeof saveState === 'function') saveState();
-  }
-  const lakituUrl = (typeof buildLakituUrl === 'function')
-    ? buildLakituUrl(orbitId) : '';
-  const hasLakitu = !!orbitId;
+  // Lakitu session input — mod types in the session ID/link from
+  // Lakitu after creating the session there. Previously this field
+  // auto-populated from the booking's participantOrbitId and rendered
+  // as a clickable link, but the orbit ID and the Lakitu session ID
+  // turned out to be different identifiers — the Lakitu side mints
+  // its own session ID when the mod starts a recording. So we're
+  // back to a typed input, just labeled "Lakitu session" (the new
+  // semantic) rather than "Participant ID" (the old label).
+  //
+  // Storage: still goes into state.participantId so exports, snapshots,
+  // and the teammate-sync payload keep working without per-call-site
+  // changes. If you ever want to formalize this as state.lakituSession,
+  // it's a search-and-replace plus a one-time migration step.
 
   // Arrival marker + live elapsed counter. Once mod clicks "Arrived",
   // the button transforms into a live "Arrived 10:23 AM · 1h 04m"
@@ -11027,15 +11016,7 @@ function entryBarHTML() {
       <div class="entry-divider"></div>
       <div class="entry-field">
         <label>Lakitu session</label>
-        ${hasLakitu
-          ? `<a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="entry-lakitu-link" title="Open this participant in Lakitu">
-               <span class="entry-lakitu-id">${escapeHTML(orbitId)}</span>
-               <svg class="entry-lakitu-icon" width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                 <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
-               </svg>
-             </a>`
-          : `<div class="field-readonly" style="color: var(--text3); font-style: italic;">No active booking</div>`
-        }
+        <input id="ent_lakitu" type="text" placeholder="Paste session ID from Lakitu" value="${escapeHTML(state.participantId)}" autocapitalize="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field">
@@ -11104,6 +11085,12 @@ function renderArrivedPillHTML(arrivedAtISO) {
 }
 
 function bindEntryFields() {
+  // Lakitu session input — mod-typed value persists to state.participantId
+  // (same field as before, kept for downstream compatibility — see
+  // entryBarHTML comment for the full rationale).
+  const lak = document.getElementById('ent_lakitu');
+  if (lak) lak.addEventListener('input', e => { state.participantId = e.target.value; saveState(); });
+
   const pn = document.getElementById('ent_pname');
   if (pn) pn.addEventListener('input', e => { state.participantName = e.target.value; saveState(); });
 
