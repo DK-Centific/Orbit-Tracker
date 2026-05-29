@@ -803,7 +803,12 @@ a.icon-btn:focus-visible {
 .cal-guide-header {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
-  padding: 20px 24px 16px;
+  /* iOS Safari with viewport-fit=cover puts the header under the Dynamic
+     Island / notch. Pad-top with the safe-area inset so the close button
+     and title clear it. Left/right insets matter in landscape rotation
+     where the notch sits on one side. Bottom doesn't need it because the
+     header isn't anchored to the screen edge (the body sits below it). */
+  padding: calc(20px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) 16px calc(24px + env(safe-area-inset-left));
   border-bottom: 0.5px solid var(--border);
   flex-shrink: 0;
   background: var(--card-bg);
@@ -1025,7 +1030,12 @@ a.icon-btn:focus-visible {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
   }
-  .cal-guide-header { padding: 16px 18px 12px; }
+  /* Preserve env(safe-area-inset-*) — the desktop rule already includes
+     these, but the previous tightened-padding override threw them away.
+     Re-apply with the narrow-phone padding values. */
+  .cal-guide-header {
+    padding: calc(16px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) 12px calc(18px + env(safe-area-inset-left));
+  }
   .cal-guide-body   { padding: 6px 18px 16px; }
   .cal-guide-footer { padding: 12px 18px; }
 }
@@ -10579,7 +10589,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052802';
+const APP_VERSION = '1.2.052803';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -11874,6 +11884,12 @@ function renderStation(key) {
   const c = document.getElementById('content');
   const idx = STATIONS.findIndex(s => s.key === key);
   const tag = idx === 0 ? 'Station 0a' : idx === 1 ? 'Station 0b' : idx === 2 ? 'Station 0c' : `Station ${idx - 2}`;
+
+  // First-visit auto-popup of the Calibration Recording Guide. Fires
+  // exactly once per moderator login when they land on Station 0a.
+  // No-op for every other station and for repeat visits. See
+  // maybeAutoShowCalGuide() for the gating logic.
+  if (typeof maybeAutoShowCalGuide === 'function') maybeAutoShowCalGuide(key);
 
   let html = `
     <div class="section-title">
@@ -29221,6 +29237,99 @@ function closeCalGuideModal() {
   }
 }
 
+/* ---------------------------------------------------------------------
+   Auto-show on first Station 0a arrival per login.
+   ---------------------------------------------------------------------
+   Behavior: when a moderator navigates to Station 0a (Rig Calibration)
+   for the first time in their login session, pop the Calibration
+   Recording Guide. Each subsequent visit during the same login is
+   silent. Logging out and back in (or a different mod logging in on
+   the same device) re-arms the trigger.
+
+   Storage:
+   - Key: `centific_orbit_calguide_seen_v1` in localStorage
+   - Value: JSON array of usernames who have already been auto-shown
+     since their last login. Wiped on each fresh login (see
+     logout / login plumbing — logout clears the array entry for that
+     username; login does the same as a precaution).
+   - Why localStorage (not sessionStorage): we want the gate to survive
+     accidental page reloads mid-session. The login/logout lifecycle
+     resets it, not the browser tab lifecycle.
+
+   The trigger fires via requestAnimationFrame so the modal opens AFTER
+   renderStation has finished painting (otherwise it'd open on top of a
+   half-rendered backdrop and look janky).
+   --------------------------------------------------------------------- */
+const CAL_GUIDE_SEEN_KEY = 'centific_orbit_calguide_seen_v1';
+
+function calGuideSeenList() {
+  try {
+    const raw = localStorage.getItem(CAL_GUIDE_SEEN_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    // Corrupted entry — wipe it so we don't perma-suppress the modal.
+    try { localStorage.removeItem(CAL_GUIDE_SEEN_KEY); } catch {}
+    return [];
+  }
+}
+
+function calGuideHasBeenSeen(username) {
+  if (!username) return true;   // no username = pre-login state, suppress
+  const key = String(username).toLowerCase();
+  return calGuideSeenList().includes(key);
+}
+
+function markCalGuideSeen(username) {
+  if (!username) return;
+  const key = String(username).toLowerCase();
+  const list = calGuideSeenList();
+  if (list.includes(key)) return;
+  list.push(key);
+  try {
+    localStorage.setItem(CAL_GUIDE_SEEN_KEY, JSON.stringify(list));
+  } catch {
+    // Storage quota / private-browsing — silently ignore. The worst case
+    // is the modal shows again on next navigation to 0a, which is fine.
+  }
+}
+
+// Called by logout (and as a defensive measure at login start) so the
+// guide re-arms for the next session. Removes ONLY the current user's
+// entry — other users' "seen" state on a shared device is preserved.
+function resetCalGuideSeen(username) {
+  if (!username) return;
+  const key = String(username).toLowerCase();
+  const list = calGuideSeenList().filter(u => u !== key);
+  try {
+    localStorage.setItem(CAL_GUIDE_SEEN_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+// Trigger entry-point called from renderStation when a mod arrives at
+// Station 0a (Rig Calibration). Idempotent — re-renders of the same
+// station while it's already been shown for this user are no-ops.
+function maybeAutoShowCalGuide(stationKey) {
+  if (stationKey !== 'station0_cal') return;
+  // Only run on the moderator app — admin has a different navigation
+  // model and the guide trigger doesn't apply there. The mod app sets
+  // state.username at login; admin keeps it empty on the mod-side state.
+  if (!state || !state.username) return;
+  if (calGuideHasBeenSeen(state.username)) return;
+  markCalGuideSeen(state.username);
+  // Defer one frame so the station's DOM is in place before the modal
+  // animates in over it. Two-frame deferral on the safe side — some
+  // browsers complete layout in one rAF but commit paint on the next.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      try { openCalGuideModal(); } catch (e) {
+        console.error('[cal-guide] auto-open failed:', e);
+      }
+    });
+  });
+}
+
 // Wire up the nav trigger. Bind once on DOMContentLoaded so it's
 // ready before the mod app even renders.
 document.addEventListener('DOMContentLoaded', () => {
@@ -32956,6 +33065,13 @@ function init() {
       variant:      'default',
     });
     if (!ok) return;
+    // Re-arm the Calibration Guide auto-popup for the user who's
+    // signing out. Their next login on this device will see the guide
+    // again on first Station 0a arrival. Done BEFORE we tear down the
+    // login state since the username we need lives on state.username.
+    if (typeof resetCalGuideSeen === 'function' && state && state.username) {
+      resetCalGuideSeen(state.username);
+    }
     closeMenu();
     document.getElementById('app').style.display = 'none';
     document.getElementById('adminApp').classList.remove('active');
