@@ -6760,6 +6760,137 @@ button.perf-stat-chip.scheduled.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
 }
+
+/* Team-filter active/dim states. Driven by JS adding `.cal-team-chip-active`
+   to the chip currently filtering the view, and `.cal-team-chip-dim` to
+   all other chips while a filter is in effect.
+
+   The active chip uses the team's own brand color (set inline by the
+   render code as a CSS variable --team-bg) so admin sees a strong
+   color match between the chip and the team's row/dots in the calendar.
+   The dim state fades non-active chips and removes their pointer/hover
+   affordance so the visual signal is unambiguous: "you're focused on
+   one team, the others are still here but secondary." */
+.cal-team-chip[data-drill].cal-team-chip-active {
+  background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+  border-color: var(--border-strong);
+  /* Slight font-weight bump for the team-name text inside */
+  font-weight: 600;
+  color: var(--text);
+  /* Inset ring picks up the team's own color so the chip visually
+     reads as "the filtered team". Falls back to a neutral border-strong
+     if the team color isn't injected. */
+  box-shadow: inset 0 0 0 1.5px var(--team-active-ring, var(--border-strong));
+}
+.cal-team-chip[data-drill].cal-team-chip-active:hover {
+  /* Don't change much on hover when already active — the chip's
+     primary affordance is "click to clear", and the active state
+     should stay visually stable. */
+  background: var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.cal-team-chip[data-drill].cal-team-chip-dim {
+  opacity: 0.45;
+}
+.cal-team-chip[data-drill].cal-team-chip-dim:hover {
+  opacity: 0.85;  /* lift dim on hover so admin can preview the chip they're about to switch to */
+}
+/* Small ✓ marker appended to the active chip's text. CSS-driven so the
+   markup stays clean — render code just adds the class, the marker
+   appears automatically. */
+.cal-team-chip[data-drill].cal-team-chip-active::after {
+  content: '✓';
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* Team-row isolation in the day/week team-grid. When `.tg-row.dimmed`
+   is set, the row is hidden entirely (display: none) so the calendar
+   shows ONLY the filtered team. This is "isolation" rather than mere
+   dimming — admin's visual focus is fully on the selected team's
+   bookings, with no other rows competing for attention. To create a
+   booking for a different team, clear the filter (banner × or click
+   the active chip again).
+
+   Previous treatment (opacity: 0.30 + pointer-events: none) kept the
+   layout context visible but produced a ghosted look that admin
+   reported as cluttered when many teams existed. Full hide is a
+   simpler signal: filter on = one row, filter off = everything. */
+.tg-row.dimmed {
+  display: none;
+}
+.tg-row {
+  /* Soft fade-in when the row reappears after clearing the filter.
+     For display: none there's no smooth transition (browsers don't
+     animate display), but keeping the opacity transition on the base
+     rule means future style work that uses opacity still gets a
+     smooth feel. */
+  transition: opacity 0.18s ease;
+}
+
+/* Month-view dot styling. Filtering is now applied at the data level
+   (month renderer drops bookings from non-matching teams before
+   computing dots), so the previous CSS-driven `.month-dot.dimmed`
+   rule is gone — there's nothing left to dim on screen. Transition
+   stays on the base rule in case future styling adds back any
+   opacity-based effects. */
+.month-dot {
+  transition: opacity 0.18s ease;
+}
+
+/* "Showing only {team} — Clear" banner in the cal-summary-bar. Sits
+   next to the cal-summary-text when a filter is active. */
+.cal-team-filter-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(0, 240, 255, 0.18));
+  border: 0.5px solid var(--border-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  /* The colored dot at the start mirrors the team's brand color so the
+     banner is recognizable at a glance. Inline-style sets the bg. */
+}
+.cal-team-filter-banner-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cal-team-filter-banner-text {
+  /* Truncate gracefully if the team name is unusually long, but keep
+     enough room for at least 30 chars before ellipsis. */
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-team-filter-banner-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg3);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-team-filter-banner-clear:hover {
+  background: var(--bg4);
+}
+.cal-team-filter-banner-clear svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
 .cal-stat-tile::before {
   /* Soft accent strip along the left edge — color-codes the tile so
      admin can scan by category (blue = booking pipeline, teal = email
@@ -11095,7 +11226,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052810';
+const APP_VERSION = '1.2.052812';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -13819,6 +13950,17 @@ const adminState = {
   assignments: [],           // [{ id, teamId, date (YYYY-MM-DD), startMin, endMin, participantOrbitId, participantData, modSnapshots, savedAt }]
   calView: 'week',           // 'day' | 'week'
   calAnchor: null,           // YYYY-MM-DD anchor date (week start = this day - dow)
+  // Calendar team filter — when set to a team ID, the entire Assignment
+  // calendar view (day/week team rows, month dots, stat tile counts,
+  // summary bar count) is narrowed to that team only. Other teams' rows
+  // and dots fade out but stay visible so admin sees the layout context.
+  // Toggled by clicking a team chip in the cal-summary-bar legend
+  // (clicking the same chip again clears; clicking a different team
+  // switches focus). NOT persisted across reloads — transient view
+  // state by design, so admin doesn't return to the app and forget
+  // they have a filter active. Cleared on tab switch as well, so
+  // landing on the Assignment tab always starts unfiltered.
+  calTeamFilter: null,
   modal: null,               // { kind: 'createTeam' | 'editTeam' | 'createAssignment' | 'viewAssignment', ...payload }
   // Overview dashboard state
   overview: {
@@ -13829,14 +13971,23 @@ const adminState = {
   // Availability hub state
   availability: null,        // loaded array of submission rows, or null = not loaded
   _availWeekStart: null,     // YYYY-MM-DD Monday — focused week in the hub
-  // Cal-summary-bar legend collapsed state. Hydrated from localStorage
-  // so admin's preference (hide the legend region for a less cluttered
-  // calendar) survives reloads. Stored as a plain '1' string token
-  // for consistency with other UI prefs; absence of the key means
-  // expanded.
+  // Cal-summary-bar legend collapsed state. DEFAULT is now COLLAPSED
+  // (previously expanded) because the legend chip strip can get long
+  // on workspaces with many teams, and most admins use the legend less
+  // often than the calendar grid itself.
+  //
+  // Storage convention (new in 1.2.052812): key 'orbit_cal_legend_expanded'
+  //   absent → collapsed (the new default)
+  //   '1'    → expanded (admin explicitly opened it; preference saved)
+  // The old key 'orbit_cal_legend_collapsed' is ignored; admins whose
+  // previous preference was collapsed (old key = '1') still see
+  // collapsed under the new default, no behavior change for them.
+  // Admins who previously had it expanded (old key absent) will see
+  // collapsed once under the new default, then their next explicit
+  // expand persists via the new key.
   _calLegendCollapsed: (() => {
-    try { return localStorage.getItem('orbit_cal_legend_collapsed') === '1'; }
-    catch (_) { return false; }
+    try { return localStorage.getItem('orbit_cal_legend_expanded') !== '1'; }
+    catch (_) { return true; }
   })(),
   // ---- Performance tab state ----
   // perfView: 'teams' | 'mods' — which tile collection is shown
@@ -14320,6 +14471,14 @@ function renderAdmin() {
   c.querySelectorAll('.admin-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       adminState.tab = btn.dataset.tab;
+      // Clear the Assignment calendar's team filter AND the side-panel
+      // selection on tab change. Both are transient view state — admin
+      // shouldn't come back to Assignment from another tab and find an
+      // old filter still active. We clear both since they're now kept
+      // in sync (side-panel card click and legend chip click both write
+      // to both).
+      adminState.calTeamFilter = null;
+      adminState._selectedTeam = null;
       // Update active class on tab pills in-place (no full re-render needed)
       c.querySelectorAll('.admin-tab').forEach(b => {
         b.classList.toggle('active', b.dataset.tab === adminState.tab);
@@ -20704,9 +20863,16 @@ function defaultTeamName() {
  * (audit trail purposes), so we keep those untouched. */
 function activeAssignmentCount() {
   if (!adminState.assignments) return 0;
-  return adminState.assignments.filter(a =>
-    a.status !== 'Cancelled' && a.status !== 'Completed' && a.status !== 'Unassigned'
-  ).length;
+  // If a team filter is active, only count that team's bookings in
+  // the summary line — the count should reflect what's actually
+  // visible in the calendar below. When no filter is active,
+  // counts everything (current behavior).
+  const filterId = adminState.calTeamFilter || null;
+  return adminState.assignments.filter(a => {
+    if (a.status === 'Cancelled' || a.status === 'Completed' || a.status === 'Unassigned') return false;
+    if (filterId !== null && String(a.teamId) !== String(filterId)) return false;
+    return true;
+  }).length;
 }
 
 /* ----------- Assignment-status category helpers -----------
@@ -22052,6 +22218,33 @@ function renderCalendarPanelHTML() {
             ? `${n} assignment${n === 1 ? '' : 's'} total`
             : 'No assignments yet';
         })()}<span class="cal-summary-hint"> · tap any day to assign a participant</span></span>
+        ${(() => {
+          // Filter banner — visible only when calTeamFilter is set.
+          // Shows the filtered team's name + color dot + a Clear button.
+          // Sits next to the summary text in the same flex row so admin
+          // sees it as the most prominent secondary control.
+          //
+          // The same team-click in the legend toggles the filter off,
+          // but the banner's explicit X button is more discoverable for
+          // someone who didn't realize the chip was a toggle.
+          const filterId = adminState.calTeamFilter;
+          if (!filterId) return '';
+          const team = (adminState.teams || []).find(t => String(t.id) === String(filterId));
+          if (!team) return '';
+          const color = (typeof getTeamColor === 'function') ? getTeamColor(team.id) : { bg: 'var(--accent)' };
+          return `
+            <span class="cal-team-filter-banner" role="status" aria-live="polite">
+              <span class="cal-team-filter-banner-dot" style="background: ${color.bg};" aria-hidden="true"></span>
+              <span class="cal-team-filter-banner-text">Showing only ${escapeHTML(team.name)}</span>
+              <button type="button" class="cal-team-filter-banner-clear" id="calTeamFilterClear"
+                      aria-label="Clear team filter"
+                      title="Clear filter (show all teams)">
+                <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </span>`;
+        })()}
         <!-- Collapse toggle — legend section can get noisy on workspaces
              with many teams. Hiding it gives the calendar grid more
              breathing room without losing the chips entirely (still
@@ -22359,7 +22552,14 @@ function renderTeamGridHTML(days) {
         </div>`;
     });
 
-    rowsHTML += `<div class="tg-row" data-team-id="${team.id}">${cellsHTML}</div>`;
+    // Apply the team filter — non-matching rows render with .dimmed
+    // so they fade to ~30% opacity AND pointer-events: none (admin
+    // can't accidentally click into a hidden team's empty cell).
+    // When no filter is active, dimCls is empty and rows behave as
+    // before.
+    const filterId = adminState.calTeamFilter || null;
+    const dimCls = (filterId !== null && String(team.id) !== String(filterId)) ? 'dimmed' : '';
+    rowsHTML += `<div class="tg-row ${dimCls}" data-team-id="${team.id}">${cellsHTML}</div>`;
   });
 
   return `
@@ -22392,10 +22592,18 @@ function renderCalendarStatTilesHTML(view, days) {
   if (!days || days.length === 0) return '';
   const scopeStart = ymd(days[0]);
   const scopeEnd   = ymd(days[days.length - 1]);
-  // Filter assignments to the current scope.
+  // Pull the active team filter once — applied alongside the date
+  // scope so the counts reflect exactly what's visible in the
+  // calendar grid below. When no filter is active (null), the team
+  // predicate degrades to "always true" and counts everything in
+  // scope as before.
+  const filterId = adminState.calTeamFilter || null;
+  // Filter assignments to the current scope AND team filter.
   const inScope = (adminState.assignments || []).filter(a => {
     if (!a || !a.date) return false;
-    return a.date >= scopeStart && a.date <= scopeEnd;
+    if (a.date < scopeStart || a.date > scopeEnd) return false;
+    if (filterId !== null && String(a.teamId) !== String(filterId)) return false;
+    return true;
   });
   const bookedCount    = inScope.filter(a => a.status === 'Booked' || a.status === 'Notified').length;
   const completedCount = inScope.filter(a => a.status === 'Completed').length;
@@ -22423,17 +22631,25 @@ function renderCalendarStatTilesHTML(view, days) {
   //                 dimension that matters here.
   let availableCount = 0;
   const teams = adminState.teams || [];
-  if (teams.length > 0 && typeof getTeamAvailabilityForDate === 'function') {
+  // When a team filter is active, the availability count narrows to
+  // just that team — so the "Available" tile in day-view shows 0/1
+  // (the filtered team is or isn't fully staffed today), and in
+  // week/month view counts days where the FILTERED team is fully
+  // available (matches the spec: stats follow the filter).
+  const scopedTeams = (adminState.calTeamFilter !== null)
+    ? teams.filter(t => String(t.id) === String(adminState.calTeamFilter))
+    : teams;
+  if (scopedTeams.length > 0 && typeof getTeamAvailabilityForDate === 'function') {
     if (view === 'day') {
       const ds = ymd(days[0]);
-      availableCount = teams.filter(t => {
+      availableCount = scopedTeams.filter(t => {
         const av = getTeamAvailabilityForDate(t, ds);
         return av.total > 0 && av.yes === av.total;
       }).length;
     } else {
       for (const d of days) {
         const ds = ymd(d);
-        const someTeamReady = teams.some(t => {
+        const someTeamReady = scopedTeams.some(t => {
           const av = getTeamAvailabilityForDate(t, ds);
           return av.total > 0 && av.yes === av.total;
         });
@@ -22539,13 +22755,27 @@ function renderCalendarMonthHTML() {
     const isToday = ds === today;
     const isCurMonth = d.getMonth() === month;
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const all = byDate.get(ds) || [];
+    // Apply the team filter at the data level — when a filter is active,
+    // bookings from other teams drop out before we compute counts, dots,
+    // or the +N overflow indicator. This guarantees the cell's visual
+    // state (has-bookings class, dot list, overflow count, click action)
+    // all reflect "what admin should see for the filtered team" with
+    // no half-states. Previously we filtered at the dot level only,
+    // which left the +N count potentially wrong (e.g. "+3 more" when
+    // only 1 of those bookings was actually visible).
+    const filterId = adminState.calTeamFilter || null;
+    const allRaw = byDate.get(ds) || [];
+    const all = (filterId === null)
+      ? allRaw
+      : allRaw.filter(a => String(a.teamId) === String(filterId));
     const booked    = all.filter(a => a.status === 'Booked');
     const notified  = all.filter(a => a.status === 'Notified');
     const completed = all.filter(a => a.status === 'Completed');
     const cancelled = all.filter(a => a.status === 'Cancelled');
     const activeCount = booked.length + notified.length + completed.length;
-    // Dot list — up to 6 dots, rest overflow into a "+N" pill.
+    // Dot list — up to 6 dots, rest overflow into a "+N" pill. Dots
+    // emitted here ALL belong to the filtered team (or all teams when
+    // unfiltered) — no need to dim at the CSS layer anymore.
     const maxDots = 6;
     const dots = [];
     [...booked, ...notified, ...completed, ...cancelled].forEach((a) => {
@@ -22557,7 +22787,13 @@ function renderCalendarMonthHTML() {
                       : a.status === 'Notified'  ? 'notified'
                       : 'booked';
       const tip = `${teamName} · ${(a.startMin/60|0).toString().padStart(2,'0')}:${(a.startMin%60).toString().padStart(2,'0')} · ${a.status}`;
-      dots.push(`<span class="month-dot status-${statusKey}" title="${escapeHTML(tip)}"></span>`);
+      // data-team-id stays on each dot for future scoped styling /
+      // tooltips. The dot-level dimming class is no longer needed —
+      // bookings from non-matching teams are filtered out upstream
+      // (see the `all` derivation above), so any dot we emit here
+      // belongs to the visible team set.
+      const teamIdAttr = a.teamId != null ? `data-team-id="${escapeHTML(String(a.teamId))}"` : '';
+      dots.push(`<span class="month-dot status-${statusKey}" ${teamIdAttr} title="${escapeHTML(tip)}"></span>`);
     });
     const overflow = activeCount + cancelled.length > maxDots
       ? `<span class="month-dot-more" title="${activeCount + cancelled.length - maxDots} more">+${activeCount + cancelled.length - maxDots}</span>`
@@ -22881,12 +23117,13 @@ function setupCalendarDrillListeners(body) {
       adminState._calLegendCollapsed = nowCollapsed;
       legendToggle.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
       legendToggle.setAttribute('title', nowCollapsed ? 'Show team & availability legend' : 'Hide legend');
-      // Persist so the choice sticks across reloads. The key is the
-      // same pattern used by other UI prefs (calView, etc) — stored
-      // as plain string so no JSON.parse needed on hydration.
+      // Persist using the new storage convention (see _calLegendCollapsed
+      // init for full details). Key 'orbit_cal_legend_expanded' is
+      // present-and-'1' only when admin has explicitly opened the
+      // legend; absent or anything else = collapsed (the default).
       try {
-        if (nowCollapsed) localStorage.setItem('orbit_cal_legend_collapsed', '1');
-        else              localStorage.removeItem('orbit_cal_legend_collapsed');
+        if (nowCollapsed) localStorage.removeItem('orbit_cal_legend_expanded');
+        else              localStorage.setItem('orbit_cal_legend_expanded', '1');
       } catch (_) {}
     });
   }
@@ -22918,29 +23155,36 @@ function setupCalendarDrillListeners(body) {
       });
     });
   });
-  // Team chips — same pattern but team-scoped.
+  // Team chips — clicking a chip toggles a global team filter on the
+  // calendar view rather than opening a drill modal. This puts admin
+  // directly into the filtered calendar (preserving the layout
+  // context) instead of a separate modal listing. To get back to the
+  // unfiltered view, click the same chip again, click another team
+  // (switches focus), or use the "Clear" button in the filter banner.
+  //
+  // The drill modal still exists and is reached via the stat-tile
+  // clicks (Booked / Notified / Completed) — those open scope-filtered
+  // listings, which is the appropriate UX for "look at every X-status
+  // booking across all teams in this view".
   body.querySelectorAll('.cal-team-chip[data-drill="team"]').forEach(chip => {
     chip.addEventListener('click', () => {
       const teamId = chip.dataset.teamId;
-      const scopeStart = chip.dataset.scopeStart;
-      const scopeEnd   = chip.dataset.scopeEnd;
-      const view       = chip.dataset.view;
-      // Same string-coercion as the drill modal's filter. Without it
-      // the team lookup returned undefined (number !== string), the
-      // modal title fell back to "Team · today", and the drill
-      // produced an empty list because the filter comparison
-      // downstream was also broken.
-      const team = (adminState.teams || []).find(t => String(t.id) === String(teamId));
-      const teamName = team ? team.name : 'Team';
-      const scopeLabel = view === 'day' ? 'today' : 'this week';
-      openCalendarDrillModal({
-        teamFilter: teamId,
-        scopeStart,
-        scopeEnd,
-        view,
-        title:    `${teamName} · ${scopeLabel}`,
-        subtitle: `Click any booking for details`,
-      });
+      if (!teamId) return;
+      // Toggle: if this team is already the active filter, clear it.
+      // Otherwise set it (replaces any previously-active filter).
+      const current = adminState.calTeamFilter;
+      const isToggleOff = (String(current) === String(teamId));
+      adminState.calTeamFilter = isToggleOff ? null : teamId;
+      // Mirror into _selectedTeam so the side-panel team card lights up
+      // (or unlights) at the same time as the chip. Parsed as int to
+      // match the side-panel handler's shape — both selection sources
+      // store the same type, which keeps the existing equality checks
+      // in teamCardHTML (line ~22081) working without type juggling.
+      adminState._selectedTeam = isToggleOff ? null : parseInt(teamId, 10);
+      // Full re-render of the assignment tab so calendar grid, dots,
+      // counts, summary bar, side-panel selection, and chip states
+      // all reflect the new filter at once.
+      if (typeof renderAssignment === 'function') renderAssignment();
     });
   });
 }
@@ -23177,7 +23421,18 @@ function setupMonthDayHoverPopover(body) {
 
 // LIST VIEW — flat list of all assignments grouped by date
 function renderCalendarListHTML() {
-  const sorted = [...adminState.assignments].sort((a, b) => {
+  // Apply team filter at the source — list view is a vertical text
+  // listing of bookings, so dimming rows doesn't make sense here.
+  // Bookings simply drop out of the list when the filter excludes
+  // them. The summary line + filter banner up in the calendar panel
+  // header still surfaces "Showing only {team}" so admin knows why
+  // the list is short.
+  const filterId = adminState.calTeamFilter || null;
+  const sourceAsgns = (adminState.assignments || []).filter(a => {
+    if (filterId === null) return true;
+    return String(a.teamId) === String(filterId);
+  });
+  const sorted = [...sourceAsgns].sort((a, b) => {
     return (a.date + '_' + String(a.startMin).padStart(4, '0'))
       .localeCompare(b.date + '_' + String(b.startMin).padStart(4, '0'));
   });
@@ -23338,11 +23593,29 @@ function renderTeamLegendHTML() {
       ${adminState.teams.map(t => {
         const c = getTeamColor(t.id);
         if (drillable) {
+          // Resolve filter state for this chip — drives the active /
+          // dim classes the CSS uses to style the chip. Three modes:
+          //   - No filter (calTeamFilter null): neutral chip styling
+          //   - This team is the filter: .cal-team-chip-active
+          //   - Another team is the filter: .cal-team-chip-dim
+          const activeFilter = adminState.calTeamFilter || null;
+          let filterCls = '';
+          if (activeFilter !== null) {
+            filterCls = String(t.id) === String(activeFilter)
+              ? 'cal-team-chip-active'
+              : 'cal-team-chip-dim';
+          }
+          // Inline CSS variable injects the team color into the
+          // active-state ring (see .cal-team-chip-active CSS). The
+          // border/bg colors of the chip itself stay neutral so the
+          // ring is the primary "color match" signal back to the
+          // team's row in the calendar grid.
+          const styleAttr = `--team-active-ring: ${c.bg};`;
           // Buttons when drillable, spans otherwise. Empty-bookings
           // teams still render as buttons — clicking produces an
           // honest "no bookings for this team in this scope" message
           // rather than silently dropping the click.
-          return `<button type="button" class="cal-team-chip" data-drill="team" data-team-id="${escapeHTML(t.id)}" data-scope-start="${scopeStart}" data-scope-end="${scopeEnd}" data-view="${view}">
+          return `<button type="button" class="cal-team-chip ${filterCls}" data-drill="team" data-team-id="${escapeHTML(t.id)}" data-scope-start="${scopeStart}" data-scope-end="${scopeEnd}" data-view="${view}" style="${styleAttr}">
             <span style="width: 8px; height: 8px; border-radius: 2px; background: ${c.bg};"></span>
             <span style="color: var(--text2);">${escapeHTML(t.name)}</span>
           </button>`;
@@ -23684,7 +23957,15 @@ function bindAssignmentEvents() {
         else if (action === 'delete') deleteTeam(teamId);
         return;
       }
-      adminState._selectedTeam = adminState._selectedTeam === teamId ? null : teamId;
+      // Toggle the selected team — same card click = deselect, different
+      // card = switch. Mirror the new value into calTeamFilter so the
+      // calendar filter and the side-panel selection always agree.
+      // calTeamFilter is compared via String() coercion downstream so
+      // we can store either type, but we use the parsed number here to
+      // keep both fields the same shape — easier to debug.
+      const wasSelected = (adminState._selectedTeam === teamId);
+      adminState._selectedTeam = wasSelected ? null : teamId;
+      adminState.calTeamFilter = wasSelected ? null : teamId;
       renderAssignment();
     });
   });
@@ -23761,6 +24042,18 @@ function bindAssignmentEvents() {
   if (next) next.addEventListener('click', () => navCalendar(1));
   if (today) today.addEventListener('click', () => {
     adminState.calAnchor = ymd(new Date());
+    renderAssignment();
+  });
+
+  // Team filter clear button — visible only when calTeamFilter is set
+  // (the banner that hosts it is conditionally rendered). Clears the
+  // filter AND the side-panel selection (the two states stay in
+  // sync) and re-renders. The team chip in the legend also toggles
+  // the filter, but this is a more discoverable escape hatch.
+  const clearTeamFilter = document.getElementById('calTeamFilterClear');
+  if (clearTeamFilter) clearTeamFilter.addEventListener('click', () => {
+    adminState.calTeamFilter = null;
+    adminState._selectedTeam = null;
     renderAssignment();
   });
 
