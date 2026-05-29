@@ -6437,6 +6437,47 @@ button.perf-stat-chip.scheduled.active {
   color: var(--accent-ink);
 }
 
+/* Lakitu pill — "No url" variant. Renders when the worklog has no
+   participantId for this assignment. Muted gray styling, no hover
+   affordance, no cursor:pointer — purely informational, not
+   interactive. The row's click handler can fire through normally
+   so admin can still open the side panel. */
+.perf-lakitu-pill-empty {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  padding: 4px 9px;
+  border: 0.5px dashed var(--border);
+  background: transparent;
+  color: var(--text3);
+  border-radius: 6px;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+/* Lakitu pill — "Incorrect url" variant. Renders when the worklog
+   has SOMETHING in participantId but it doesn't pass validateLakituUrl
+   (missing ?session=, not http, etc.). Red warning styling so admin
+   can spot it at a glance and follow up with the moderator. Tooltip
+   on the pill (title attribute) shows the actual raw URL so admin
+   can see exactly what the mod typed wrong. */
+.perf-lakitu-pill-invalid {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  padding: 4px 9px;
+  border: 0.5px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.10);
+  color: rgb(239, 68, 68);
+  border-radius: 6px;
+  white-space: nowrap;
+  /* No cursor: pointer — same rationale as the empty variant, this
+     pill is informational. The title-attribute tooltip is the
+     primary surface for "what went wrong". */
+  cursor: help;
+}
+[data-theme="light"] .perf-lakitu-pill-invalid {
+  background: rgba(239, 68, 68, 0.07);
+}
+
 /* Empty state */
 .perf-empty {
   padding: 24px 20px;
@@ -11324,7 +11365,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052815';
+const APP_VERSION = '1.2.052816';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -14999,6 +15040,138 @@ function buildLakituUrl(orbitId) {
   return LAKITU_BASE_URL.replace('{orbitId}', encodeURIComponent(orbitId));
 }
 
+// Looks up the Lakitu session URL the moderator typed into the entry
+// bar for a given assignment. Source of truth is the worklog cache —
+// each row's `participantId` column carries the URL since the change
+// in 1.2.052807 that re-mapped that field from the participant-profile
+// ID to the Lakitu session URL.
+//
+// Multiple worklog rows can exist for one assignment (one per status
+// transition: arrived, station_0a_done, etc). We sort by timestamp
+// and take the most recent row with a non-empty participantId, so
+// if the mod corrected their pasted URL mid-session, the newer value
+// wins. Returns '' when no row carries a URL.
+function getLakituUrlForAssignment(asgnId) {
+  if (!asgnId) return '';
+  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  const candidates = cache
+    .filter(r => r && String(r.assignmentId) === String(asgnId) && r.participantId && String(r.participantId).trim())
+    .sort((a, b) => {
+      // Most recent first. Use timestamp (ISO) when available; fall
+      // back to comparing worklogId lexicographically (which embeds
+      // Date.now() at write time, so it's chronologically ordered).
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      return String(b.worklogId || '').localeCompare(String(a.worklogId || ''));
+    });
+  return candidates.length > 0 ? String(candidates[0].participantId).trim() : '';
+}
+
+// Classifies a Lakitu URL string as 'ok' (valid review-able URL),
+// 'empty' (no URL stored), or 'invalid' (something is there but the
+// format doesn't match what Lakitu expects).
+//
+// The canonical Lakitu URL looks like:
+//   https://lakitu.ring.amazon.dev/p/<UUID>?session=<UUID>
+// Validation strictness chosen to catch the real moderator mistakes:
+//   - empty string                                → 'empty'
+//   - bare session ID like "712c1-a30f-..."       → 'invalid' (no http)
+//   - participant link without ?session=          → 'invalid'
+//   - typo in domain, wrong protocol, etc.        → 'invalid' (no http? or no ?session=)
+// A real Lakitu URL satisfies BOTH "starts with http" AND
+// "contains ?session=" — that's enough to be confident the
+// /review?session= transform will produce something openable.
+function validateLakituUrl(url) {
+  if (!url || !String(url).trim()) return 'empty';
+  const u = String(url).trim();
+  if (!u.toLowerCase().startsWith('http')) return 'invalid';
+  if (!u.includes('?session=')) return 'invalid';
+  return 'ok';
+}
+
+// Transforms a Lakitu session URL into its "review" variant by
+// inserting /review before the ?session= query string. Per spec:
+//   https://lakitu.../p/<UUID>?session=<UUID>
+//     →
+//   https://lakitu.../p/<UUID>/review?session=<UUID>
+//
+// Idempotent — if the URL is already in /review?session= form, it's
+// returned unchanged. Defensive: only the FIRST occurrence of
+// ?session= is replaced, which matches the real URL shape (the
+// query string starts after the path).
+function lakituReviewUrl(url) {
+  if (!url) return url;
+  const u = String(url).trim();
+  if (u.includes('/review?session=')) return u;  // already transformed
+  return u.replace('?session=', '/review?session=');
+}
+
+// Centralized renderer for the Lakitu pill across the Performance tab.
+// Used by:
+//   - the inline booking row inside expanded team/mod tiles ('row' variant)
+//   - the slide-out side panel that opens on row click ('panel' variant)
+//
+// Behavior matrix (based on cls + URL validation):
+//   cls is 'scheduled'           → empty placeholder (session not started)
+//   cls is 'completed'/'inprogress':
+//     URL ok                     → clickable pill, opens /review?session URL
+//     URL empty                  → muted "No url" pill (informational)
+//     URL invalid                → red "Incorrect url" pill with tooltip
+//                                   showing the raw bad URL so admin can
+//                                   see what the mod typed wrong
+//
+// The 'variant' arg ('row' | 'panel') controls styling tweaks — panel
+// pill is slightly larger and reads "Open in Lakitu" instead of
+// "Lakitu" to match the panel's more spacious layout.
+function renderPerfLakituPillHTML(a, cls, variant) {
+  const showLakitu = (cls === 'completed' || cls === 'inprogress');
+  if (!showLakitu) {
+    // Placeholder keeps the row's grid columns aligned. Side-panel
+    // doesn't need a placeholder — it just omits the section.
+    return variant === 'row' ? '<span style="width: 1px;"></span>' : '';
+  }
+  const url = getLakituUrlForAssignment(a && a.id);
+  const status = validateLakituUrl(url);
+  const isPanel = variant === 'panel';
+
+  if (status === 'ok') {
+    const reviewUrl = lakituReviewUrl(url);
+    const label = isPanel ? 'Open in Lakitu' : 'Lakitu';
+    const panelStyle = isPanel ? ' style="font-size: 12.5px; padding: 6px 12px;"' : '';
+    const panelIconSize = isPanel ? '11' : '9';
+    // The row-variant pill stops row-click propagation so opening
+    // the new tab doesn't also slide the side panel in.
+    const stopAttr = isPanel ? '' : ' data-stop-row-click onclick="event.stopPropagation()"';
+    return `<a href="${escapeHTML(reviewUrl)}" target="_blank" rel="noopener" class="perf-lakitu-pill"${panelStyle}${stopAttr}>
+         ${label}
+         <svg width="${panelIconSize}" height="${panelIconSize}" viewBox="0 0 12 12" fill="none">
+           <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+         </svg>
+       </a>`;
+  }
+
+  if (status === 'invalid') {
+    // Tooltip carries the raw URL so admin can SEE what the mod
+    // typed. Truncate display in the tooltip if it's very long
+    // (some pasted URLs can run hundreds of chars if the mod
+    // accidentally copied a whole address bar URL bar including
+    // referrer params).
+    const display = url.length > 120 ? url.slice(0, 117) + '…' : url;
+    const tip = `Incorrect URL format — should look like https://lakitu.ring.amazon.dev/p/{id}?session={id}\n\nWhat the moderator typed:\n${display}`;
+    const panelStyle = isPanel ? ' style="font-size: 12.5px; padding: 6px 12px;"' : '';
+    return `<span class="perf-lakitu-pill-invalid"${panelStyle} title="${escapeHTML(tip)}">
+         ⚠ Incorrect url
+       </span>`;
+  }
+
+  // status === 'empty'
+  const panelStyle = isPanel ? ' style="font-size: 12.5px; padding: 6px 12px;"' : '';
+  return `<span class="perf-lakitu-pill-empty"${panelStyle} title="No Lakitu URL has been recorded for this booking yet">
+       No url
+     </span>`;
+}
+
 // Test whether a booking's participant name matches a search term.
 // Lower-cased substring match — same convention as the team/mod
 // name match logic elsewhere in this tab. Returns false for falsy
@@ -15805,19 +15978,22 @@ function renderPerfBookingRowHTML(a, team, search) {
     ? dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
     : a.date;
 
-  // Lakitu pill only for completed/in-progress. Stops event-propagation
-  // on click so the row's click-to-open-panel handler doesn't also
-  // fire (would race the new tab opening with the panel sliding in).
-  const lakituUrl = buildLakituUrl(a.participantOrbitId);
-  const showLakitu = (cls === 'completed' || cls === 'inprogress');
-  const lakituHTML = showLakitu
-    ? `<a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="perf-lakitu-pill" data-stop-row-click onclick="event.stopPropagation()">
-         Lakitu
-         <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-           <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-         </svg>
-       </a>`
-    : `<span style="width: 1px;"></span>`; // placeholder to keep grid columns aligned
+  // Lakitu pill — three possible states based on the URL stored in
+  // the worklog table's participantId column for this assignment:
+  //   - ok      → clickable "Lakitu" pill that opens the /review URL
+  //                in a new tab
+  //   - empty   → muted "No url" pill (mod hasn't pasted anything yet)
+  //   - invalid → red "Incorrect url" pill (mod pasted something but
+  //                the format doesn't match — e.g., missing ?session=)
+  // For 'empty' and 'invalid', the pill is inert (no link, no
+  // click-stop) so the row's click handler still opens the side
+  // panel — there's no "open in Lakitu" to interrupt.
+  //
+  // Gate: only render the pill at all for completed/in-progress
+  // sessions. Scheduled bookings have no Lakitu URL yet because the
+  // mod hasn't started; surfacing "No url" everywhere clutters the
+  // grid with non-actionable noise.
+  const lakituHTML = renderPerfLakituPillHTML(a, cls, 'row');
 
   // Highlight match: if the current search term matches THIS booking's
   // participant, the row gets a .matched class for the visual cue (left
@@ -16108,8 +16284,11 @@ function openPerformancePanel(asgnId) {
                   : a.status === 'Completed' ? 'completed'
                   : a.status === 'Notified'  ? 'notified'
                   : 'booked';
-  const lakituUrl = buildLakituUrl(a.participantOrbitId);
-  const showLakitu = (cls === 'completed' || cls === 'inprogress');
+  // Lakitu pill — same three-state model as the per-row pill (ok /
+  // empty / invalid). 'panel' variant produces a slightly larger pill
+  // with "Open in Lakitu" text vs. the row's tighter "Lakitu" label.
+  // See renderPerfLakituPillHTML for the full behavior matrix.
+  const lakituPillHTML = renderPerfLakituPillHTML(a, cls, 'panel');
 
   // Per-station detail.
   // For scheduled bookings, we show "Session not started yet" instead
@@ -16148,14 +16327,9 @@ function openPerformancePanel(asgnId) {
           <div class="perf-panel-meta-val">${escapeHTML(pd.phone)}</div>
         ` : ''}
       </div>
-      ${showLakitu ? `
+      ${lakituPillHTML ? `
         <div style="margin-top: 14px;">
-          <a href="${escapeHTML(lakituUrl)}" target="_blank" rel="noopener" class="perf-lakitu-pill" style="font-size: 12.5px; padding: 6px 12px;">
-            Open in Lakitu
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-              <path d="M5 2H3a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V7M7 2h3v3M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </a>
+          ${lakituPillHTML}
         </div>
       ` : ''}
     </div>
