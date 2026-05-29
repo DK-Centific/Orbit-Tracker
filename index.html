@@ -11365,7 +11365,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052816';
+const APP_VERSION = '1.2.052817';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -11705,18 +11705,22 @@ function saveState() {
   } catch (e) {
     console.warn('Save failed', e);
   }
-  // Cloud sync (SessionState) — debounced, fire-and-forget. Only fires
-  // for operator users (the helper checks for state.modProfile and an
-  // active assignment); admin saves never trigger it. Safe to call even
-  // when SessionState isn't configured — schedule is a no-op then.
-  try {
-    if (typeof scheduleSessionStateSync === 'function') {
-      scheduleSessionStateSync();
-    }
-  } catch (e) {
-    // Defensive — never let cloud-sync errors break local save.
-    console.warn('[Orbit] scheduleSessionStateSync error:', e && e.message);
-  }
+  // Cloud sync (SessionState) is no longer triggered from saveState.
+  // Previously a 5s debounced sync fired on every state mutation,
+  // including idle background ones (teammate-sync echo merges, poll-
+  // driven assignment refreshes, render-driven syncBookedParticipantName,
+  // hourly-reminder bookkeeping, etc). That produced a constant
+  // stream of writes to the SessionState Excel table even when the
+  // moderator wasn't touching the app — the table grew unboundedly
+  // and PA's "Add a row" calls accumulated.
+  //
+  // The new model is interaction-driven: cloud sync only fires when
+  // the moderator deliberately interacts with the session (clicks
+  // a status button, toggles a camera/equipment, commits notes via
+  // blur, acknowledges the cal guide, submits a station, etc).
+  // See triggerSessionStateSync — it's called from each interaction
+  // site explicitly. Page-unload still flushes as a safety net so
+  // the last edit survives a tab close.
 }
 // Load state for a specific username (operator login flow) or the
 // legacy global key (admin login flow, where username isn't known
@@ -12429,19 +12433,27 @@ function bindEntryFields() {
   // (same field as before, kept for downstream compatibility — see
   // entryBarHTML comment for the full rationale).
   const lak = document.getElementById('ent_lakitu');
-  if (lak) lak.addEventListener('input', e => {
-    state.participantId = e.target.value;
-    saveState();
-    // Live refresh of the station's actions bar so the Submit button's
-    // disabled state, tooltip, and the "Lakitu URL required" pill all
-    // update as the moderator types the URL. We re-render ONLY the
-    // .actions-bar element (not the whole page) so this input
-    // element — which lives in the entry bar, not the actions bar —
-    // keeps its focus and cursor position. Without this, the mod
-    // would have to click elsewhere on the page for the Submit button
-    // to enable, which feels broken.
-    if (typeof refreshStationActionsBar === 'function') refreshStationActionsBar();
-  });
+  if (lak) {
+    lak.addEventListener('input', e => {
+      state.participantId = e.target.value;
+      saveState();
+      // Live refresh of the station's actions bar so the Submit button's
+      // disabled state, tooltip, and the "Lakitu URL required" pill all
+      // update as the moderator types the URL. Local-only refresh — no
+      // cloud sync per keystroke. We re-render ONLY the .actions-bar
+      // element (not the whole page) so this input element — which
+      // lives in the entry bar, not the actions bar — keeps its focus
+      // and cursor position.
+      if (typeof refreshStationActionsBar === 'function') refreshStationActionsBar();
+    });
+    // Commit-time sync — when the moderator tabs/clicks away, treat
+    // that as "I'm done pasting the URL" and propagate to cloud once.
+    // This avoids the previous "every keystroke triggers a debounced
+    // sync" pattern that ran the SessionState log up unnecessarily.
+    lak.addEventListener('blur', () => {
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+    });
+  }
 
   // ⓘ info popover for Lakitu session. Three interaction modes:
   //   - Desktop hover (CSS pseudo-class, no JS) shows the popover.
@@ -12546,6 +12558,7 @@ function bindEntryFields() {
       state.arrivedAt = new Date().toISOString();
       state.remindersShown = []; // fresh start for this session
       saveState();
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
       // Re-render the entry bar to swap button → pill. Cheapest path:
       // re-render the whole current view so the entry bar updates
       // without us needing to know its container's ID. This is what
@@ -12570,6 +12583,7 @@ function bindEntryFields() {
       state.arrivedAt = '';
       state.remindersShown = [];
       saveState();
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
       stopPerHourReminder();
       if (typeof render === 'function') render();
     });
@@ -12702,6 +12716,7 @@ function bindEquipmentRows() {
       if (shouldAutoCollapse) {
         state.equipmentCollapsed = false;  // ensure expanded for the render
         saveState();
+        if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
         renderApp();
         // Wait long enough for the user's eye to register the last check
         // (~0.55s), then trigger the collapse animation surgically — no
@@ -12718,6 +12733,7 @@ function bindEquipmentRows() {
         }, 550);
       } else {
         saveState();
+        if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
         renderApp();
       }
     };
@@ -12768,6 +12784,7 @@ function bindEquipmentRows() {
       if (!wasComplete && isNowComplete) {
         state.equipmentCollapsed = false;
         saveState();
+        if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
         renderApp();
         setTimeout(() => {
           if (!allRequiredPacked()) return;
@@ -12780,6 +12797,7 @@ function bindEquipmentRows() {
         }, 550);
       } else {
         saveState();
+        if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
         renderApp();
       }
       toast(setTo ? 'All equipment marked packed' : 'Equipment list reset');
@@ -13069,6 +13087,7 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
       data.cameras[cam] = !data.cameras[cam];
       const nowAllChecked = CAMERAS.every(c => data.cameras[c]);
       saveState();
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
 
       const stationKey = currentStationKey;
 
@@ -13164,6 +13183,7 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
         sc.status = newStatus;
       }
       saveState();
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
       // If we just set Partially Recorded OR Skipped without a note, focus
       // the notes input so the operator can immediately add the required note.
       const needsNoteNow =
@@ -13216,6 +13236,15 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
   const NOTES_DEBOUNCE_MS = 400;
 
   c.querySelectorAll('.scenario-notes').forEach(inp => {
+    // Blur-commit handler — when the user tabs/clicks away, treat that
+    // as a deliberate "I'm done typing this note" interaction and
+    // trigger a cloud sync. The `input` handler below saves locally
+    // on every keystroke (so the typed value never gets lost) but
+    // does NOT sync — that would have produced one PA call per
+    // keystroke, defeating the whole interaction-driven model.
+    inp.addEventListener('blur', () => {
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+    });
     inp.addEventListener('input', e => {
       const num = e.target.dataset.num;
       const k = e.target.dataset.key;
@@ -13327,6 +13356,7 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
       if (next === sc.iterations) return;
       sc.iterations = next;
       saveState();
+      if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
       renderApp();
     });
   });
@@ -13559,6 +13589,11 @@ function submitStation() {
   if (status) {
     pushWorklogStatus(asgn, status);
   }
+  // Station submission is the strongest signal of moderator progress —
+  // always sync to cloud so teammates and admin see the new station
+  // state immediately. Done after the worklog push so the cloud row
+  // reflects the just-incremented station status.
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
 
   // Last station → open wrap-up checklist (reopen-able if cancelled earlier)
   if (isLast) {
@@ -29819,15 +29854,21 @@ const WORKLOG_PA_READ_URL = '';
 const SESSIONSTATE_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2df48d7fd8e844b49496d626bb49db61/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=QMfifDLshKjEw2Vpto85Qsu9SnQc6tVIXeRwPW_AmdU';
 const SESSIONSTATE_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/0c5d3ab19b7443c598a18136830a32bc/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=eDKkJNTraDxG47g0RnzLCW7ineUS4YuwpZsCnC0Cmmw';
 
-// Debounce window for cloud writes. Local saves are instant; cloud syncs
-// wait this long after the last state change to batch rapid edits into
-// one PA call. 5000ms is a compromise: short enough that teammate sees
-// recent progress within ~30s + 5s = 35s worst case (poll interval +
-// debounce), long enough that typing scenario notes doesn't trigger
-// a flurry of PA calls. PA rate limits accept ~6000 calls/24h/user, and
-// at 5s debounce a mod doing 8-hour active editing maxes out at ~5760
-// calls — comfortably under.
-const SESSIONSTATE_DEBOUNCE_MS = 5000;
+// Coalesce window for cloud writes. Local saves are instant; cloud
+// syncs wait this long after the last triggering interaction to merge
+// bursts (e.g. a status-change click that also fires a state-mutation
+// follow-up). With the new interaction-driven model (1.2.052817) this
+// only needs to be long enough to coalesce the multi-step click
+// handlers that fire in rapid succession; it does NOT need to be long
+// enough to batch typing. The old 5000ms value was sized for the
+// "every state change triggers a sync" model that produced
+// excessive idle writes — see the saveState() comment for why that
+// model was retired.
+//
+// 400ms is comfortably above the longest synchronous click-then-
+// mutate window measured (~50ms) but below human noticeability for
+// "saved" feedback (~500ms typical for cloud-saved UIs).
+const SESSIONSTATE_DEBOUNCE_MS = 400;
 
 // Returns the syncable subset of state — the data that's MEANINGFUL to
 // share with a teammate. Excludes per-user UI preferences (theme,
@@ -29870,17 +29911,34 @@ function extractSyncableState(s) {
 // In-flight debounce state. _timer holds the pending setTimeout handle;
 // _pending tracks whether a write was requested while one was in
 // progress (so we don't drop edits made during a slow PA call).
+// lastSynced* track the most recent successfully-written payload so
+// we can skip no-op re-syncs (e.g., interaction triggers fire but
+// the syncable state is identical to what's already in the cloud).
 const _sessionStateSyncState = {
-  timer:        null,
-  inflight:     false,
-  pendingAgain: false,
+  timer:                 null,
+  inflight:              false,
+  pendingAgain:          false,
+  lastSyncedAsgnId:      null,
+  lastSyncedStateJson:   null,
 };
 
-// Schedule a debounced cloud write. Called from saveState() whenever
-// the operator's state changes. Multiple rapid calls within
-// SESSIONSTATE_DEBOUNCE_MS coalesce into one PA call — the debounce
-// timer resets on each call so we only sync after a quiet period.
-function scheduleSessionStateSync() {
+// Trigger an interaction-driven cloud write. Called ONLY from
+// deliberate moderator-interaction sites — status button clicks,
+// camera/equipment toggles, scenario-note blur (commit, not
+// keystroke), iteration ± buttons, station submit, arrived button,
+// cal-guide ack, and similar.
+//
+// Multiple rapid calls within SESSIONSTATE_DEBOUNCE_MS coalesce into
+// one PA call — useful for click handlers that mutate state twice
+// (status set + auto-focus follow-up, for example). The debounce is
+// short (400ms) because the trigger is itself rare; we just need to
+// merge synchronous bursts, not throttle typing.
+//
+// Kept the older "scheduleSessionStateSync" name as an alias so the
+// retry-on-failure path inside flushSessionStateSync (which calls
+// itself recursively when there's a pendingAgain flag) doesn't need
+// touching. New code should call triggerSessionStateSync.
+function triggerSessionStateSync() {
   if (!SESSIONSTATE_PA_WRITE_URL) return;         // not configured
   if (!state || !state.username) return;          // no logged-in user
   if (!state.modProfile || !state.modProfile.orbitLoginId) return;  // admin doesn't sync
@@ -29897,6 +29955,10 @@ function scheduleSessionStateSync() {
     flushSessionStateSync();
   }, SESSIONSTATE_DEBOUNCE_MS);
 }
+// Back-compat alias — keeps the older name working for any in-file
+// callers that still reference it. The retry-on-failure path inside
+// flushSessionStateSync uses the alias too.
+const scheduleSessionStateSync = triggerSessionStateSync;
 
 // Immediately write current state to cloud. Called from the debounce
 // timer, from page-unload, and from explicit user actions where the
@@ -29923,6 +29985,21 @@ async function flushSessionStateSync() {
     const team     = (adminState.teams || []).find(t => t.id === asgn.teamId);
     const teamId   = team ? team.id : (asgn.teamId || '');
     const syncable = extractSyncableState(state);
+    const stateJson = JSON.stringify(syncable);
+
+    // No-op diff guard. If the syncable payload is byte-identical to
+    // the last successful write for this assignment, skip the PA call
+    // — there's nothing meaningful to record. This catches the case
+    // where a triggering interaction toggles state and then immediately
+    // toggles it back (a misclick + undo), or where multiple click
+    // handlers fire and only the last one matters. Keyed by assignment
+    // ID so a session change properly resets the comparison baseline.
+    if (_sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
+        && _sessionStateSyncState.lastSyncedStateJson === stateJson) {
+      _sessionStateSyncState.inflight = false;
+      return;
+    }
+
     const payload = {
       // Deterministic-ish ID using a fresh timestamp suffix so each
       // write produces a new row (PA "Add a row" doesn't update). The
@@ -29934,28 +30011,36 @@ async function flushSessionStateSync() {
       assignmentId:   String(asgn.id),
       teamId:         String(teamId),
       orbitLoginId:   String(orbitId),
-      stateJson:      JSON.stringify(syncable),
+      stateJson:      stateJson,
       lastActive:     new Date().toISOString(),
       appVersion:     APP_VERSION,
     };
 
     // Use the resilient fetch helper (same one that loads participants /
     // moderators). Critical here because SessionState writes happen
-    // every 5s during active sessions — bare fetch() was silently
-    // dropping rows on transient 429/5xx, which was THE root cause of
-    // "mis-sync when team is in session": teammate writes never landed,
-    // the partner's view stayed stuck on old progress.
+    // at each meaningful interaction during a session — bare fetch()
+    // was silently dropping rows on transient 429/5xx, which was THE
+    // root cause of "mis-sync when team is in session": teammate
+    // writes never landed, the partner's view stayed stuck on old
+    // progress.
     // Shorter timeout (20s vs 45s default) so a stalled write doesn't
-    // hold up the next debounced flush. maxAttempts: 2 keeps total wait
-    // bounded — at 5s debounce, we can afford one retry but not many.
+    // hold up the next interaction-driven flush.
     if (typeof fetchWithRetry === 'function') {
-      await fetchWithRetry(SESSIONSTATE_PA_WRITE_URL, {
+      const res = await fetchWithRetry(SESSIONSTATE_PA_WRITE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         timeoutMs: 20000,
         maxAttempts: 2,
       });
+      // Successfully wrote — remember this payload so we can skip
+      // identical re-syncs. Only updated on success; on failure we
+      // leave the lastSynced* slots alone so the next attempt will
+      // still try to send the diff.
+      if (res && res.ok) {
+        _sessionStateSyncState.lastSyncedAsgnId = String(asgn.id);
+        _sessionStateSyncState.lastSyncedStateJson = stateJson;
+      }
     } else {
       // Legacy fallback for older builds without fetchWithRetry.
       const res = await fetch(SESSIONSTATE_PA_WRITE_URL, {
