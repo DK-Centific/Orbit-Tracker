@@ -11095,7 +11095,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052809';
+const APP_VERSION = '1.2.052810';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -11331,6 +11331,13 @@ function defaultState() {
     // clicks "Arrived at participant" in the entry bar.
     arrivedAt: '',
     remindersShown: [],
+    // Change-detection key used by syncBookedParticipantName to decide
+    // when to prefill the Participant Name field. Null on fresh state
+    // means "no booking seen yet" — the first time the mod lands on
+    // an assigned session, the ID mismatch triggers a prefill. After
+    // that, swiping the carousel or admin removing the team are the
+    // only triggers; mid-booking user edits to the name field stick.
+    _lastSeenActiveAsgnId: null,
   };
   // Initialize equipment as unpacked
   EQUIPMENT_LIST.forEach(it => { s.equipment[it.id] = false; });
@@ -11585,6 +11592,14 @@ function migrateState(loaded) {
   // localStorage and Sets don't survive JSON.stringify. Idempotent
   // include checks turn it into Set-like behavior at use time.
   if (!Array.isArray(loaded.remindersShown)) loaded.remindersShown = [];
+  // _lastSeenActiveAsgnId tracks the last assignment whose booking
+  // info was used to prefill the participant name. Field added in
+  // 1.2.052810; legacy state from earlier versions has no key — treat
+  // that as "no booking seen yet" so the first render under this
+  // build prefills naturally. See syncBookedParticipantName.
+  if (typeof loaded._lastSeenActiveAsgnId !== 'string' && loaded._lastSeenActiveAsgnId !== null) {
+    loaded._lastSeenActiveAsgnId = null;
+  }
 
   return loaded;
 }
@@ -12048,22 +12063,19 @@ function entryBarHTML() {
       <div class="entry-divider"></div>
       <div class="entry-field">
         <label>Participant Name</label>
-        <!-- Read-only display sourced from the booked participant on the
-             active assignment. Pulled from asgn.participantData.firstName/
-             lastName (see resolveBookedParticipantName below). When there's
-             no booking for this mod (or admin removed the team after the
-             fact), the field renders empty rather than carrying over a
-             stale typed-in value. This guarantees:
-               - the name in the entry bar always matches the booked
-                 participant (no operator typos / mismatch from booking)
-               - exports, worklog rows, and teammate sync all see the
-                 canonical booking-derived name (state.participantName
-                 is rewritten on every render via syncBookedParticipantName)
-               - if there's no booking, downstream sees an empty string
-                 not a leftover from yesterday's session
-             Manual override is intentionally NOT supported — per spec,
-             no booking = empty box. -->
-        <div class="field-readonly" id="ent_pname_display">${escapeHTML(resolveBookedParticipantName()) || '<span style="color: var(--text3); font-style: italic; font-weight: 400;">—</span>'}</div>
+        <!-- Editable input. Prefilled from the booked participant on
+             the active assignment when one exists; empty otherwise.
+             The mod can edit the value (e.g., to add a middle name,
+             match an alias the participant uses, etc.) and the typed
+             edit is preserved within the same booking.
+
+             The prefill / clear logic lives in syncBookedParticipantName
+             which runs at the top of entryBarHTML. Change-detection key
+             is state._lastSeenActiveAsgnId — when the active assignment
+             ID changes (carousel swipe, fresh booking, admin removal),
+             the field gets a fresh prefill from the new context. Within
+             the same active assignment, user edits are NOT clobbered. -->
+        <input id="ent_pname" type="text" placeholder="" value="${escapeHTML(state.participantName || '')}" autocomplete="off">
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field entry-field-wide">
@@ -12218,11 +12230,15 @@ function bindEntryFields() {
     });
   }
 
-  // Participant Name was previously a manual input bound here; it's
-  // now a read-only field auto-populated from the booked participant
-  // (see entryBarHTML). The element ID changed from a writable <input>
-  // to a <div class="field-readonly"> so any old binding would no-op,
-  // but we explicitly remove the handler to avoid confusion.
+  // Participant Name input — mod-typed value persists to state.participantName.
+  // The prefill/clear lifecycle is handled by syncBookedParticipantName,
+  // which runs at the top of entryBarHTML on each render and uses
+  // state._lastSeenActiveAsgnId to detect when the active assignment
+  // changes (carousel swipe, fresh booking, admin removal). This
+  // handler just captures live edits while the mod is on the same
+  // active assignment.
+  const pn = document.getElementById('ent_pname');
+  if (pn) pn.addEventListener('input', e => { state.participantName = e.target.value; saveState(); });
 
   // Arrived button — sets arrivedAt = now and kicks off the reminder
   // loop. Re-renders the entry bar in place to show the elapsed pill.
@@ -31218,11 +31234,10 @@ function applyAssignmentToEntryFields() {
 
 // Returns the booked participant's display name for the active
 // assignment, or empty string when there's no booking. Single source
-// of truth used by both the entry bar render (for the read-only
-// display) and syncBookedParticipantName (for state.participantName
-// persistence). Uses getActiveOperatorAssignment so the value tracks
-// the carousel — switching to a different upcoming session updates
-// the name in lockstep with the rest of the entry bar.
+// of truth for the prefill value used by syncBookedParticipantName.
+// Uses getActiveOperatorAssignment so the value tracks the carousel —
+// switching to a different upcoming session pulls that booking's
+// participant.
 function resolveBookedParticipantName() {
   const asgn = (typeof getActiveOperatorAssignment === 'function')
     ? getActiveOperatorAssignment()
@@ -31233,21 +31248,43 @@ function resolveBookedParticipantName() {
   return name;
 }
 
-// Writes the booking-derived name back into state.participantName so
-// downstream surfaces (Excel export, SessionState sync payload, the
-// per-station header row) all see the canonical value. Called on:
-//   - app boot (via applyAssignmentToEntryFields)
-//   - any time an assignment is loaded / changed / carousel-switched
-//   - just-in-time before each render of the entry bar (defensive,
-//     so a stale state.participantName from before this build can't
-//     leak into the UI)
+// Reconciles state.participantName with the active assignment using
+// change-detection rather than every-render overwrite. Behavior:
 //
-// Idempotent — if the value is already correct, no save is performed,
-// avoiding unnecessary localStorage writes on every render.
+//   - Active assignment ID is unchanged since last sync → NO-OP.
+//     Preserves whatever the mod has typed (including the prior
+//     prefill, or an edit they made on top of it). Local edits
+//     never get clobbered while the mod stays on the same booking.
+//
+//   - Active assignment ID changed (carousel swipe, fresh booking
+//     arrived, admin reassigned the team, etc.) AND new asgn has
+//     participantData → prefill from the new booking. This
+//     intentionally OVERWRITES any prior edit, because the context
+//     itself changed — the field for "John Doe's session" should
+//     not still carry a "Jonathan" edit when the mod swipes to
+//     "Jane Smith's session".
+//
+//   - Active assignment ID changed → no active booking → CLEAR the
+//     field. Matches the spec "if there is no session assigned,
+//     they are empty." Also covers admin-removed-team mid-session.
+//
+// The tracker key state._lastSeenActiveAsgnId is persisted alongside
+// other entry-bar state so a page reload during the same booking
+// doesn't re-trigger a prefill (and therefore doesn't clobber an
+// edit that survived the reload).
 function syncBookedParticipantName() {
-  const next = resolveBookedParticipantName();  // empty string when no booking
-  if (state.participantName === next) return;
-  state.participantName = next;
+  const asgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment()
+    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+  const asgnId = asgn ? asgn.id : null;
+  const last = state._lastSeenActiveAsgnId || null;
+
+  // Same active assignment as last sync → preserve edits, no work.
+  if (asgnId === last) return;
+
+  // Active assignment changed. Re-derive the name from the new context.
+  state._lastSeenActiveAsgnId = asgnId || null;
+  state.participantName = resolveBookedParticipantName();  // '' when no booking
   if (typeof saveState === 'function') saveState();
 }
 
