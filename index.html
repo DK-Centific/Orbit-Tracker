@@ -694,6 +694,25 @@ a.icon-btn:focus-visible {
   color: var(--text3);
   font-weight: 400;
 }
+
+/* Flash-attention animation — used by focusLakituInput() to call out
+   the Lakitu session input when the moderator hits the "Lakitu URL
+   required" pill or attempts a blocked submit. Red ring + box-shadow
+   pulse for 1.2s, then resolves. CSS animation drives the pulse; JS
+   adds/removes the class.
+
+   Designed to be unmissable but not jarring — a single soft pulse,
+   not a frantic strobe. Uses :focus styling alongside so the field
+   ends in the "ready to receive your paste" state. */
+.entry-field input.flash-attention {
+  border-color: rgba(239, 68, 68, 0.7) !important;
+  animation: flashAttention 1.2s ease;
+}
+@keyframes flashAttention {
+  0%   { box-shadow: 0 0 0 0   rgba(239, 68, 68, 0.40); }
+  30%  { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.35); }
+  100% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.00); }
+}
 .entry-divider {
   width: 0.5px; height: 36px;
   background: var(--border);
@@ -1166,12 +1185,91 @@ a.icon-btn:focus-visible {
   padding: 14px 24px;
   border-top: 0.5px solid var(--border);
   background: var(--bg2);
+  /* Two-row footer: acknowledgment affordance on top, contact text
+     below. Stacks vertically with a small gap on desktop AND mobile —
+     the ack action is the primary footer affordance and should be
+     visually separable from the contact-text helper line. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.cal-guide-footer-text {
   font-size: 12.5px;
   color: var(--text2);
   text-align: center;
   letter-spacing: -0.005em;
   line-height: 1.45;
 }
+
+/* Acknowledgment row. Hosts both states (button + pill) in one container;
+   the data-state attribute on the wrapper drives which child is visible.
+   This avoids re-rendering the modal on click — JS just flips the attr
+   and updates the pill's timestamp text. */
+.cal-guide-ack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;  /* reserve vertical space for either state so the footer doesn't reflow on click */
+}
+.cal-guide-ack-btn {
+  /* Visual: primary-action button. Slightly more prominent than the
+     other admin form buttons because acknowledging the guide is the
+     "make sure you read this" CTA — admin SHOULD see it and click it
+     once before recording. Uses a soft-accent treatment rather than
+     a full-strength accent fill because the footer is a tertiary
+     surface and a vivid button there competes too much with the
+     primary content area. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  border-radius: 8px;
+  border: 0.5px solid var(--accent);
+  background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition: background 0.14s ease, transform 0.10s ease, box-shadow 0.14s ease;
+}
+.cal-guide-ack-btn:hover {
+  background: var(--accent-soft-strong, rgba(0, 240, 255, 0.28));
+  box-shadow: 0 2px 10px rgba(0, 240, 255, 0.12);
+}
+.cal-guide-ack-btn:active { transform: translateY(0.5px); }
+.cal-guide-ack-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(0, 240, 255, 0.30));
+}
+.cal-guide-ack-btn svg { flex-shrink: 0; }
+
+.cal-guide-ack-pill {
+  /* Post-ack confirmation pill. Subtle green-accented background so the
+     mod immediately recognizes the success state at a glance, plus the
+     timestamp + name inside it for "yes, this is logged" reassurance. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.14);
+  color: rgb(45, 212, 191);
+  border: 0.5px solid rgba(45, 212, 191, 0.30);
+}
+.cal-guide-ack-pill svg { flex-shrink: 0; color: rgb(45, 212, 191); }
+
+/* State toggle: button visible when pending, pill visible when
+   acknowledged. Both children are always in the DOM — only their
+   display flips. */
+.cal-guide-ack[data-state="pending"] .cal-guide-ack-pill { display: none; }
+.cal-guide-ack[data-state="ack"]     .cal-guide-ack-btn  { display: none; }
 
 /* Nav trigger button — sits alongside the other icon-btn buttons in the
    mod nav. Uses the same dimensions as the existing icon-btn pattern so
@@ -11226,7 +11324,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052812';
+const APP_VERSION = '1.2.052815';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -11469,6 +11567,15 @@ function defaultState() {
     // that, swiping the carousel or admin removing the team are the
     // only triggers; mid-booking user edits to the name field stick.
     _lastSeenActiveAsgnId: null,
+    // Calibration / workflow guide acknowledgment for this session.
+    // null = not yet acknowledged. When mod clicks "I acknowledge the
+    // workflow and this guideline" in the cal-guide modal, this gets
+    // populated with { acknowledgedAt: ISO, acknowledgedBy: username }
+    // and a corresponding Worklog row is fired (status =
+    // 'cal_guide_acknowledged'). State persists locally so a reload
+    // mid-session doesn't lose the acknowledgment. Cleared on session
+    // completion (defaultState fires fresh on new state init).
+    calGuideAck: null,
   };
   // Initialize equipment as unpacked
   EQUIPMENT_LIST.forEach(it => { s.equipment[it.id] = false; });
@@ -11730,6 +11837,13 @@ function migrateState(loaded) {
   // build prefills naturally. See syncBookedParticipantName.
   if (typeof loaded._lastSeenActiveAsgnId !== 'string' && loaded._lastSeenActiveAsgnId !== null) {
     loaded._lastSeenActiveAsgnId = null;
+  }
+  // calGuideAck added in 1.2.052813. Legacy state has no key — treat
+  // as "not yet acknowledged" so the mod will see the button on the
+  // first cal-guide open under this build. The shape is null OR an
+  // object with acknowledgedAt + acknowledgedBy; defensive type check.
+  if (loaded.calGuideAck !== null && typeof loaded.calGuideAck !== 'object') {
+    loaded.calGuideAck = null;
   }
 
   return loaded;
@@ -12274,7 +12388,19 @@ function bindEntryFields() {
   // (same field as before, kept for downstream compatibility — see
   // entryBarHTML comment for the full rationale).
   const lak = document.getElementById('ent_lakitu');
-  if (lak) lak.addEventListener('input', e => { state.participantId = e.target.value; saveState(); });
+  if (lak) lak.addEventListener('input', e => {
+    state.participantId = e.target.value;
+    saveState();
+    // Live refresh of the station's actions bar so the Submit button's
+    // disabled state, tooltip, and the "Lakitu URL required" pill all
+    // update as the moderator types the URL. We re-render ONLY the
+    // .actions-bar element (not the whole page) so this input
+    // element — which lives in the entry bar, not the actions bar —
+    // keeps its focus and cursor position. Without this, the mod
+    // would have to click elsewhere on the page for the Submit button
+    // to enable, which feels broken.
+    if (typeof refreshStationActionsBar === 'function') refreshStationActionsBar();
+  });
 
   // ⓘ info popover for Lakitu session. Three interaction modes:
   //   - Desktop hover (CSS pseudo-class, no JS) shows the popover.
@@ -13181,7 +13307,22 @@ function stationActionsHTML(station, data) {
   const unresolved = scenarioVals.filter(s => !isScenarioResolved(s)).length;
   const partialMissingNotes = scenarioVals.filter(isScenarioPartialMissingNote).length;
   const skipMissingNotes = scenarioVals.filter(isScenarioSkipMissingNote).length;
-  const submitDisabled = locked || unresolved > 0;
+  // Lakitu URL gate — the Submit button is disabled and tooltipped
+  // when the mod hasn't pasted a URL into the entry bar. Without this,
+  // station-completion (and the Worklog row that records it) could
+  // be triggered for a recording that has no associated Lakitu
+  // session, breaking the back-office audit trail. See
+  // isLakituUrlProvided for the URL detection logic.
+  const lakituOk = (typeof isLakituUrlProvided === 'function') ? isLakituUrlProvided() : true;
+  // Cal guide acknowledgment gate — same model as the Lakitu gate.
+  // The mod must have clicked "I acknowledge the workflow and this
+  // guideline" in the DOs and DON'Ts popup before any station work
+  // can be submitted. Two-gate approach so the audit trail captures
+  // both: (1) the recording has a Lakitu session URL associated, and
+  // (2) the moderator confirmed they read the calibration guide
+  // BEFORE doing the work, not after.
+  const calGuideOk = (typeof isCalGuideAcknowledged === 'function') ? isCalGuideAcknowledged() : true;
+  const submitDisabled = locked || unresolved > 0 || !lakituOk || !calGuideOk;
 
   const idx = STATIONS.findIndex(s => s.key === station.key);
   const isLast = idx === STATIONS.length - 1;
@@ -13209,6 +13350,8 @@ function stationActionsHTML(station, data) {
         ${!locked && !stationAlreadySubmitted && unresolved > 0 ? `<span class="status-pill" style="background: var(--bg4); color: var(--text3);">${unresolved} unresolved</span>` : ''}
         ${!locked && partialMissingNotes > 0 ? `<span class="status-pill" style="background: var(--amber-bg); color: var(--amber-text);">${partialMissingNotes} partial${partialMissingNotes === 1 ? '' : 's'} need${partialMissingNotes === 1 ? 's' : ''} note${partialMissingNotes === 1 ? '' : 's'}</span>` : ''}
         ${!locked && skipMissingNotes > 0 ? `<span class="status-pill" style="background: var(--amber-bg); color: var(--amber-text);">${skipMissingNotes} skip${skipMissingNotes === 1 ? '' : 's'} need${skipMissingNotes === 1 ? 's' : ''} note${skipMissingNotes === 1 ? '' : 's'}</span>` : ''}
+        ${!locked && !lakituOk ? `<span class="status-pill" style="background: rgba(239,68,68,0.14); color: rgb(239,68,68); cursor: pointer; border: 0.5px solid rgba(239,68,68,0.30);" onclick="focusLakituInput()" title="Click to jump to the Lakitu session field">⚠ Lakitu URL required</span>` : ''}
+        ${!locked && !calGuideOk ? `<span class="status-pill" style="background: rgba(239,68,68,0.14); color: rgb(239,68,68); cursor: pointer; border: 0.5px solid rgba(239,68,68,0.30);" onclick="openCalGuideForAck()" title="Click to open the calibration guide for acknowledgment">⚠ Acknowledge cal guide</span>` : ''}
         ${stationAlreadySubmitted ? `<span class="status-pill" style="background: rgba(34,197,94,0.14); color: var(--green-text);">&check; Submitted</span>` : ''}
         ${locked ? `<span class="status-pill" style="background: var(--bg4); color: var(--text3);">🔒 Session locked</span>` : ''}
       </div>
@@ -13223,7 +13366,7 @@ function stationActionsHTML(station, data) {
           ? `<button class="btn btn-ghost" disabled style="opacity: 0.6; cursor: not-allowed;">Locked</button>`
           : (stationAlreadySubmitted && !isLast
             ? `<button class="btn btn-ghost" disabled style="opacity: 0.6; cursor: not-allowed;">Submitted</button>`
-            : `<button class="btn ${submitDisabled ? 'btn-ghost' : 'btn-primary'}" onclick="submitStation()" ${submitDisabled ? 'disabled' : ''} title="${submitDisabled ? (locked ? 'Session locked' : (partialMissingNotes > 0 || skipMissingNotes > 0 ? 'Add notes to all Partial and Skipped scenarios first' : 'Resolve all scenarios first (mark complete, skip+note, or partial+note)')) : ''}">
+            : `<button class="btn ${submitDisabled ? 'btn-ghost' : 'btn-primary'}" onclick="submitStation()" ${submitDisabled ? 'disabled' : ''} title="${submitDisabled ? (locked ? 'Session locked' : (!lakituOk ? 'Paste the Lakitu session URL in the entry bar first' : (!calGuideOk ? 'Acknowledge the calibration guide (DOs and DON’Ts) first' : (partialMissingNotes > 0 || skipMissingNotes > 0 ? 'Add notes to all Partial and Skipped scenarios first' : 'Resolve all scenarios first (mark complete, skip+note, or partial+note)')))) : ''}">
               ${submitLabel}
               ${!isLast ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
             </button>`)}
@@ -13231,6 +13374,100 @@ function stationActionsHTML(station, data) {
     </div>
   `;
 }
+
+// Returns true when the Lakitu session URL field has been filled in
+// with what looks like a URL (i.e., starts with "http"). False
+// otherwise. Used to gate station submission — the mod must paste the
+// Lakitu session URL into the entry bar before they can submit the
+// current station and advance to the next one.
+//
+// The check is intentionally permissive on URL format (no scheme,
+// path, or domain validation) because Lakitu URLs may evolve. The
+// goal here is to catch the two main moderator mistakes:
+//   - Empty field (forgot to paste)
+//   - Bare session ID like "712c1-a30f-..." (pasted from a wrong copy)
+// Both fail the "startsWith('http')" check; a real Lakitu URL passes.
+function isLakituUrlProvided() {
+  const v = (state && state.participantId) ? String(state.participantId).trim() : '';
+  if (!v) return false;
+  return v.toLowerCase().startsWith('http');
+}
+
+// Scrolls to and focuses the Lakitu session input, then flashes a red
+// ring around it for ~1.2s to draw attention. Called from the
+// "Lakitu URL required" status pill in the actions-bar and as a
+// recovery action when a blocked submit is attempted. Smooth scroll
+// + delayed focus avoids the focus-jumps-before-scroll-completes
+// problem that scrollIntoView({ block: 'center' }) alone produces
+// on some browsers.
+function focusLakituInput() {
+  const el = document.getElementById('ent_lakitu');
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Delayed focus + flash so the scroll completes first. 350ms is a
+  // safe middle ground for most browser smooth-scroll durations
+  // (typically 200-400ms). Falls back gracefully if the user scrolls
+  // away mid-animation.
+  setTimeout(() => {
+    el.focus();
+    el.classList.add('flash-attention');
+    setTimeout(() => el.classList.remove('flash-attention'), 1200);
+  }, 350);
+}
+window.focusLakituInput = focusLakituInput;
+
+// Returns true when the moderator has acknowledged the calibration
+// guide (DOs and DON'Ts popup) for this session. False otherwise.
+// Used to gate station submission alongside the Lakitu URL check —
+// the mod needs to confirm they've read the workflow guide before
+// any station work can be submitted, ensuring the audit trail
+// always reflects an acknowledged workflow.
+//
+// Same shape as state.calGuideAck (null or object). Anything truthy
+// counts — the object's presence is the signal.
+function isCalGuideAcknowledged() {
+  return !!(state && state.calGuideAck);
+}
+
+// Opens the cal guide modal so the moderator can acknowledge. Used as
+// the recovery action when the "Acknowledge cal guide" pill is
+// clicked or a blocked submit is attempted. Mirrors focusLakituInput
+// in role — both are "click-to-fix" actions for the two submit gates.
+function openCalGuideForAck() {
+  if (typeof openCalGuideModal === 'function') openCalGuideModal();
+}
+window.openCalGuideForAck = openCalGuideForAck;
+
+// Re-renders just the .actions-bar element in place using
+// stationActionsHTML. Used by the Lakitu input handler (and any future
+// caller) to refresh the Submit button's enabled state + the "Lakitu
+// URL required" pill without re-rendering the entry bar — which would
+// destroy and recreate the input the user is currently typing into,
+// losing their focus and cursor position.
+//
+// Safe no-op when not currently on a station view (currentStationKey
+// is null on the welcome screen) or when the actions-bar element
+// isn't in the DOM for some reason.
+function refreshStationActionsBar() {
+  if (!currentStationKey) return;
+  const station = STATIONS.find(s => s.key === currentStationKey);
+  if (!station) return;
+  const data = state.stations && state.stations[currentStationKey];
+  if (!data) return;
+  const existing = document.querySelector('.actions-bar');
+  if (!existing) return;
+  // stationActionsHTML returns the whole "<div class='actions-bar'>...</div>"
+  // wrapper, so an outerHTML swap is the right replacement. innerHTML
+  // would double-nest the wrapper.
+  const fresh = stationActionsHTML(station, data);
+  // Build via a template element so we get a proper DOM node back
+  // (rather than a string), then replace cleanly.
+  const tmp = document.createElement('template');
+  tmp.innerHTML = fresh.trim();
+  const newNode = tmp.content.firstElementChild;
+  if (newNode) existing.replaceWith(newNode);
+}
+window.refreshStationActionsBar = refreshStationActionsBar;
 
 // Submit the current station — push the corresponding worklog status, then
 // either advance to the next station OR (if last) open the wrap-up checklist.
@@ -13248,6 +13485,30 @@ function submitStation() {
 
   // If session already locked, do nothing
   if (typeof isSessionLocked === 'function' && isSessionLocked()) return;
+
+  // Lakitu URL gate — must be provided before advancing to the next
+  // station. Same check as the button-disable logic in the actions
+  // bar (which makes the Submit button grayed out + tooltip'd when
+  // the URL is missing); duplicated here as defense in depth so a
+  // stale render, programmatic call, or keyboard-driven click can't
+  // bypass it. On block, scroll-and-flash the Lakitu input so the
+  // moderator knows where to fix it.
+  if (!isLakituUrlProvided()) {
+    focusLakituInput();
+    return;
+  }
+
+  // Cal guide acknowledgment gate — mirror of the Lakitu check above.
+  // The mod must have clicked "I acknowledge..." in the DOs and DON'Ts
+  // popup before any station can be submitted. On block, open the
+  // guide so the ack button is one click away. Order matters here:
+  // Lakitu check fires first (it's the more common omission), then
+  // cal guide. If both are missing, the mod fixes Lakitu first, then
+  // hits Submit again to see the cal-guide block, then acknowledges.
+  if (!isCalGuideAcknowledged()) {
+    openCalGuideForAck();
+    return;
+  }
 
   const idx = STATIONS.findIndex(s => s.key === currentStationKey);
   const isLast = idx === STATIONS.length - 1;
@@ -13303,6 +13564,19 @@ function exportExcel() {
     ['Address', state.participantAddress || ''],
     ['Session Date', state.sessionDate],
     ['Rigs', RIGS.join(' + ')],
+    // Workflow acknowledgment audit row — written whether or not the
+    // mod has acknowledged the cal guide. "Not acknowledged" appears
+    // for exports that happen before the mod clicks the ack button
+    // (rare, but possible if export fires very early in a session).
+    // Once acknowledged, the local timestamp + acknowledging username
+    // are surfaced for the post-session paper trail.
+    ['Workflow Acknowledgment', (() => {
+      if (!state.calGuideAck) return 'Not acknowledged';
+      const t = new Date(state.calGuideAck.acknowledgedAt);
+      const when = isNaN(t.getTime()) ? state.calGuideAck.acknowledgedAt : t.toLocaleString();
+      const by = state.calGuideAck.acknowledgedBy || '(unknown)';
+      return `Acknowledged at ${when} by ${by}`;
+    })()],
     [],
     ['Overall Progress', `${overall.done} / ${overall.total} stations complete (${overall.pct}%)`],
     [],
@@ -29408,6 +29682,14 @@ function extractSyncableState(s) {
     // state — cross-pollinating it would mean Alice's "I saw the
     // 1h reminder" stops Bob from seeing his own reminder.
     arrivedAt:          s.arrivedAt          || '',
+    // Workflow / calibration guide acknowledgment. Object or null.
+    // Synced so teammates can see "yes, the lead has acknowledged
+    // the guide" without re-prompting, AND so admin pulling the
+    // SessionState table sees the ack timestamp across teammate
+    // devices. Local state is the writer; teammates RECEIVE this
+    // but don't overwrite their own (mergeTeammateState's default
+    // shallow-overlay applies — first-write wins per device).
+    calGuideAck:        s.calGuideAck        || null,
   };
 }
 
@@ -29718,14 +30000,22 @@ window.addEventListener('beforeunload', () => {
 });
 
 const WORKLOG_STATUS_LABELS = {
-  arrived:           'Check-in',
-  station_0a_done:   'In session',
-  station_0b_done:   'In session',
-  station_0c_done:   'In session',
-  station_1_done:    'In session',
-  station_2_done:    'In session',
-  station_3_done:    'In session',
-  session_done:      'Completed',
+  arrived:                 'Check-in',
+  // Workflow guide acknowledgment — fires once per session when the mod
+  // clicks the "I acknowledge..." button in the cal-guide modal at
+  // Station 0a. Deliberately NOT added to WORKLOG_STATUS_ORDER below
+  // since it's a one-shot meta event, not a progression milestone.
+  // Including it in the ORDER array would break the slice(1, 7) calls
+  // that render station-progress dots (would offset all stations by
+  // one). Label-only is enough for buildWorklogRow's statusLabel field.
+  cal_guide_acknowledged:  'Workflow guide acknowledged',
+  station_0a_done:         'In session',
+  station_0b_done:         'In session',
+  station_0c_done:         'In session',
+  station_1_done:          'In session',
+  station_2_done:          'In session',
+  station_3_done:          'In session',
+  session_done:            'Completed',
 };
 
 // Ordering for "what is the latest status" calculations
@@ -30646,7 +30936,29 @@ function buildCalGuideModal() {
       ${checklistHTML}
     </div>
     <div class="cal-guide-footer">
-      Questions? Reach out to your study coordinator before recording. When in doubt, ask.
+      <!-- Acknowledgment row. Two visual states in one container:
+            - .cal-guide-ack (no .acknowledged class): shows the button
+            - .cal-guide-ack.acknowledged:             shows the pill
+           Both children render unconditionally; CSS uses
+           [data-state="ack"] to show/hide the right one. JS swaps the
+           data attribute on click + refreshes the pill text. -->
+      <div class="cal-guide-ack" id="calGuideAckRow" data-state="pending">
+        <button type="button" class="cal-guide-ack-btn" id="calGuideAckBtn">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 8l4 4 8-9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          I acknowledge the workflow and this guideline
+        </button>
+        <span class="cal-guide-ack-pill" id="calGuideAckPill" role="status">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 8l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="calGuideAckPillText">Acknowledged</span>
+        </span>
+      </div>
+      <div class="cal-guide-footer-text">
+        Questions? Reach out to your study coordinator before recording. When in doubt, ask.
+      </div>
     </div>
   `;
 
@@ -30658,6 +30970,83 @@ function buildCalGuideModal() {
     if (e.target === overlay) closeCalGuideModal();
   });
   modal.querySelector('#calGuideCloseBtn').addEventListener('click', closeCalGuideModal);
+
+  // Acknowledge button — fires pushWorklogStatus + writes state.calGuideAck.
+  // Idempotency: pushWorklogStatus has its own dup-row guard, but we also
+  // skip locally when state.calGuideAck is already set. The button DOM
+  // is hidden by the [data-state="ack"] CSS rule, but a user with
+  // devtools-fu could re-trigger; the guard makes that safe.
+  const ackBtn = modal.querySelector('#calGuideAckBtn');
+  if (ackBtn) {
+    ackBtn.addEventListener('click', () => {
+      if (state.calGuideAck) return;  // already acknowledged this session
+      const now = new Date();
+      state.calGuideAck = {
+        acknowledgedAt: now.toISOString(),
+        acknowledgedBy: state.username || '',
+      };
+      if (typeof saveState === 'function') saveState();
+
+      // Fire the Worklog backend write. Resolves the active assignment
+      // via getActiveOperatorAssignment so the row lands against the
+      // session the mod is currently in. If there's no active asgn
+      // (rare — the cal guide auto-opens at Station 0a which implies
+      // a session), the worklog write is skipped but local state +
+      // local Excel + sync payload still capture the ack.
+      const asgn = (typeof getActiveOperatorAssignment === 'function')
+        ? getActiveOperatorAssignment()
+        : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+      if (asgn && typeof pushWorklogStatus === 'function') {
+        try {
+          pushWorklogStatus(asgn, 'cal_guide_acknowledged', { notes: 'Workflow guide acknowledged' });
+        } catch (e) {
+          console.warn('[Orbit] Failed to fire cal-guide-ack worklog row:', e && e.message);
+        }
+      }
+
+      // Push the immediate teammate-sync so the ack propagates to
+      // co-mods without waiting for the SessionState debounce.
+      if (typeof flushSessionStateSync === 'function') {
+        try { flushSessionStateSync(); } catch (_) {}
+      }
+
+      refreshCalGuideAckUI();
+
+      // Also refresh the station's actions bar — if the mod is on a
+      // station and the only remaining submit blocker was the
+      // cal-guide gate, the Submit button enables immediately after
+      // ack. Without this, the mod would have to interact with the
+      // actions bar (or trigger any other re-render) to see the
+      // button enable, which feels stale.
+      if (typeof refreshStationActionsBar === 'function') refreshStationActionsBar();
+    });
+  }
+}
+
+// Refreshes the cal-guide modal's ack row to reflect current
+// state.calGuideAck. Called each time the modal opens (so a re-open
+// after closing shows the acknowledged state correctly) and after a
+// successful ack click. Pure DOM work — no state changes.
+function refreshCalGuideAckUI() {
+  const row  = document.getElementById('calGuideAckRow');
+  const pill = document.getElementById('calGuideAckPillText');
+  if (!row) return;
+  if (state && state.calGuideAck) {
+    row.setAttribute('data-state', 'ack');
+    if (pill) {
+      const t = new Date(state.calGuideAck.acknowledgedAt);
+      const timeStr = isNaN(t.getTime())
+        ? ''
+        : t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      const by = state.calGuideAck.acknowledgedBy || '';
+      pill.textContent = by
+        ? `Acknowledged at ${timeStr} by ${by}`
+        : `Acknowledged at ${timeStr}`;
+    }
+  } else {
+    row.setAttribute('data-state', 'pending');
+    if (pill) pill.textContent = 'Acknowledged';
+  }
 }
 
 function openCalGuideModal() {
@@ -30670,6 +31059,14 @@ function openCalGuideModal() {
   // ⚠️ banner / General Requirements (not where they left off scrolled).
   const body = modal.querySelector('.cal-guide-body');
   if (body) body.scrollTop = 0;
+
+  // Refresh the acknowledgment row to reflect current state. The
+  // modal is built once and reused (see buildCalGuideModal's guard),
+  // so a re-open after acknowledging won't naturally show the pill
+  // unless we re-derive it here. State could also have changed since
+  // last open (e.g., teammate sync just propagated an ack from the
+  // other mod) — this pulls those changes in.
+  if (typeof refreshCalGuideAckUI === 'function') refreshCalGuideAckUI();
 
   // Wire up Escape-to-close. Stored on a property so the inverse
   // (closeCalGuideModal) can remove the same handler reference.
