@@ -9241,6 +9241,96 @@ button.perf-stat-chip.scheduled.active {
    The richer two-line summary (stations + scenarios + time ago)
    doesn't fit appConfirm's simple message field cleanly, hence its
    own purpose-specific layout. */
+/* Teammate live banner (1.2.052822)
+   ---------------------------------
+   Small persistent banner that appears at the top of the moderator
+   app when a teammate is actively in session on a shared assignment.
+   Updates as the SessionState poll lands fresh data; clicking
+   "Sync now" merges the teammate's state into local. Designed to
+   be informative-but-not-blocking — unlike the full-screen modal
+   that appears once at login, this banner is for the ongoing
+   "they made another update" stream.
+   
+   Positioned via the same DOM order as the page content but with a
+   small top margin so it sits just below the nav. The banner doesn't
+   compete with modals — modal CSS uses higher z-index. */
+.teammate-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 12px 0;
+  padding: 10px 14px;
+  background: linear-gradient(135deg,
+    rgba(0, 240, 255, 0.10) 0%,
+    rgba(0, 240, 255, 0.05) 100%);
+  border: 0.5px solid rgba(0, 240, 255, 0.30);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+  /* Live "pulse" dot to indicate the banner is data-driven not static */
+  position: relative;
+}
+.teammate-live-banner-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgb(34, 197, 94);
+  flex-shrink: 0;
+  animation: tlbPulse 2s ease-in-out infinite;
+}
+@keyframes tlbPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.50); }
+  50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+}
+.teammate-live-banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.teammate-live-banner-title {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.teammate-live-banner-sub {
+  font-size: 11.5px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+}
+.teammate-live-banner-sync-btn {
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 0.5px solid var(--accent);
+  background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition: background 0.14s ease, transform 0.10s ease;
+  flex-shrink: 0;
+}
+.teammate-live-banner-sync-btn:hover {
+  background: var(--accent-soft-strong, rgba(0, 240, 255, 0.28));
+}
+.teammate-live-banner-sync-btn:active { transform: translateY(0.5px); }
+.teammate-live-banner-dismiss {
+  width: 24px; height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.teammate-live-banner-dismiss:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
 .teammate-sync-overlay {
   position: fixed; inset: 0;
   z-index: 700;
@@ -11365,7 +11455,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052817';
+const APP_VERSION = '1.2.052825';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -12048,12 +12138,71 @@ function renderProgress() {
 
 function renderWelcome() {
   const c = document.getElementById('content');
+  // "Sync from teammate" button — manual escape hatch for the
+  // teammate sync auto-merge. Visible only when:
+  //   - User has an active assignment (otherwise nothing to sync to)
+  //   - User has done no work of their own yet (otherwise the merge
+  //     could clobber their input)
+  // Clicking calls window.forceTeammateSync which bypasses all gating
+  // logic and merges the freshest teammate row. (1.2.052825)
+  const _bHasOwnWork = (() => {
+    if (!state) return false;
+    if (state.participantId && String(state.participantId).trim()) return true;
+    if (state.equipment) {
+      for (const k of Object.keys(state.equipment)) {
+        if (state.equipment[k]) return true;
+      }
+    }
+    if (state.stations) {
+      for (const stKey of Object.keys(state.stations)) {
+        const st = state.stations[stKey] || {};
+        const cams = st.cameras || {};
+        for (const cc of Object.keys(cams)) if (cams[cc]) return true;
+        const sc = st.scenarios || {};
+        for (const num of Object.keys(sc)) {
+          const r = sc[num];
+          if (!r) continue;
+          if (r.status && r.status !== 'Not Started') return true;
+          if ((r.iterations || 0) > 0) return true;
+          if (r.notes && String(r.notes).trim().length > 0) return true;
+        }
+      }
+    }
+    return false;
+  })();
+  const _activeAsgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment()
+    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+  const _showSyncBtn = !_bHasOwnWork && !!_activeAsgn;
+  const _syncBtnHTML = _showSyncBtn ? `
+    <div style="margin: 10px 0 16px; display: flex; justify-content: center;">
+      <button type="button"
+        id="welcomeSyncTeammateBtn"
+        style="display: inline-flex; align-items: center; gap: 8px;
+               padding: 8px 14px;
+               font-family: inherit;
+               font-size: 13px; font-weight: 600;
+               border-radius: 8px;
+               border: 0.5px solid var(--accent);
+               background: var(--accent-soft, rgba(0, 240, 255, 0.16));
+               color: var(--accent-ink);
+               cursor: pointer;"
+        title="If a teammate is in session, click to mirror their progress onto your view.">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3 7l3-3 3 3M13 9l-3 3-3-3M6 4v6M10 6v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Sync from teammate
+      </button>
+    </div>
+  ` : '';
+
   c.innerHTML = `
     <div class="welcome">
       <div class="welcome-eyebrow">Welcome</div>
       <h1 class="welcome-title">${escapeHTML(operatorDisplayName())}, Welcome to Project Orbit!</h1>
       <p class="welcome-sub">Select a Station from the sidebar. Fill in the data fields, tick each step, then mark complete.</p>
     </div>
+    ${_syncBtnHTML}
     ${entryBarHTML()}
     ${renderWelcomeWorklogBannerHTML()}
     ${equipmentCardHTML()}
@@ -12091,6 +12240,31 @@ function renderWelcome() {
   bindEntryFields();
   bindEquipmentRows();
   bindWelcomeWorklogActions();
+  // Wire the manual "Sync from teammate" button if it rendered.
+  const _wsb = document.getElementById('welcomeSyncTeammateBtn');
+  if (_wsb) {
+    _wsb.addEventListener('click', async () => {
+      _wsb.disabled = true;
+      _wsb.style.opacity = '0.5';
+      try {
+        if (typeof window.forceTeammateSync === 'function') {
+          await window.forceTeammateSync();
+        } else {
+          console.warn('[Orbit] window.forceTeammateSync not available');
+        }
+      } finally {
+        // On success the render is replaced (forceTeammateSync calls
+        // renderApp), so this button no longer exists. On failure,
+        // restore the button to enabled state so user can retry.
+        setTimeout(() => {
+          if (_wsb.parentNode) {
+            _wsb.disabled = false;
+            _wsb.style.opacity = '';
+          }
+        }, 1200);
+      }
+    });
+  }
 }
 
 // ----- Welcome page worklog banner + dynamic action -----
@@ -15076,31 +15250,294 @@ function buildLakituUrl(orbitId) {
 }
 
 // Looks up the Lakitu session URL the moderator typed into the entry
-// bar for a given assignment. Source of truth is the worklog cache —
-// each row's `participantId` column carries the URL since the change
-// in 1.2.052807 that re-mapped that field from the participant-profile
-// ID to the Lakitu session URL.
+// bar for a given assignment. Source of truth is the SessionState
+// rows that the Performance tab fetches from PA on each visit (cached
+// on adminState.perfSessionStateRows). Each row carries a stateJson
+// blob whose `participantId` field IS the Lakitu URL since the change
+// in 1.2.052807 that re-mapped that field's semantics.
 //
-// Multiple worklog rows can exist for one assignment (one per status
-// transition: arrived, station_0a_done, etc). We sort by timestamp
-// and take the most recent row with a non-empty participantId, so
-// if the mod corrected their pasted URL mid-session, the newer value
-// wins. Returns '' when no row carries a URL.
+// Why SessionState instead of the worklog cache: the worklog cache
+// (loadWorklogCache) is the device-LOCAL cache of rows this admin's
+// browser has written. It does NOT mirror PA's full Worklog table,
+// because there's no PA read endpoint configured for it. So when an
+// admin opens Performance, the worklog cache is essentially empty
+// for all the moderator-written rows — those writes happened on
+// other devices. The previous version of this function read from
+// the worklog cache and consequently always returned '', causing
+// every row in the Performance tab to show "No url".
+//
+// SessionState rows ARE fetched from PA on tab entry, so they
+// contain the live cross-device state.
+//
+// Matching strategy — defensive against assignmentId formatting
+// differences:
+//   1. Exact string match (the most common path)
+//   2. Case-insensitive trimmed match (catches "asgn_X" vs " asgn_X "
+//      or any whitespace/casing drift introduced by Excel cell editing)
+// We log a one-time per-asgnId diagnostic when no row matches at
+// all, OR when rows match but none have a usable URL, so admin can
+// debug from the browser console without re-rendering.
+//
+// Window-exposed debug helper: call window.debugLakituUrlLookup(asgnId)
+// in the browser console to see the full lookup state for a given
+// booking — useful when admin reports "this row shows No url but I
+// know the moderator pasted it."
+let _lakituUrlCache = { sourceRef: null, byAsgnId: {} };
+const _lakituUrlDiagLogged = new Set();  // dedup diagnostic console.log per asgnId per page-life
 function getLakituUrlForAssignment(asgnId) {
   if (!asgnId) return '';
-  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
-  const candidates = cache
-    .filter(r => r && String(r.assignmentId) === String(asgnId) && r.participantId && String(r.participantId).trim())
-    .sort((a, b) => {
-      // Most recent first. Use timestamp (ISO) when available; fall
-      // back to comparing worklogId lexicographically (which embeds
-      // Date.now() at write time, so it's chronologically ordered).
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      if (tb !== ta) return tb - ta;
-      return String(b.worklogId || '').localeCompare(String(a.worklogId || ''));
+  const rows = (typeof adminState !== 'undefined' && adminState && Array.isArray(adminState.perfSessionStateRows))
+    ? adminState.perfSessionStateRows
+    : null;
+  if (!rows) return '';
+
+  // Cache: if the rows array reference is the same as last lookup,
+  // and we already have a result for this assignment, reuse it.
+  if (_lakituUrlCache.sourceRef !== rows) {
+    _lakituUrlCache = { sourceRef: rows, byAsgnId: {} };
+    // Source array changed — wipe the diagnostic dedup so admin
+    // sees fresh logs after a re-fetch.
+    _lakituUrlDiagLogged.clear();
+  }
+  if (Object.prototype.hasOwnProperty.call(_lakituUrlCache.byAsgnId, asgnId)) {
+    return _lakituUrlCache.byAsgnId[asgnId];
+  }
+
+  // Build comparison keys once. The exact form is the row's
+  // `assignmentId` field; the loose form is the trimmed-lowercased
+  // variant. Both forms of the lookup-target asgnId are computed so
+  // we can match in either direction.
+  const targetExact = String(asgnId);
+  const targetLoose = String(asgnId).trim().toLowerCase();
+
+  const matching = rows.filter(r => {
+    if (!r) return false;
+    const rExact = String(r.assignmentId || '');
+    if (rExact === targetExact) return true;
+    const rLoose = rExact.trim().toLowerCase();
+    return rLoose === targetLoose;
+  }).sort((a, b) => String(b.lastActive || '').localeCompare(String(a.lastActive || '')));
+
+  let result = '';
+  for (const r of matching) {
+    let parsed;
+    try { parsed = JSON.parse(r.stateJson || '{}'); }
+    catch (e) {
+      // Corrupt row — log once per asgnId for diagnostics, then
+      // skip and try the next row.
+      if (!_lakituUrlDiagLogged.has(`parse:${asgnId}`)) {
+        _lakituUrlDiagLogged.add(`parse:${asgnId}`);
+        console.warn('[Orbit] Lakitu lookup: corrupt stateJson for asgn', asgnId, '- error:', e && e.message);
+      }
+      continue;
+    }
+    const pid = parsed && parsed.participantId ? String(parsed.participantId).trim() : '';
+    if (pid) {
+      result = pid;
+      break;
+    }
+  }
+
+  // Diagnostic logging (once per asgnId per source-array). Helps
+  // admin debug "why is this booking showing No url?" without
+  // re-rendering or attaching a debugger. Logs at console.info so
+  // they're easy to filter in DevTools.
+  if (!result && !_lakituUrlDiagLogged.has(asgnId)) {
+    _lakituUrlDiagLogged.add(asgnId);
+    if (matching.length === 0) {
+      console.info(
+        '[Orbit][Lakitu lookup] No SessionState rows match assignmentId=' + JSON.stringify(asgnId)
+        + '. Total rows in cache: ' + rows.length
+        + '. Sample row assignmentIds: ' + JSON.stringify(rows.slice(0, 5).map(r => r && r.assignmentId))
+      );
+    } else {
+      console.info(
+        '[Orbit][Lakitu lookup] Found ' + matching.length + ' SessionState row(s) for assignmentId='
+        + JSON.stringify(asgnId) + ' but none have a non-empty participantId. '
+        + 'Newest row stateJson preview: '
+        + JSON.stringify(String(matching[0].stateJson || '').slice(0, 300))
+      );
+    }
+  }
+
+  _lakituUrlCache.byAsgnId[asgnId] = result;
+  return result;
+}
+
+// Browser-console diagnostic helper. Run in DevTools:
+//    window.debugLakituUrlLookup('asgn_xxx')
+// to see exactly what rows exist for that assignment and what each
+// row's parsed participantId looks like. Useful when "No url" appears
+// in the UI despite admin knowing the moderator pasted a URL.
+function debugLakituUrlLookup(asgnId) {
+  console.group('[Orbit] Lakitu URL lookup diagnostic for asgnId=' + JSON.stringify(asgnId));
+  try {
+    const rows = (typeof adminState !== 'undefined' && adminState && Array.isArray(adminState.perfSessionStateRows))
+      ? adminState.perfSessionStateRows
+      : null;
+    if (!rows) {
+      console.log('perfSessionStateRows is null/missing — Performance tab may not have fetched yet.');
+      return;
+    }
+    console.log('Total rows in cache:', rows.length);
+    if (!asgnId) {
+      console.log('No asgnId provided — listing first 5 rows:');
+      rows.slice(0, 5).forEach((r, i) => {
+        console.log('  ['+i+'] assignmentId=' + JSON.stringify(r && r.assignmentId)
+          + ' orbitLoginId=' + JSON.stringify(r && r.orbitLoginId)
+          + ' lastActive=' + JSON.stringify(r && r.lastActive));
+      });
+      return;
+    }
+    const targetExact = String(asgnId);
+    const targetLoose = String(asgnId).trim().toLowerCase();
+    const exactMatches = rows.filter(r => r && String(r.assignmentId || '') === targetExact);
+    const looseMatches = rows.filter(r => r && String(r.assignmentId || '').trim().toLowerCase() === targetLoose
+                                            && String(r.assignmentId || '') !== targetExact);
+    console.log('Exact assignmentId matches:', exactMatches.length);
+    console.log('Loose (trimmed/lowercased) additional matches:', looseMatches.length);
+    const allMatches = [...exactMatches, ...looseMatches].sort((a, b) =>
+      String(b.lastActive || '').localeCompare(String(a.lastActive || '')));
+    if (allMatches.length === 0) {
+      console.log('NO MATCHES — listing first 5 assignmentIds in cache for comparison:');
+      rows.slice(0, 5).forEach((r, i) => {
+        console.log('  ['+i+'] assignmentId=' + JSON.stringify(r && r.assignmentId));
+      });
+      return;
+    }
+    allMatches.forEach((r, i) => {
+      let parsed;
+      try { parsed = JSON.parse(r.stateJson || '{}'); }
+      catch (e) { parsed = { _parseError: e.message }; }
+      const pid = parsed && parsed.participantId ? String(parsed.participantId) : '(none)';
+      console.log('  ['+i+']',
+        'lastActive=' + JSON.stringify(r.lastActive),
+        'orbitLoginId=' + JSON.stringify(r.orbitLoginId),
+        'participantId(raw)=' + JSON.stringify(pid),
+        'participantId(trimmed)=' + JSON.stringify(String(pid).trim())
+      );
     });
-  return candidates.length > 0 ? String(candidates[0].participantId).trim() : '';
+    console.log('Resolved URL (after .trim, newest-non-empty): ' + JSON.stringify(getLakituUrlForAssignment(asgnId)));
+  } catch (e) {
+    console.error('Diagnostic threw:', e);
+  } finally {
+    console.groupEnd();
+  }
+}
+if (typeof window !== 'undefined') {
+  window.debugLakituUrlLookup = debugLakituUrlLookup;
+  window.getLakituUrlForAssignment = getLakituUrlForAssignment;
+  // Force-refresh helper. Useful when admin's Performance tab was
+  // opened BEFORE the moderator pasted the URL — ensurePerfSessionStateRows
+  // caches the fetched rows, so without a manual refresh the URL
+  // wouldn't appear until admin navigates away and back. Calling this
+  // from console clears the cache, re-fetches, and re-renders the
+  // tile grid in place.
+  window.refreshLakituFromCloud = async function refreshLakituFromCloud() {
+    if (typeof adminState === 'undefined') {
+      console.warn('[Orbit] refreshLakituFromCloud: adminState not available');
+      return;
+    }
+    console.info('[Orbit] refreshLakituFromCloud: clearing cache + re-fetching SessionState rows…');
+    adminState.perfSessionStateRows = null;
+    if (typeof ensurePerfSessionStateRows !== 'function') {
+      console.warn('[Orbit] refreshLakituFromCloud: ensurePerfSessionStateRows not available');
+      return;
+    }
+    await ensurePerfSessionStateRows();
+    const grid = document.getElementById('perfTileGrid');
+    if (grid && typeof renderPerfTilesHTML === 'function') {
+      const view = adminState.perfView || 'teams';
+      const search = (adminState.perfSearch || '').trim().toLowerCase();
+      grid.innerHTML = renderPerfTilesHTML(view, search);
+      if (typeof wirePerfTileGrid === 'function') wirePerfTileGrid(grid);
+    }
+    console.info('[Orbit] refreshLakituFromCloud: done. ' +
+      ((adminState.perfSessionStateRows || []).length) + ' SessionState rows now in cache.');
+  };
+
+  // Enable / disable the verbose teammate-sync diagnostic logging.
+  // Persists across renders via window flag. Use:
+  //   window.enableTeammateDiag()   ← turn on
+  //   window.enableTeammateDiag(false)  ← turn off
+  // Once on, findTeammateSessionState logs every gate to the console
+  // grouped under "[Orbit][TeammateDiag] findTeammateSessionState".
+  // Use this when "I logged in as user B and don't see A's progress"
+  // to see WHERE the lookup fails.
+  window.enableTeammateDiag = function enableTeammateDiag(on) {
+    window._teammateDiag = (on === undefined) ? true : !!on;
+    console.info('[Orbit] Teammate diagnostic logging is now',
+      window._teammateDiag ? 'ON' : 'OFF');
+    if (window._teammateDiag) {
+      console.info('Open the Orbit moderator app (or trigger a polling tick) ' +
+        'to see verbose logs. Or call window.forceTeammateSync() to trigger now.');
+    }
+  };
+
+  // Force-trigger the teammate sync RIGHT NOW, ignoring all rate-
+  // limit / debounce / "already-merged" / staleness gates. Useful for
+  // diagnosing the "user B doesn't see user A's progress" case
+  // without waiting for the polling cycle.
+  //
+  // What this does (in order):
+  //   1. Enables diagnostic logging temporarily
+  //   2. Fetches SessionState rows fresh from cloud
+  //   3. Finds the freshest teammate row using primary then fallback paths
+  //   4. Logs full details of what was found
+  //   5. If found, calls mergeTeammateState() to overlay onto local state
+  //   6. Renders the app and shows a toast
+  //
+  // Returns the resolved result object or null. Reports everything to
+  // console so user can see exactly what happened.
+  window.forceTeammateSync = async function forceTeammateSync() {
+    console.group('[Orbit] forceTeammateSync — running with all gates bypassed');
+    const prevDiag = window._teammateDiag;
+    window._teammateDiag = true;
+    try {
+      if (!state || !state.modProfile || !state.modProfile.orbitLoginId) {
+        console.error('No moderator profile loaded. Are you logged in as a moderator?');
+        return null;
+      }
+      console.info('My orbit login id:', state.modProfile.orbitLoginId);
+      if (typeof adminState !== 'undefined' && adminState) {
+        console.info('adminState.teams count:', (adminState.teams || []).length);
+        console.info('adminState.assignments count:', (adminState.assignments || []).length);
+      }
+      const result = await findTeammateSessionState();
+      if (!result || !result.syncableState) {
+        console.warn('No teammate session state found. See diagnostic block above for why.');
+        console.info('To verify your SessionState table is being read correctly, also try:');
+        console.info('  const rows = await fetchSessionStateRows(); console.table(rows.slice(0, 10));');
+        return null;
+      }
+      console.info('Found teammate row — about to merge into local state.');
+      console.info('Teammate writer:', result.row.orbitLoginId);
+      console.info('Teammate lastActive:', result.row.lastActive);
+      console.info('Teammate state keys:', Object.keys(result.syncableState));
+      console.info('Teammate participantId (Lakitu URL):',
+        result.syncableState.participantId || '(empty)');
+      console.info('Teammate equipment keys checked:',
+        Object.keys(result.syncableState.equipment || {}).filter(k => result.syncableState.equipment[k]).length);
+      console.info('Teammate stations populated:',
+        Object.keys(result.syncableState.stations || {}));
+      mergeTeammateState(result.syncableState);
+      state._lastSyncMergeAt = result.row.lastActive || new Date().toISOString();
+      saveState();
+      console.info('Merge complete. saveState() called.');
+      if (typeof renderApp === 'function') renderApp();
+      if (typeof applyAssignmentToEntryFields === 'function') applyAssignmentToEntryFields();
+      if (typeof showToast === 'function') {
+        showToast(`Teammate progress synced manually`, 'success', 4500);
+      }
+      return result;
+    } catch (e) {
+      console.error('forceTeammateSync threw:', e);
+      return null;
+    } finally {
+      window._teammateDiag = prevDiag;
+      console.groupEnd();
+    }
+  };
 }
 
 // Classifies a Lakitu URL string as 'ok' (valid review-able URL),
@@ -15451,23 +15888,55 @@ function perfBookingComparator(spec) {
   };
 }
 
+// TTL for the SessionState row cache. After this many ms, the next
+// ensurePerfSessionStateRows() call will re-fetch from PA rather than
+// reusing the cached array. Previously the cache was unbounded —
+// admin keeping the Performance tab open while a moderator pasted a
+// Lakitu URL would never see that URL appear because the rows array
+// was set once on first visit and never refreshed.
+//
+// 30 seconds is a compromise: short enough that a moderator's URL
+// paste appears in admin's tab within ~30s (acceptable lag),
+// long enough that quick re-renders (search-as-you-type, sort
+// changes, expand/collapse) don't churn the network. Same order of
+// magnitude as the existing SessionState polling cadence on the
+// moderator side.
+const PERF_SS_CACHE_TTL_MS = 30000;
+
 async function ensurePerfSessionStateRows() {
-  // Fetch SessionState rows once per Performance tab visit. Cached on
-  // adminState so re-renders (search-as-you-type, sort changes) don't
-  // re-fetch. Returns the cached rows or pulls fresh ones.
-  if (Array.isArray(adminState.perfSessionStateRows)) return adminState.perfSessionStateRows;
-  if (adminState._perfSSFetching) return [];
+  // Fetch SessionState rows on Performance tab visit; reuse cached
+  // rows if they're still fresh (within PERF_SS_CACHE_TTL_MS of the
+  // last fetch). Re-fetch in the background otherwise — see below.
+  const now = Date.now();
+  const fetchedAt = adminState._perfSSFetchedAt || 0;
+  const isFresh = Array.isArray(adminState.perfSessionStateRows)
+                && (now - fetchedAt) < PERF_SS_CACHE_TTL_MS;
+  if (isFresh) return adminState.perfSessionStateRows;
+  if (adminState._perfSSFetching) {
+    // Another fetch is in flight — return what we have (could be
+    // null on first-ever fetch, or a stale array). The in-flight
+    // fetch will refresh the cache when it lands.
+    return adminState.perfSessionStateRows || [];
+  }
   adminState._perfSSFetching = true;
   try {
     if (typeof fetchSessionStateRows === 'function') {
       const rows = await fetchSessionStateRows();
       adminState.perfSessionStateRows = Array.isArray(rows) ? rows : [];
+      adminState._perfSSFetchedAt = Date.now();
     } else {
       adminState.perfSessionStateRows = [];
+      adminState._perfSSFetchedAt = Date.now();
     }
   } catch (e) {
     console.warn('[Orbit] Performance: SessionState fetch failed', e && e.message);
-    adminState.perfSessionStateRows = [];
+    // On error, preserve any prior cache so we don't regress from
+    // "stale data showing" to "no data showing." But mark
+    // _perfSSFetchedAt so the next visit re-tries.
+    if (!Array.isArray(adminState.perfSessionStateRows)) {
+      adminState.perfSessionStateRows = [];
+    }
+    adminState._perfSSFetchedAt = Date.now();
   } finally {
     adminState._perfSSFetching = false;
   }
@@ -15487,10 +15956,24 @@ function renderPerformance(body) {
     }
   }
   ensurePerfSessionStateRows().then(() => {
-    // Lightweight refresh once SS data lands — only update side panel
-    // if it's currently open (so admin gets the timestamps appearing
-    // shortly after they clicked). No need to re-render the tile list
-    // since SS data doesn't affect tile-level stats.
+    // SessionState data carries the Lakitu URLs that the per-row pills
+    // need. On first render the rows array is still empty so every
+    // pill renders "No url"; once the fetch resolves we need to
+    // re-render the tile grid to surface the real URLs.
+    //
+    // Cheapest path: rebuild #perfTileGrid in place via the same
+    // helper the search-as-you-type wiring uses. This preserves
+    // toolbar/search/date-range state and doesn't disturb anything
+    // outside the grid.
+    const grid = document.getElementById('perfTileGrid');
+    if (grid) {
+      const view = adminState.perfView || 'teams';
+      const search = (adminState.perfSearch || '').trim().toLowerCase();
+      grid.innerHTML = renderPerfTilesHTML(view, search);
+      wirePerfTileGrid(grid);
+    }
+    // Also refresh the side panel if it's currently open (so admin
+    // gets the timestamps appearing shortly after they clicked).
     const panel = document.getElementById('perfPanel');
     if (panel && panel.classList.contains('open') && panel.dataset.asgnId) {
       openPerformancePanel(panel.dataset.asgnId);
@@ -16410,20 +16893,55 @@ function renderPerfStationListHTML(a) {
   // the latest row per station (by lastActive) and read its
   // cameras/scenarios state. This way admin sees "what's done" rather
   // than "who did what" — performance, not attribution.
-  const rows = (adminState.perfSessionStateRows || []).filter(r =>
-    String(r.assignmentId || '') === String(a.id || '')
-  );
+  //
+  // Defensive ID matching (1.2.052823): exact match first, then
+  // trim+lowercase fallback. Same pattern as getLakituUrlForAssignment
+  // and deriveLatestStatusFromSessionState. Catches the case where
+  // PA Excel serialization or cell-editing introduced casing or
+  // whitespace drift in the assignmentId column — without this, the
+  // panel was returning zero rows even when matching SessionState
+  // existed in cache, surfacing "No station progress reported yet."
+  const targetExact = String(a.id || '');
+  const targetLoose = targetExact.trim().toLowerCase();
+  const rows = (adminState.perfSessionStateRows || []).filter(r => {
+    if (!r) return false;
+    const rExact = String(r.assignmentId || '');
+    if (rExact === targetExact) return true;
+    return rExact.trim().toLowerCase() === targetLoose;
+  });
 
   // No rows yet — likely SS hasn't loaded or session hasn't really
   // started. Surface the right empty-state message.
   if (rows.length === 0) {
+    // Tailor the empty-state to what we DO know about this booking.
+    //   - SS rows still loading (perfSessionStateRows === null/undefined)
+    //     → "Loading…"
+    //   - Booking is Completed per the Assignment table but no SS rows
+    //     match → most likely a stale-cache or sync issue. Tell admin
+    //     the booking is done but progress detail isn't available, and
+    //     point them at the refresh helper. Without this, admin saw
+    //     a generic "No station progress reported yet" that conflicted
+    //     with the Completed tile they just drilled into — confusing.
+    //   - Anything else → generic "no progress yet"
+    const isLoading = adminState.perfSessionStateRows == null;
+    const isCompleted = a && a.status === 'Completed';
+    let body;
+    if (isLoading) {
+      body = 'Loading station data…';
+    } else if (isCompleted) {
+      const when = a.completedAt
+        ? new Date(a.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : null;
+      body = `
+        <div style="margin-bottom: 8px;">Session marked complete${when ? ` at <strong>${escapeHTML(when)}</strong>` : ''} (per Assignment record).</div>
+        <div style="font-size: 12px; color: var(--text3);">Per-station progress detail isn't in the local SessionState cache. This usually means the cache is stale or the moderator's final sync hasn't landed yet — try <code>window.refreshLakituFromCloud()</code> from the browser console to force a refresh.</div>
+      `;
+    } else {
+      body = 'No station progress reported yet.';
+    }
     return `
       <div class="perf-panel-section-title">Stations</div>
-      <div class="perf-empty">
-        ${adminState.perfSessionStateRows == null
-          ? 'Loading station data…'
-          : 'No station progress reported yet.'}
-      </div>
+      <div class="perf-empty">${body}</div>
     `;
   }
 
@@ -21479,6 +21997,53 @@ function renderAssignment() {
     }, 60 * 1000);
   }
 
+  // PROGRESS-MISMATCH FIX (1.2.052820, recursion fix 1.2.052821)
+  // ------------------------------------------------------------
+  // The calendar's per-booking status pills ("Check-in" / "In session"
+  // / "Completed") are driven by getLatestStatusForAssignment(), which
+  // post-fix prefers SessionState-derived status. So the Assignment
+  // tab needs SessionState rows in adminState.perfSessionStateRows for
+  // those pills to populate. The Performance tab fetches them via
+  // ensurePerfSessionStateRows(); we trigger the same fetch here so
+  // admin doesn't have to bounce to the Performance tab first to see
+  // accurate status pills in the calendar.
+  //
+  // CRITICAL: do NOT re-render unconditionally on the .then(). The
+  // initial 1.2.052820 implementation did, and even though the TTL
+  // check made the fetch itself a no-op when the cache was fresh,
+  // the *promise still resolved on each call* and the .then handler
+  // re-rendered, which called this function again, which scheduled
+  // another .then, in an infinite microtask loop. The browser froze
+  // within seconds of opening the Assignment tab.
+  //
+  // The fix: only re-render when the rows-array reference has actually
+  // changed since our last render (which happens when a fresh fetch
+  // lands new data). Track the last-rendered reference on adminState.
+  // A cached resolve returns the same reference → no re-render → no
+  // loop.
+  if (typeof ensurePerfSessionStateRows === 'function') {
+    ensurePerfSessionStateRows().then(() => {
+      // Only re-render if admin is still on the Assignment tab — they
+      // may have navigated away while the fetch was in flight.
+      if (adminState.tab !== 'assignment') return;
+      // Skip the re-render during open modals — same reasoning as the
+      // poll timer above. The next tick after modal close will catch up.
+      if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) return;
+      // Loop guard: only re-render when the rows-array reference is
+      // different from what we last rendered with. If the cache TTL
+      // hasn't expired yet, ensurePerfSessionStateRows returns the
+      // same array reference and we skip — preventing the infinite
+      // microtask loop.
+      const currentRows = adminState.perfSessionStateRows;
+      if (adminState._asgnLastRenderedSSRef === currentRows) return;
+      adminState._asgnLastRenderedSSRef = currentRows;
+      renderAssignment();
+    }).catch(() => {
+      // Silent — calendar still renders with the pre-fix
+      // (no progress pills) state.
+    });
+  }
+
   ensureCalAnchor();
 
   // Sync-status banner. When ASSIGNMENT_PA_READ_URL is empty, every admin
@@ -22809,15 +23374,23 @@ function renderTeamGridHTML(days) {
     'station_0b_done': 3,
     'station_0a_done': 2,
     'check_in':        1,
+    'arrived':         1,   // alias of check_in for derived statuses
   };
-  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  // PROGRESS-MISMATCH FIX (1.2.052820): source status from
+  // getLatestStatusForAssignment (which now prefers SessionState-
+  // derived status when available). The previous direct read of
+  // loadWorklogCache() returned empty on admin devices because the
+  // Worklog read flow isn't configured — see getLatestStatusForAssignment
+  // for the full rationale. We resolve once per assignment in the
+  // current grid to keep the lookup O(assignments) rather than the
+  // O(rows) inner loop the old approach used.
   const asgnLatestStatus = new Map();
-  for (const r of cache) {
-    if (!r || !r.assignmentId || !r.status) continue;
-    const prev = asgnLatestStatus.get(r.assignmentId);
-    if ((statusPriority[r.status] || 0) > (statusPriority[prev] || 0)) {
-      asgnLatestStatus.set(r.assignmentId, r.status);
-    }
+  for (const asgn of (adminState.assignments || [])) {
+    if (!asgn || !asgn.id) continue;
+    const row = (typeof getLatestStatusForAssignment === 'function')
+      ? getLatestStatusForAssignment(asgn.id)
+      : null;
+    if (row && row.status) asgnLatestStatus.set(asgn.id, row.status);
   }
 
   // Day headers — sticky top row of the grid.
@@ -24327,10 +24900,24 @@ function isParticipantAvailable(p, dateStr, slotMin) {
 // a status. Otherwise every legacy assignment would show "available."
 function buildParticipantStatusMap() {
   const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  // PROGRESS-MISMATCH FIX (1.2.052820)
+  // The worklog cache is empty on admin devices (see
+  // getLatestStatusForAssignment for full rationale), so this used to
+  // mark zero assignments as completed even when they legitimately
+  // were. The Assignment table's `status === 'Completed'` IS correctly
+  // cross-device-synced via the assignment read flow, so we also
+  // honor that as a completion signal. The two sources are merged
+  // here so the lookup works equally well on admin and moderator
+  // devices.
   const completedAsgnIds = new Set();
   for (const r of cache) {
     if (r && r.status === 'session_done' && r.assignmentId) {
       completedAsgnIds.add(r.assignmentId);
+    }
+  }
+  for (const a of (adminState.assignments || [])) {
+    if (a && a.status === 'Completed' && a.id) {
+      completedAsgnIds.add(a.id);
     }
   }
   const idKey    = new Map();  // participantOrbitId.toLowerCase() → 'booked' | 'completed'
@@ -24396,9 +24983,16 @@ function findActiveBookingsForParticipant(participant, excludeAsgnId) {
   const pemail = (participant.email || '').toLowerCase().trim();
   const pname  = (participant.firstName || '').toLowerCase().trim() + '|' + (participant.lastName || '').toLowerCase().trim();
   const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  // PROGRESS-MISMATCH FIX (1.2.052820) — see buildParticipantStatusMap
+  // for the rationale. Worklog cache is empty on admin devices; the
+  // Assignment table's `status === 'Completed'` IS cross-device-synced
+  // and serves as the authoritative completion signal.
   const completedIds = new Set();
   for (const r of cache) {
     if (r && r.status === 'session_done' && r.assignmentId) completedIds.add(r.assignmentId);
+  }
+  for (const a of (adminState.assignments || [])) {
+    if (a && a.status === 'Completed' && a.id) completedIds.add(a.id);
   }
   const out = [];
   for (const a of (adminState.assignments || [])) {
@@ -27145,7 +27739,17 @@ async function saveAssignment() {
   toast(`${isEdit ? 'Assignment updated' : 'Assignment saved'} locally · syncing to Excel…`);
   renderAssignment();
 
-  // POST to PA write URL — one row per primary moderator on the team
+  // POST to PA write URL — one row per primary moderator on the team.
+  //
+  // CRITICAL (1.2.052822): use fetchWithRetry instead of bare fetch so
+  // that a transient PA failure on one mod's row doesn't end up with
+  // only the other mod's row landing in Excel. The previous
+  // bare-fetch loop was the upstream cause of the "user B can't see
+  // user A's session" bug: a single failed write would leave user A
+  // in modSnapshots but not user B, so B's getOperatorAssignment()
+  // couldn't find the booking. fetchWithRetry's 2-attempt default
+  // with exponential backoff catches transient 429/5xx without the
+  // admin needing to know anything happened.
   if (ASSIGNMENT_PA_WRITE_URL) {
     const rows = buildAssignmentExcelRow(newAsgn);
     let succeeded = 0;
@@ -27153,11 +27757,19 @@ async function saveAssignment() {
     let lastError = null;
     for (const row of rows) {
       try {
-        const res = await fetch(ASSIGNMENT_PA_WRITE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(row),
-        });
+        const res = (typeof fetchWithRetry === 'function')
+          ? await fetchWithRetry(ASSIGNMENT_PA_WRITE_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(row),
+              maxAttempts: 3,
+              timeoutMs: 25000,
+            })
+          : await fetch(ASSIGNMENT_PA_WRITE_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(row),
+            });
         if (res.ok || res.status === 202) {
           succeeded++;
         } else {
@@ -30102,9 +30714,63 @@ async function fetchSessionStateRows() {
     // The read flow's Response action returns `value` directly — should
     // be an array. Some PA configurations wrap it in {value: [...]}, so
     // tolerate both shapes for robustness.
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed && Array.isArray(parsed.value)) return parsed.value;
-    return [];
+    let rows = null;
+    if (Array.isArray(parsed)) rows = parsed;
+    else if (parsed && Array.isArray(parsed.value)) rows = parsed.value;
+    else return [];
+
+    // CRITICAL (1.2.052825 fix): normalize column keys defensively.
+    // Power Automate's "List rows present in a table" returns each row
+    // with column keys EXACTLY as they appear in Excel — so an Excel
+    // column named "OrbitLoginId" (PascalCase) or "orbit_login_id"
+    // (snake_case) is returned with that exact key, NOT the camelCase
+    // we write with via "Add a row". When the Excel column casing
+    // drifts from the write-side expectation, downstream code that
+    // does `r.orbitLoginId` returns undefined → the row is silently
+    // dropped by newestSessionStatePerUser's `if (!r.orbitLoginId)`
+    // guard → user B sees nothing.
+    //
+    // This was the root cause of "I log in as user B but don't see A's
+    // sync mirroring" — A's rows existed in Excel with correct content,
+    // but PA returned them with column keys that didn't match what the
+    // client-side reader expected. The bug stayed hidden because PA
+    // ALSO mutates rows with internal columns (`__PowerAppsId__`,
+    // `ItemInternalId`, `@odata.etag`) and the array length looked
+    // reasonable in the network response, so the read appeared
+    // to succeed.
+    //
+    // We re-key each row by walking the original keys and mapping any
+    // recognized variant (PascalCase, snake_case, lowercase, even
+    // uppercase) back to the canonical camelCase. The canonical key
+    // takes precedence when both forms exist on the same row (which
+    // shouldn't happen but isn't impossible if someone manually added
+    // a duplicate column).
+    const CANONICAL_KEYS = ['sessionStateId', 'assignmentId', 'teamId', 'orbitLoginId',
+                            'stateJson', 'lastActive', 'appVersion'];
+    const normalize = (key) => {
+      // Strip non-alphanumeric and lowercase — produces a stable
+      // comparison form. "OrbitLoginId" → "orbitloginid",
+      // "orbit_login_id" → "orbitloginid", "Orbit Login Id" → "orbitloginid".
+      return String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    };
+    const canonicalLookup = {};
+    for (const ck of CANONICAL_KEYS) canonicalLookup[normalize(ck)] = ck;
+
+    return rows.map(rawRow => {
+      if (!rawRow || typeof rawRow !== 'object') return rawRow;
+      const normalized = { ...rawRow };  // keep original keys for backwards-compat
+      for (const k of Object.keys(rawRow)) {
+        const normK = normalize(k);
+        const canonK = canonicalLookup[normK];
+        if (canonK && canonK !== k && !Object.prototype.hasOwnProperty.call(normalized, canonK)) {
+          // Only fill the canonical form if it doesn't already exist —
+          // don't clobber the writer-side canonical column if both happen
+          // to be present.
+          normalized[canonK] = rawRow[k];
+        }
+      }
+      return normalized;
+    });
   } catch (e) {
     console.warn('[Orbit] SessionState read error:', e && e.message);
     return null;
@@ -30134,32 +30800,170 @@ function newestSessionStatePerUser(rows) {
 // Used at login and when entering the operator app to decide whether
 // to surface the "continue from teammate?" prompt.
 async function findTeammateSessionState() {
-  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return null;
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
-  if (!asgn || !asgn.id) return null;
-
-  const rows = await fetchSessionStateRows();
-  if (!rows) return null;
-
-  const myIdLower = String(state.modProfile.orbitLoginId).toLowerCase();
-  const matching = newestSessionStatePerUser(rows).filter(r =>
-    String(r.assignmentId) === String(asgn.id) &&
-    String(r.orbitLoginId || '').toLowerCase() !== myIdLower
-  );
-  if (matching.length === 0) return null;
-
-  // Pick the most-recently-touched teammate row (in case multiple
-  // teammates have written — rare but possible for 3+ person teams).
-  matching.sort((a, b) => (b.lastActive || '').localeCompare(a.lastActive || ''));
-  const winner = matching[0];
-
-  let parsedState = null;
-  try { parsedState = JSON.parse(winner.stateJson || '{}'); }
-  catch (e) {
-    console.warn('[Orbit] Failed to parse teammate stateJson:', e && e.message);
+  const DIAG = (typeof window !== 'undefined' && window._teammateDiag);
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) {
+    if (DIAG) console.info('[Orbit][TeammateDiag] No mod profile → returning null');
     return null;
   }
-  return { row: winner, syncableState: parsedState };
+
+  const rows = await fetchSessionStateRows();
+  if (!rows) {
+    if (DIAG) console.warn('[Orbit][TeammateDiag] fetchSessionStateRows returned null (fetch failure or no read URL)');
+    return null;
+  }
+  if (DIAG) {
+    console.group('[Orbit][TeammateDiag] findTeammateSessionState');
+    console.info('Rows fetched:', rows.length);
+    if (rows.length > 0) {
+      console.info('First row keys:', Object.keys(rows[0]));
+      console.info('First row sample:', {
+        orbitLoginId: rows[0].orbitLoginId,
+        assignmentId: rows[0].assignmentId,
+        lastActive: rows[0].lastActive,
+        stateJson_truncated: String(rows[0].stateJson || '').slice(0, 120),
+      });
+    }
+  }
+
+  const myIdLower = String(state.modProfile.orbitLoginId).toLowerCase();
+  const newestByUser = newestSessionStatePerUser(rows);
+  if (DIAG) {
+    console.info('After newestSessionStatePerUser:', newestByUser.length, 'unique (user,asgn) rows');
+    if (newestByUser.length < rows.length) {
+      console.info('Filtered out', rows.length - newestByUser.length, 'rows (missing orbitLoginId or assignmentId or stale per-user).');
+    }
+    console.info('My orbit login id (lowercased):', myIdLower);
+  }
+
+  // PRIMARY PATH: assignment-based lookup. If we have an assignment
+  // where I'm in modSnapshots, find teammate rows for that exact
+  // assignmentId. This is the common case — both teammates were
+  // properly snapshotted on the assignment write.
+  const myAsgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (DIAG) console.info('My assignment:', myAsgn ? { id: myAsgn.id, teamId: myAsgn.teamId, status: myAsgn.status } : null);
+  if (myAsgn && myAsgn.id) {
+    const matching = newestByUser.filter(r =>
+      String(r.assignmentId) === String(myAsgn.id) &&
+      String(r.orbitLoginId || '').toLowerCase() !== myIdLower
+    );
+    if (DIAG) console.info('PRIMARY path matches (same asgnId, not me):', matching.length);
+    if (matching.length > 0) {
+      // Pick the most-recently-touched teammate row (in case multiple
+      // teammates have written — rare but possible for 3+ person teams).
+      matching.sort((a, b) => (b.lastActive || '').localeCompare(a.lastActive || ''));
+      const winner = matching[0];
+      let parsedState = null;
+      try { parsedState = JSON.parse(winner.stateJson || '{}'); }
+      catch (e) {
+        if (DIAG) console.warn('[Orbit][TeammateDiag] PRIMARY winner stateJson failed to parse:', e && e.message);
+        console.warn('[Orbit] Failed to parse teammate stateJson:', e && e.message);
+        if (DIAG) console.groupEnd();
+        return null;
+      }
+      if (DIAG) {
+        console.info('PRIMARY winner:', { orbitLoginId: winner.orbitLoginId, lastActive: winner.lastActive });
+        console.info('Parsed state keys:', Object.keys(parsedState));
+        console.groupEnd();
+      }
+      return { row: winner, syncableState: parsedState };
+    }
+  }
+
+  // FALLBACK PATH (1.2.052822): team-based lookup. Triggered when the
+  // primary path fails — most commonly because user B's modSnapshots
+  // entry is missing from the assignment row (assignment was created
+  // BEFORE B was added to the team, or the write only emitted one
+  // primary's row, or any of several other production data-shape
+  // issues). Without this fallback, B logs in mid-session and sees
+  // "no session today" while A is actively running it.
+  //
+  // Algorithm: find all of my team IDs. For each non-me SessionState
+  // row, check whether its writer is also on one of my teams. If yes
+  // and that row has meaningful work, it's a valid teammate session.
+  //
+  // We resolve from adminState.teams (already loaded via the initial
+  // assignment fetch). Newer-style teams carry primaryIds + backupIds;
+  // both count as "on my team" since a backup picking up a primary's
+  // shift is exactly the scenario this fallback exists for.
+  if (typeof adminState !== 'undefined' && adminState && Array.isArray(adminState.teams)) {
+    const myTeamIds = new Set();
+    for (const t of adminState.teams) {
+      if (!t) continue;
+      const allMemberIds = [...(t.primaryIds || []), ...(t.backupIds || [])]
+        .map(s => String(s || '').toLowerCase());
+      if (allMemberIds.includes(myIdLower)) {
+        myTeamIds.add(String(t.id));
+      }
+    }
+    if (DIAG) console.info('FALLBACK path: my team IDs:', [...myTeamIds], '/ total teams:', adminState.teams.length);
+    if (myTeamIds.size > 0) {
+      // Build a map of orbitLoginId → all team IDs that user is on.
+      // Then look for SessionState rows by users who share at least
+      // one team with me.
+      const userTeamMap = new Map();
+      for (const t of adminState.teams) {
+        if (!t) continue;
+        const allMemberIds = [...(t.primaryIds || []), ...(t.backupIds || [])];
+        for (const id of allMemberIds) {
+          const key = String(id || '').toLowerCase();
+          if (!key || key === myIdLower) continue;
+          if (!userTeamMap.has(key)) userTeamMap.set(key, new Set());
+          userTeamMap.get(key).add(String(t.id));
+        }
+      }
+      if (DIAG) console.info('Users sharing a team with me:', [...userTeamMap.keys()]);
+
+      const fallbackMatches = newestByUser.filter(r => {
+        const writerId = String(r.orbitLoginId || '').toLowerCase();
+        if (!writerId || writerId === myIdLower) return false;
+        const writerTeams = userTeamMap.get(writerId);
+        if (!writerTeams) return false;
+        for (const tid of writerTeams) {
+          if (myTeamIds.has(tid)) return true;
+        }
+        return false;
+      });
+      if (DIAG) console.info('FALLBACK matches:', fallbackMatches.length);
+
+      if (fallbackMatches.length > 0) {
+        fallbackMatches.sort((a, b) => (b.lastActive || '').localeCompare(a.lastActive || ''));
+        const winner = fallbackMatches[0];
+        let parsedState = null;
+        try { parsedState = JSON.parse(winner.stateJson || '{}'); }
+        catch (e) {
+          if (DIAG) console.warn('[Orbit][TeammateDiag] FALLBACK winner stateJson failed to parse:', e && e.message);
+          console.warn('[Orbit] Failed to parse teammate stateJson (fallback path):', e && e.message);
+          if (DIAG) console.groupEnd();
+          return null;
+        }
+        // Diagnostic so admin can confirm in DevTools that the
+        // fallback fired (i.e., the primary path's modSnapshots
+        // match didn't work — useful for diagnosing why).
+        console.info(
+          '[Orbit] Teammate sync: fallback team-based match fired. '
+          + 'Teammate=' + JSON.stringify(winner.orbitLoginId)
+          + ' on assignment=' + JSON.stringify(winner.assignmentId)
+          + '. Primary modSnapshots-based lookup missed.'
+        );
+        if (DIAG) {
+          console.info('FALLBACK winner:', { orbitLoginId: winner.orbitLoginId, lastActive: winner.lastActive });
+          console.info('Parsed state keys:', Object.keys(parsedState));
+          console.groupEnd();
+        }
+        return { row: winner, syncableState: parsedState };
+      }
+    } else {
+      if (DIAG) console.warn('FALLBACK: I am not on any team in adminState.teams. Cannot find teammates.');
+    }
+  } else {
+    if (DIAG) console.warn('FALLBACK: adminState.teams not populated yet.');
+  }
+
+  if (DIAG) {
+    console.warn('No teammate match found via PRIMARY or FALLBACK paths.');
+    console.groupEnd();
+  }
+  return null;
 }
 
 // Apply teammate's state to local state. Merges the syncable subset
@@ -30397,6 +31201,35 @@ function statusOrderIdx(status) {
 // Returns the highest-progressed status reached for an assignment by ANY
 // teammate. Pulls from the worklog cache (admin-side reads + own writes).
 function getLatestStatusForAssignment(asgnId) {
+  // PROGRESS-MISMATCH FIX (1.2.052820)
+  // ----------------------------------
+  // The admin app has no Worklog read endpoint configured
+  // (WORKLOG_PA_READ_URL is empty), so loadWorklogCache() returns
+  // essentially empty on admin devices — moderator-written worklog
+  // rows live on the moderator's device, not the admin's. This used
+  // to cause every admin-side "what's the latest status?" lookup to
+  // return null, even after moderators completed sessions:
+  //   - calendar booking pills showed no "In session" / "Completed"
+  //     overlays (only the bare Assignment status)
+  //   - team-grid cells weren't colored by progress
+  //   - participant status map showed legitimately-completed sessions
+  //     as still-active
+  //   - overview dashboard's "in session right now" count was wrong
+  //
+  // The fix prefers SessionState-derived status (which DOES have a
+  // read flow) and falls back to the worklog cache only when SS
+  // doesn't have data for the assignment. On moderator devices this
+  // keeps working as before because the local worklog cache is
+  // populated by the moderator's own writes; on admin devices the
+  // SS path takes over.
+  const ssStatus = (typeof deriveLatestStatusFromSessionState === 'function')
+    ? deriveLatestStatusFromSessionState(asgnId)
+    : null;
+  if (ssStatus) return ssStatus;
+
+  // Fallback: local worklog cache (the original path). On admin
+  // devices this is usually empty; on moderator devices it contains
+  // the operator's own writes and agrees with SS.
   const cache = loadWorklogCache();
   let best = null;
   let bestIdx = -1;
@@ -30406,6 +31239,151 @@ function getLatestStatusForAssignment(asgnId) {
     if (idx > bestIdx) { bestIdx = idx; best = row; }
   });
   return best;
+}
+
+// Derives a Worklog-shaped status row for a given assignment by
+// inspecting the moderator's most recent SessionState payload. This
+// is how the admin app picks up moderator progress without needing a
+// Worklog PA read flow — the SessionState read flow already pulls
+// across everything we need.
+//
+// Returns null when there's nothing to derive (no SS rows for this
+// assignment, or the most recent payload contains no progress
+// indicators). Otherwise returns an object with the same minimal
+// shape that the legacy worklog-cache row had: { assignmentId,
+// status, timestamp, orbitLoginId } so all existing call sites
+// (welcome banner, calendar pill, team-grid cell color, isSessionLocked
+// check, dashboard counters) continue to work.
+//
+// Status inference walks the parsed stateJson in this priority order
+// (highest first) and returns the first match:
+//   1. sessionCompletedAt is set                    → 'session_done'
+//   2. stationCompletedAt['Station3']               → 'station_3_done'
+//   3. stationCompletedAt['Station2']               → 'station_2_done'
+//   4. stationCompletedAt['Station1']               → 'station_1_done'
+//   5. stationCompletedAt['station0_house']         → 'station_0c_done'
+//   6. stationCompletedAt['Station0b']              → 'station_0b_done'
+//   7. stationCompletedAt['Station0a']              → 'station_0a_done'
+//   8. arrivedAt is set                             → 'arrived'
+//   9. nothing                                      → null
+//
+// The first match wins because higher-priority statuses imply all
+// lower ones. If multiple moderators worked the same assignment
+// (rare; primary + backup mod), we collapse all their SS rows and
+// pick the highest-priority one — admin's question is "where is
+// the session at," not "who specifically did the last action."
+// PERFORMANCE FIX (1.2.052821) — memoize per-assignment derivation.
+// Without this, every renderTeamGridHTML call iterated all N
+// assignments and called deriveLatestStatusFromSessionState for each,
+// which scanned the full perfSessionStateRows array (~200 rows) for
+// every call. Combined with the recursion bug, this contributed to
+// the admin app freeze.
+//
+// Cache lives at module scope and invalidates when the rows-array
+// reference changes (which happens on each fresh fetch). Same pattern
+// as _lakituUrlCache.
+let _derivedStatusCache = { sourceRef: null, byAsgnId: {} };
+function deriveLatestStatusFromSessionState(asgnId) {
+  if (!asgnId) return null;
+  const rows = (typeof adminState !== 'undefined' && adminState && Array.isArray(adminState.perfSessionStateRows))
+    ? adminState.perfSessionStateRows
+    : null;
+  if (!rows || rows.length === 0) return null;
+
+  // Cache lookup. If the rows array reference is the same as last
+  // call AND we already have a result for this asgnId, reuse it.
+  if (_derivedStatusCache.sourceRef !== rows) {
+    _derivedStatusCache = { sourceRef: rows, byAsgnId: {} };
+  }
+  if (Object.prototype.hasOwnProperty.call(_derivedStatusCache.byAsgnId, asgnId)) {
+    return _derivedStatusCache.byAsgnId[asgnId];
+  }
+
+  // Filter to matching rows. Same defensive ID matching as the
+  // Lakitu URL lookup (1.2.052819) — exact string match first, then
+  // trim+lowercase fallback to absorb any whitespace/case drift
+  // introduced by Excel-cell editing or PA serialization.
+  const targetExact = String(asgnId);
+  const targetLoose = targetExact.trim().toLowerCase();
+  const matching = rows.filter(r => {
+    if (!r) return false;
+    const rExact = String(r.assignmentId || '');
+    if (rExact === targetExact) return true;
+    return rExact.trim().toLowerCase() === targetLoose;
+  });
+  if (matching.length === 0) {
+    _derivedStatusCache.byAsgnId[asgnId] = null;
+    return null;
+  }
+
+  // Walk newest-first across all matching rows. For each, parse the
+  // stateJson and check progress markers in priority order. Stop on
+  // first hit since stationCompletedAt keys are accumulative — if
+  // Station3 is done, the earlier stations are too.
+  matching.sort((a, b) => String(b.lastActive || '').localeCompare(String(a.lastActive || '')));
+
+  // Aggregate progress across ALL matching rows (each may be from a
+  // different mod on a 2-mod team). We want the FURTHEST-progressed
+  // status the team has reached collectively. Walk newest-first, then
+  // OR-merge stationCompletedAt across rows so a teammate who already
+  // finished Station 2 contributes that even if the newer row is
+  // from someone who only did Station 1.
+  let sessionCompletedAt = null;
+  const stationCompletedAt = {};
+  let arrivedAt = null;
+  let attributionRow = null;  // the row we'll borrow timestamp + orbitLoginId from
+  for (const r of matching) {
+    let parsed;
+    try { parsed = JSON.parse(r.stateJson || '{}'); }
+    catch (_) { continue; }
+    if (parsed.sessionCompletedAt && !sessionCompletedAt) {
+      sessionCompletedAt = parsed.sessionCompletedAt;
+      if (!attributionRow) attributionRow = r;
+    }
+    if (parsed.stationCompletedAt) {
+      for (const k of Object.keys(parsed.stationCompletedAt)) {
+        if (!stationCompletedAt[k]) stationCompletedAt[k] = parsed.stationCompletedAt[k];
+      }
+    }
+    if (parsed.arrivedAt && !arrivedAt) {
+      arrivedAt = parsed.arrivedAt;
+      if (!attributionRow) attributionRow = r;
+    }
+  }
+  if (!attributionRow) attributionRow = matching[0];
+
+  // Priority walk. First match wins.
+  const checks = [
+    { has: sessionCompletedAt,                        status: 'session_done',    at: sessionCompletedAt },
+    { has: stationCompletedAt['Station3'],            status: 'station_3_done',  at: stationCompletedAt['Station3'] },
+    { has: stationCompletedAt['Station2'],            status: 'station_2_done',  at: stationCompletedAt['Station2'] },
+    { has: stationCompletedAt['Station1'],            status: 'station_1_done',  at: stationCompletedAt['Station1'] },
+    { has: stationCompletedAt['station0_house'],      status: 'station_0c_done', at: stationCompletedAt['station0_house'] },
+    { has: stationCompletedAt['Station0b'],           status: 'station_0b_done', at: stationCompletedAt['Station0b'] },
+    { has: stationCompletedAt['Station0a'],           status: 'station_0a_done', at: stationCompletedAt['Station0a'] },
+    { has: arrivedAt,                                 status: 'arrived',         at: arrivedAt },
+  ];
+  for (const c of checks) {
+    if (c.has) {
+      const result = {
+        assignmentId:  String(asgnId),
+        status:        c.status,
+        timestamp:     c.at || attributionRow.lastActive || new Date().toISOString(),
+        orbitLoginId:  attributionRow.orbitLoginId || '',
+        // Mark derived rows so future debugging can distinguish
+        // "this came from SS inference" from "this came from a
+        // local worklog write." Doesn't affect existing call sites
+        // (none of them branch on _derived).
+        _derived: true,
+      };
+      _derivedStatusCache.byAsgnId[asgnId] = result;
+      return result;
+    }
+  }
+  // No progress markers at all in any matching row — cache the null
+  // result so subsequent calls for this asgnId short-circuit.
+  _derivedStatusCache.byAsgnId[asgnId] = null;
+  return null;
 }
 
 // Returns the latest status pushed by THIS operator for a given assignment.
@@ -30747,6 +31725,18 @@ function _hasActiveSessionWork() {
         if (row.notes && String(row.notes).trim().length > 0) return true;
       }
     }
+  }
+  // 1.2.052824 fix: also count "teammate is actively in session" as
+  // active work. Without this, a user B who logs in fresh while their
+  // teammate (user A) is working would poll at 45-second IDLE cadence,
+  // and A's updates would take up to 45 seconds to surface in B's
+  // banner. By treating B's "I'm watching A's session" as active
+  // engagement, the poll runs at 15s and B sees A's progress fluidly.
+  // Last-known teammate state set by checkAndOfferTeammateSync when
+  // it finds a match; cleared when no match or teammate completed.
+  if (adminState && adminState._lastTeammateLiveAt) {
+    const STALE_MS = 10 * 60 * 1000;  // 10 min; if no teammate write in this long, drop back to idle
+    if (Date.now() - adminState._lastTeammateLiveAt < STALE_MS) return true;
   }
   return false;
 }
@@ -32302,6 +33292,24 @@ function openWrapUpModal(asgn) {
         // merging cloud state (newest completion wins).
         state.sessionCompletedAt = new Date().toISOString();
         saveState();
+        // Push the final SessionState to the cloud so admin's
+        // Performance panel and teammate-sync see the completion
+        // marker + any final stationCompletedAt entries + the last
+        // pasted participantId (Lakitu URL). Without this trigger,
+        // the wrap-up completion stays purely local — the cloud's
+        // last SessionState row would be from whatever the
+        // previous interaction-driven sync was, which may not
+        // reflect "session is done." (1.2.052823 fix)
+        if (typeof triggerSessionStateSync === 'function') {
+          try { triggerSessionStateSync(); } catch (_) {}
+        }
+        // Also flush IMMEDIATELY (don't wait for the debounce). The
+        // user is at a terminal action — they're done with the
+        // session; this is the right moment to spend the network
+        // round trip to ensure the cloud truth catches up.
+        if (typeof flushSessionStateSync === 'function') {
+          try { flushSessionStateSync(); } catch (_) {}
+        }
         // Send back to welcome (locked state)
         currentStationKey = null;
         renderApp();
@@ -34050,12 +35058,26 @@ function startApp() {
   // Check for teammate's session progress on the current assignment.
   // Runs ~1s after paint so the operator sees their app first; the
   // teammate-sync banner appears non-modally if a teammate has progress.
-  // Slight delay also gives adminState.teams + .assignments time to
-  // load if they were stale (needed for getOperatorAssignment).
-  setTimeout(() => {
-    checkAndOfferTeammateSync().catch(e =>
-      console.warn('[Orbit] Teammate sync check failed:', e && e.message)
-    );
+  //
+  // CRITICAL: must AWAIT the initial assignment fetch before running,
+  // for the same reason as checkLoginWelcome below — without an
+  // assignment cache, getOperatorAssignment() returns null and
+  // findTeammateSessionState silently early-returns. This was the root
+  // cause of "user B logs in while user A is in session and sees
+  // 'no session' with no teammate prompt" (1.2.052822 fix).
+  setTimeout(async () => {
+    try {
+      const initial = window._orbitInitialAsgnRefresh;
+      if (initial && typeof initial.then === 'function') {
+        await Promise.race([
+          initial,
+          new Promise(resolve => setTimeout(resolve, 2500)),  // safety timeout
+        ]);
+      }
+      await checkAndOfferTeammateSync();
+    } catch (e) {
+      console.warn('[Orbit] Teammate sync check failed:', e && e.message);
+    }
   }, 1200);
   // Begin periodic polling so teammate's mid-session updates land
   // without requiring a login. Started here (not at app init) so it
@@ -34098,11 +35120,20 @@ async function checkAndOfferTeammateSync() {
   // Their work is done; merging a teammate's in-progress snapshot
   // would just undo their completion. Once midnight passes (state
   // resets via midnight watcher), this guard releases automatically.
+  // Banner is also hidden — no point showing it.
   if (state.sessionCompletedAt && state.sessionDate === getPSTDateString()) {
+    if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
     return;
   }
   const result = await findTeammateSessionState();
-  if (!result || !result.syncableState) return;
+  if (!result || !result.syncableState) {
+    // No teammate work in cloud → hide any stale banner.
+    if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+    // Clear the live-teammate marker so polling drops back to idle
+    // cadence (no reason to poll fast if there's nothing to watch).
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastTeammateLiveAt = null;
+    return;
+  }
   const cloud = result.syncableState;
 
   // Has the teammate actually done work? Look for any scenario marked
@@ -34146,18 +35177,147 @@ async function checkAndOfferTeammateSync() {
       }
     }
   }
-  if (!hasWork) return;
-
-  // Also skip if the teammate's lastActive is older than our own local
-  // state — means we've already worked past them and shouldn't be
-  // asked to "merge in" their older snapshot. This protects against
-  // the case where local already moved forward but the cloud still
-  // has the teammate's earlier work.
-  const teammateAt = result.row.lastActive || '';
-  const localAt = state._lastSyncMergeAt || '';
-  if (teammateAt && localAt && teammateAt <= localAt) {
+  if (!hasWork) {
+    if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastTeammateLiveAt = null;
     return;
   }
+
+  // STALENESS GUARD (1.2.052824): if teammate's last write is too old,
+  // their session isn't really live. Without this, a yesterday's
+  // SessionState row from a teammate would keep triggering today's
+  // banner — the fallback team-based lookup doesn't filter by
+  // sessionDate. 6 hours is generous enough to cover real-world
+  // multi-hour sessions while excluding stale prior-day data.
+  const teammateAt = result.row.lastActive || '';
+  const STALENESS_MS = 6 * 60 * 60 * 1000;  // 6 hours
+  if (teammateAt) {
+    const age = Date.now() - new Date(teammateAt).getTime();
+    if (age > STALENESS_MS) {
+      if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+      // Stale teammate → drop polling back to idle cadence.
+      if (typeof adminState !== 'undefined' && adminState) adminState._lastTeammateLiveAt = null;
+      return;
+    }
+  }
+
+  // TEAMMATE COMPLETED THEIR SESSION: hide banner. Banner is for live
+  // awareness — done sessions aren't live anymore. We still fall
+  // through to the modal logic below in case the user wants to
+  // sync the final completed state.
+  if (cloud.sessionCompletedAt) {
+    if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+    // Clear teammate-live marker since they're done. Polling drops
+    // back to idle.
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastTeammateLiveAt = null;
+  } else {
+    // Stamp teammate-live marker so _hasActiveSessionWork() promotes
+    // the polling cadence to ACTIVE (15s) instead of IDLE (45s).
+    // Tracked in milliseconds so the staleness check inside
+    // _hasActiveSessionWork can decide whether the teammate's
+    // session is still fresh enough to warrant fast polling.
+    if (typeof adminState !== 'undefined' && adminState) {
+      adminState._lastTeammateLiveAt = Date.now();
+    }
+
+    // AUTO-SYNC for fresh-login users (1.2.052824):
+    //
+    // If user B has no local work of their own AND hasn't already
+    // dismissed/declined this teammate's state, automatically merge
+    // it. This is the key fix for "I don't see A's progress mirroring
+    // when I access the app" — without auto-sync, B sees an empty
+    // app + a banner, and has to click Sync to actually see A's
+    // work. The banner is a great awareness surface, but for the
+    // fresh-login case (B opens the app cold to find A is already
+    // in session), the right default is "show me what A is seeing"
+    // rather than "ask me whether to show me what A is seeing."
+    //
+    // Guards against unwanted overwrites:
+    //   - Only auto-syncs when B has NO local work (_hasActiveSessionWork
+    //     returns false for the operator's own state — meaning B
+    //     hasn't started, paste a URL, ack the cal guide, etc).
+    //   - Only auto-syncs when B hasn't already dismissed the
+    //     modal/banner for this teammate state (respects
+    //     _lastSyncMergeAt — once B has explicitly chosen, we
+    //     don't override that choice).
+    //   - One-shot per teammate-state: stamps _lastSyncMergeAt so
+    //     subsequent polls of the same teammate state don't re-sync.
+    const localAtForAutoSync = state._lastSyncMergeAt || '';
+    const teammateNewer = !localAtForAutoSync || teammateAt > localAtForAutoSync;
+    const bHasOwnWork = (() => {
+      // Inline check (can't reuse _hasActiveSessionWork because that
+      // now also returns true when a teammate is active — which is
+      // exactly the state we're in). Same fields, just teammate-
+      // marker excluded.
+      if (!state) return false;
+      if (state.participantId && String(state.participantId).trim()) return true;
+      if (state.equipment) {
+        for (const k of Object.keys(state.equipment)) {
+          if (state.equipment[k]) return true;
+        }
+      }
+      if (state.stations) {
+        for (const stKey of Object.keys(state.stations)) {
+          const st = state.stations[stKey] || {};
+          const cams = st.cameras || {};
+          for (const c of Object.keys(cams)) if (cams[c]) return true;
+          const sc = st.scenarios || {};
+          for (const num of Object.keys(sc)) {
+            const row = sc[num];
+            if (!row) continue;
+            if (row.status && row.status !== 'Not Started') return true;
+            if ((row.iterations || 0) > 0) return true;
+            if (row.notes && String(row.notes).trim().length > 0) return true;
+          }
+        }
+      }
+      return false;
+    })();
+    if (teammateNewer && !bHasOwnWork) {
+      try {
+        mergeTeammateState(cloud);
+        state._lastSyncMergeAt = teammateAt || new Date().toISOString();
+        saveState();
+        if (typeof renderApp === 'function') renderApp();
+        if (typeof applyAssignmentToEntryFields === 'function') applyAssignmentToEntryFields();
+        if (typeof showToast === 'function') {
+          showToast(`Synced your teammate's progress automatically`, 'info', 4000);
+        }
+      } catch (e) {
+        console.warn('[Orbit] Auto-sync of teammate state failed:', e && e.message);
+      }
+    }
+
+    // Banner display gate (1.2.052824 fix):
+    //
+    // The banner is a CONTINUOUS awareness surface — it should show
+    // whenever a teammate is actively in session, regardless of
+    // whether the user dismissed the one-shot modal. Previously this
+    // was gated by `teammateAt > localAt` (where localAt =
+    // state._lastSyncMergeAt). That meant: as soon as the user
+    // clicked Accept or Decline on the modal, `_lastSyncMergeAt`
+    // was stamped to the teammate's `lastActive`, the next poll saw
+    // `teammateAt === localAt`, and the banner was HIDDEN. The
+    // banner only re-appeared if the teammate wrote a strictly
+    // newer state — meaning the user lost their continuous-awareness
+    // surface the moment they interacted with the modal.
+    //
+    // Fix: the banner now respects only its own dismiss state
+    // (`_lastBannerDismissAt`), handled inside
+    // showOrUpdateTeammateLiveBanner. The modal continues to respect
+    // `_lastSyncMergeAt` (its own "already prompted" marker).
+    if (typeof showOrUpdateTeammateLiveBanner === 'function') {
+      showOrUpdateTeammateLiveBanner(result);
+    }
+  }
+
+  // Modal gate: respect _lastSyncMergeAt so we don't re-prompt on
+  // already-seen state. This is correct for the modal because a
+  // modal is a one-shot prompt — re-modalizing on every poll would
+  // be obnoxious.
+  const localAt = state._lastSyncMergeAt || '';
+  const isOlderThanLocal = teammateAt && localAt && teammateAt <= localAt;
+  if (isOlderThanLocal) return;
 
   showTeammateSyncModal(result);
 }
@@ -34183,6 +35343,147 @@ async function checkAndOfferTeammateSync() {
 // Same persistence semantics as before — Continue + Decline both
 // stamp _lastSyncMergeAt so the polling loop doesn't re-prompt; the
 // × is a soft dismiss that allows re-prompt on next poll.
+// Live teammate banner (1.2.052822)
+// ----------------------------------
+// Persistent compact banner that appears at the top of the moderator
+// app when a teammate is actively in session on a shared booking.
+// Unlike showTeammateSyncModal — which is a one-shot full-screen
+// prompt — this banner stays visible throughout the teammate's
+// session and updates in place as new SessionState rows arrive,
+// giving the user continuous "your teammate just hit Station 2"
+// awareness without disrupting their own work.
+//
+// Three lifecycle hooks:
+//   - showOrUpdateTeammateLiveBanner(result) — called from each
+//     SessionState poll tick when a teammate-sync result is found.
+//     Inserts the banner if missing, updates content if present.
+//   - hideTeammateLiveBanner()                — called when the
+//     teammate's row goes away (session completed, dismissed),
+//     when user accepts the merge, or when user dismisses.
+//   - dismissBanner stamps a separate _lastBannerDismissAt so the
+//     poll doesn't immediately re-show. Banner auto-revives when the
+//     teammate writes a NEWER state past the dismiss timestamp.
+
+function showOrUpdateTeammateLiveBanner(result) {
+  if (!result || !result.syncableState || !result.row) return;
+  // Respect dismiss timestamp: if user dismissed the banner and the
+  // teammate hasn't written anything newer since, stay hidden.
+  const dismissAt = state._lastBannerDismissAt || '';
+  const teammateAt = result.row.lastActive || '';
+  if (dismissAt && teammateAt && teammateAt <= dismissAt) return;
+
+  const cloud = result.syncableState;
+  const writerId = result.row.orbitLoginId || '';
+
+  // Derive teammate's display name. Try a few sources in priority:
+  //   1. moderator list (adminState.moderators) — has firstName/lastName
+  //   2. fallback to the orbitLoginId itself
+  let teammateName = writerId;
+  if (typeof adminState !== 'undefined' && Array.isArray(adminState.moderators)) {
+    const m = adminState.moderators.find(x =>
+      String(x.orbitLoginId || x.orbit_login_id || '').toLowerCase() === String(writerId).toLowerCase()
+    );
+    if (m) {
+      const fn = m.firstName || m.first_name || '';
+      const ln = m.lastName  || m.last_name  || '';
+      const combined = (fn + ' ' + ln).trim();
+      if (combined) teammateName = combined;
+    }
+  }
+
+  // Derive current station from the cloud state. Walk station keys
+  // in priority order to find the furthest-along station that has
+  // any non-default scenario work, OR rely on stationCompletedAt
+  // (newer station = more progress). Returns a human label like
+  // "Station 1" or "Setup (Station 0a)".
+  const stationLabel = (() => {
+    if (cloud.sessionCompletedAt) return 'session complete';
+    const sca = cloud.stationCompletedAt || {};
+    // Priority order matches the deriver in admin-side
+    // deriveLatestStatusFromSessionState — most-progressed first.
+    if (sca.Station3)        return 'Station 3';
+    if (sca.Station2)        return 'Station 2';
+    if (sca.Station1)        return 'Station 1';
+    if (sca.station0_house)  return 'Station 0c (House)';
+    if (sca.Station0b)       return 'Station 0b';
+    if (sca.Station0a)       return 'Station 0a';
+    if (cloud.arrivedAt)     return 'arrived';
+    return 'preparing';
+  })();
+
+  // Compose the "how long ago" suffix from the row's lastActive
+  // timestamp. Refreshes on each poll tick so the banner stays live.
+  let agoLabel = '';
+  if (teammateAt) {
+    const ms = Date.now() - new Date(teammateAt).getTime();
+    if (ms < 60000) agoLabel = 'just now';
+    else if (ms < 3600000) agoLabel = Math.floor(ms / 60000) + ' min ago';
+    else agoLabel = Math.floor(ms / 3600000) + ' hr ago';
+  }
+
+  let banner = document.getElementById('teammateLiveBanner');
+  const isNew = !banner;
+  if (isNew) {
+    banner = document.createElement('div');
+    banner.id = 'teammateLiveBanner';
+    banner.className = 'teammate-live-banner';
+    // Insert at the top of #app, just below the nav. nav is the first
+    // child, so we insert after it (or at index 1).
+    const app = document.getElementById('app');
+    if (!app) return;
+    const nav = app.querySelector('nav');
+    if (nav && nav.nextSibling) {
+      app.insertBefore(banner, nav.nextSibling);
+    } else {
+      app.appendChild(banner);
+    }
+  }
+  banner.innerHTML = `
+    <span class="teammate-live-banner-dot" aria-hidden="true"></span>
+    <div class="teammate-live-banner-text">
+      <div class="teammate-live-banner-title">${escapeHTML(teammateName)} is in session — ${escapeHTML(stationLabel)}</div>
+      <div class="teammate-live-banner-sub">Updated ${escapeHTML(agoLabel)}. Click Sync to view their progress in your app.</div>
+    </div>
+    <button type="button" class="teammate-live-banner-sync-btn" id="teammateLiveBannerSyncBtn">Sync now</button>
+    <button type="button" class="teammate-live-banner-dismiss" id="teammateLiveBannerDismissBtn" aria-label="Dismiss">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
+  `;
+  // Wire (only on new banner — re-rendered content doesn't need rebinding
+  // because we replaced innerHTML which created fresh nodes, so always
+  // rebind).
+  const syncBtn = document.getElementById('teammateLiveBannerSyncBtn');
+  const dismissBtn = document.getElementById('teammateLiveBannerDismissBtn');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      // Merge teammate state — same code path as the modal Accept
+      mergeTeammateState(result.syncableState);
+      state._lastSyncMergeAt = teammateAt || new Date().toISOString();
+      saveState();
+      hideTeammateLiveBanner();
+      if (typeof showToast === 'function') {
+        showToast(`Synced ${teammateName}'s progress`, 'success', 3500);
+      }
+      if (typeof renderApp === 'function') renderApp();
+      if (typeof applyAssignmentToEntryFields === 'function') applyAssignmentToEntryFields();
+    });
+  }
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      state._lastBannerDismissAt = teammateAt || new Date().toISOString();
+      saveState();
+      hideTeammateLiveBanner();
+    });
+  }
+}
+
+function hideTeammateLiveBanner() {
+  const banner = document.getElementById('teammateLiveBanner');
+  if (banner) banner.remove();
+}
+
 function showTeammateSyncModal(result) {
   // Avoid duplicate modals on rapid re-render
   if (document.getElementById('teammateSyncOverlay')) return;
