@@ -22327,11 +22327,18 @@ function renderAvailabilityHub() {
           `;
         }
         if (rows.length > 0 && fi.parsedFrom) {
+          const newest = fi.newestSubmittedAt
+            ? new Date(fi.newestSubmittedAt).toLocaleString()
+            : '';
+          const truncWarn = fi.likelyTruncated
+            ? `<div class="avail-hub-diag-detail" style="color:#f0a020;margin-top:4px;">⚠ The server returned exactly ${rows.length} rows — this is a Power Automate page cap, so newer submissions are likely being cut off. Enable pagination on the read flow's “List rows” action (see notes).</div>`
+            : '';
           return `
             <div class="avail-hub-diag avail-hub-diag-ok">
               <div class="avail-hub-diag-icon">●</div>
               <div class="avail-hub-diag-body">
-                <div class="avail-hub-diag-detail">Loaded <strong>${rows.length}</strong> row${rows.length === 1 ? '' : 's'} from server${fi.parsedFrom !== 'data.value' ? ' (parsed from <code>' + escapeHTML(fi.parsedFrom) + '</code>)' : ''}.</div>
+                <div class="avail-hub-diag-detail">Loaded <strong>${rows.length}</strong> row${rows.length === 1 ? '' : 's'} from server${fi.parsedFrom !== 'data.value' ? ' (parsed from <code>' + escapeHTML(fi.parsedFrom) + '</code>)' : ''}${newest ? ' · newest save in data: <strong>' + escapeHTML(newest) + '</strong>' : ''}.</div>
+                ${truncWarn}
               </div>
               <button class="btn btn-ghost avail-hub-diag-retry" id="availHubRetryBtn">Refresh</button>
             </div>
@@ -34775,10 +34782,22 @@ async function fetchAvailabilityFromPA() {
   }
   console.log('[Orbit] Fetching availability from PA…');
   try {
+    // Cache-bust the read so no layer (browser, proxy, PA/Graph edge) can
+    // hand back a stale snapshot — part of the "always load the latest from
+    // the database" fix. We set no-store on the request, send anti-cache
+    // headers, and include a unique nonce in the body (the flow ignores
+    // unknown body fields). We deliberately do NOT alter the URL query
+    // string: the read URL is SAS-signed, and adding params risks breaking
+    // the trigger signature — far worse than the staleness we're fixing.
     const res = await fetch(AVAILABILITY_PA_READ_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        'Pragma': 'no-cache',
+      },
+      body: JSON.stringify({ _nonce: Date.now() }),
     });
     info.httpStatus = res.status;
     console.log('[Orbit] Availability read HTTP status:', res.status);
@@ -34859,6 +34878,36 @@ async function fetchAvailabilityFromPA() {
         info.sampleKeys = Object.keys(sampleAfter).join(', ');
       }
     }
+    // Read-completeness diagnostics — surface what the SERVER actually
+    // returned so a "I don't see the change" problem is immediately
+    // attributable. We record the newest submittedAt in the response and
+    // the count of distinct (mod, week) rows, and flag a likely truncation
+    // when the row count lands on a typical Power-Automate page cap. If a
+    // freshly-saved row is missing here, the read flow isn't returning it
+    // (paging cap / wrong table / Graph caching) — not the client.
+    try {
+      let newestEpoch = null, newestStr = '';
+      const seen = new Set();
+      for (const r of rows) {
+        const e = _availBestEpoch(r);
+        if (e != null && (newestEpoch == null || e > newestEpoch)) {
+          newestEpoch = e;
+          newestStr = r.submittedAt || (r.availabilityId || '');
+        }
+        const id = String(r.orbitLoginId || '').toLowerCase().trim();
+        const wk = coerceWeekRange(r.weekRange);
+        if (id && wk) seen.add(id + '|' + wk);
+      }
+      info.uniqueModWeeks = seen.size;
+      info.newestSubmittedAt = newestEpoch != null ? new Date(newestEpoch).toISOString() : '';
+      // Common PA "List rows" page caps. If we land exactly on one, the
+      // read is almost certainly truncated and newer rows are missing.
+      info.likelyTruncated = [256, 500, 512, 1000, 2000, 5000].indexOf(rows.length) !== -1;
+      if (info.likelyTruncated) {
+        console.warn(`[Orbit] Availability read returned exactly ${rows.length} rows — likely a Power Automate page cap. Newer rows may be missing. Enable pagination on the read flow's "List rows" action.`);
+      }
+      console.log(`[Orbit] Availability read: ${rows.length} rows, ${seen.size} unique mod-weeks, newest=${info.newestSubmittedAt}`);
+    } catch (_) {}
     // Merge in any locally-saved rows the server read hasn't caught up to
     // yet (read-after-write lag / PA paging) so a just-saved availability
     // doesn't vanish on reconcile. Once the server returns an equal/newer
