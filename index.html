@@ -22241,10 +22241,24 @@ function renderAssignment() {
 // submission for any mod.
 function renderAvailabilityHub() {
   if (!adminState.moderators) loadModerators(false);
-  if (!adminState.availability) {
-    // Hydrate from cache + kick off background fetch
-    adminState.availability = loadAvailabilityCache();
-    if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
+  // Always refresh from the server on entry (throttled) so a second admin
+  // sees saves made by others, not just their stale first-load snapshot.
+  refreshAvailabilityOnView();
+  // Light poll while the hub is visible so other admins' saves appear
+  // within ~30s without a manual refresh. Self-clears when the hub closes.
+  if (!adminState._availPollTimer) {
+    adminState._availPollTimer = setInterval(() => {
+      const visible = adminState.tab === 'moderators' && adminState.modView === 'availability';
+      if (!visible) {
+        clearInterval(adminState._availPollTimer);
+        adminState._availPollTimer = null;
+        return;
+      }
+      // Don't refetch/re-render underneath an open submit modal — the admin
+      // is mid-edit; the next tick after they close it will catch up.
+      if (document.querySelector('.avail-admin-submit-overlay')) return;
+      refreshAvailabilityOnView({ force: true });
+    }, 30000);
   }
   // Default the focused week to "this week" the first time we render
   if (!adminState._availWeekStart) {
@@ -25430,10 +25444,8 @@ function bindAssignmentEvents() {
 // ============================================================
 function openScheduleByModPicker() {
   if (!adminState.moderators) loadModerators(false);
-  if (!adminState.availability) {
-    adminState.availability = loadAvailabilityCache();
-    if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
-  }
+  // Refresh availability on open so the picker reflects other admins' saves.
+  refreshAvailabilityOnView();
 
   const state = { selectedModId: null, weekStartIdx: 0 };
 
@@ -25666,12 +25678,10 @@ function renderTeamModal() {
   const isEdit = m.kind === 'editTeam';
   const moderators = adminState.moderators || [];
 
-  // Lazy-load availability data — needed for the week-strip on each
-  // mod and the team-overlap panel. Cheap if already loaded.
-  if (!adminState.availability) {
-    adminState.availability = loadAvailabilityCache();
-    if (typeof fetchAvailabilityFromPA === 'function') fetchAvailabilityFromPA();
-  }
+  // Lazy-load + refresh availability data — needed for the week-strip on
+  // each mod and the team-overlap panel. Refreshing on open (throttled)
+  // ensures booking/team scheduling reflects other admins' latest saves.
+  refreshAvailabilityOnView();
 
   // Build the 7 days of the previewed week from the modal anchor.
   // Anchor is always a Monday (set at openTeamModal). Each day gets a
@@ -34703,6 +34713,44 @@ function mergePendingLocalAvailability(serverRows) {
     console.log(`[Orbit] Availability merge: re-added ${kept} locally-saved row(s) the server read did not yet include.`);
   }
   return result;
+}
+
+// Refresh availability from the server on view-entry, throttled so rapid
+// re-renders don't spam Power Automate. Always hydrates from the local
+// cache first so the UI has something to paint immediately, THEN kicks off
+// a background re-read.  (1.2.060326 fix — "other admins can't see what I
+// saved.")
+//
+// WHY THIS IS NEEDED: the availability hub and the two scheduling entry
+// points (schedule-by-mod, team create/edit) used to fetch from the server
+// ONLY when `adminState.availability` was empty — i.e. once per browser
+// session. After that first load they rendered the in-memory snapshot and
+// never re-read. So a second admin who had opened the hub kept seeing their
+// stale first-load data; another admin's save (which lands in Excel fine)
+// never reached their screen until a hard page reload. The author still saw
+// their own save because of the optimistic local cache. Refreshing on every
+// view-entry (plus the light poll in renderAvailabilityHub) closes that gap.
+let _availLastFetchTs = 0;
+let _availFetchInFlight = false;
+const AVAIL_REFRESH_THROTTLE_MS = 8000;
+function refreshAvailabilityOnView(opts) {
+  opts = opts || {};
+  // Hydrate from cache immediately so first paint isn't blank.
+  if (typeof adminState !== 'undefined' && !adminState.availability) {
+    adminState.availability = loadAvailabilityCache();
+  }
+  if (!AVAILABILITY_PA_READ_URL) return;
+  const now = Date.now();
+  if (!opts.force && (now - _availLastFetchTs) < AVAIL_REFRESH_THROTTLE_MS) return;
+  if (_availFetchInFlight) return;
+  _availLastFetchTs = now;
+  _availFetchInFlight = true;
+  // fetchAvailabilityFromPA already re-renders the hub on completion, and
+  // merges in any locally-pending rows, so we just fire it.
+  Promise.resolve()
+    .then(() => fetchAvailabilityFromPA())
+    .catch(() => { /* errors surfaced via adminState._availFetchInfo */ })
+    .finally(() => { _availFetchInFlight = false; });
 }
 
 // Fetch all availability rows from PA → cache locally for offline browsing.
