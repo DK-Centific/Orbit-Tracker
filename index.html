@@ -22272,9 +22272,12 @@ function renderAvailabilityHub() {
     });
   }
 
-  // For each moderator, look up their row for this week (if any)
+  // For each moderator, look up their row for this week (if any).
+  // .trim() matches the key shape indexLatestAvailability builds — without
+  // it, a stray space/case difference between the moderator directory and
+  // the availability row would silently hide an existing row.
   const modRows = mods.map(m => {
-    const key = String(m.orbitLoginId || '').toLowerCase() + '|' + weekStart;
+    const key = String(m.orbitLoginId || '').toLowerCase().trim() + '|' + weekStart;
     const row = idx.get(key);
     return { mod: m, row };
   });
@@ -22430,7 +22433,7 @@ function renderAvailabilityHub() {
     el.addEventListener('click', () => {
       const id = el.dataset.availViewRow;
       const week = el.dataset.availViewWeek;
-      const row = idx.get(id.toLowerCase() + '|' + week);
+      const row = idx.get(id.toLowerCase().trim() + '|' + week);
       if (row) showAvailabilityRowDetail(row);
     });
   });
@@ -22596,7 +22599,7 @@ function openAdminAvailabilitySubmit(modId) {
   // decide UI affordances ("updates existing row" vs "creates new row").
   const loadWeekFromCache = () => {
     const idx = indexLatestAvailability(adminState.availability || []);
-    const found = idx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
+    const found = idx.get(String(submitState.modId).toLowerCase().trim() + '|' + submitState.weekStart);
     if (found) {
       DAY_KEYS.forEach(k => {
         const parsed = parseAvailabilityCell(found[k]);
@@ -22651,7 +22654,7 @@ function openAdminAvailabilitySubmit(modId) {
     // in the subtitle. Cheap operation — indexLatestAvailability is
     // O(n) over the cache and the cache is small.
     const existingIdx = indexLatestAvailability(adminState.availability || []);
-    const existing = existingIdx.get(String(submitState.modId).toLowerCase() + '|' + submitState.weekStart);
+    const existing = existingIdx.get(String(submitState.modId).toLowerCase().trim() + '|' + submitState.weekStart);
 
     // Week-nav state: disable the Prev arrow when we'd cross before this
     // week's Monday. Matches the mod app's restriction — historical
@@ -23030,11 +23033,14 @@ function openAdminAvailabilitySubmit(modId) {
     submitState.submitting = false;
 
     // Optimistic local-cache merge regardless of POST outcome — the
-    // admin's intent is captured immediately. indexLatestAvailability
-    // uses submittedAt to pick the newest row when the server eventually
-    // confirms, so this is safe.
+    // admin's intent is captured immediately. The cached copy is tagged
+    // `_localPending` so the next server reconcile re-adds it until the
+    // server actually returns this row (or a newer one for the same
+    // mod/week) — this is what stops a just-saved availability from
+    // disappearing on the 500ms reconcile. The tag lives ONLY on the cache
+    // copy, never on `row` (which may still be queued + POSTed verbatim).
     const cache = loadAvailabilityCache();
-    cache.push(row);
+    cache.push(Object.assign({}, row, { _localPending: true, _localPendingAt: Date.now() }));
     saveAvailabilityCache(cache);
     adminState.availability = cache;
 
@@ -25454,7 +25460,7 @@ function openScheduleByModPicker() {
           const isSelected = String(state.selectedModId || '').toLowerCase() === id.toLowerCase();
           let totalAvail = 0;
           for (const w of weeks) {
-            const row = idx.get(id.toLowerCase() + '|' + w.ymd);
+            const row = idx.get(id.toLowerCase().trim() + '|' + w.ymd);
             if (!row) continue;
             for (const k of DAY_KEYS) {
               if (_availIsYes(row[k])) totalAvail++;
@@ -25481,7 +25487,7 @@ function openScheduleByModPicker() {
     } else {
       const todayStr = ymdLocal(new Date());
       rightPaneHTML = weeks.map(w => {
-        const row = idx.get(String(state.selectedModId).toLowerCase() + '|' + w.ymd);
+        const row = idx.get(String(state.selectedModId).toLowerCase().trim() + '|' + w.ymd);
         const wkLabel = weekRangeLabel(w.ymd);
         const cellsHTML = DAY_KEYS.map((k, i) => {
           const d = addDays(w.monday, i);
@@ -34555,13 +34561,13 @@ async function submitAvailability() {
   }
 
   // Optimistically merge the row into the local cache regardless of whether
-  // the POST succeeded — the user's intent is captured, and indexLatestAvailability
-  // will use submittedAt to keep the most recent row when the server eventually
-  // confirms. This ensures hydration sees the row immediately so the form
-  // reflects what the operator just told us. (Same pattern as the admin
-  // submit-on-behalf-of flow.)
+  // the POST succeeded — the user's intent is captured. The cached copy is
+  // tagged `_localPending` so the next server reconcile re-adds it until the
+  // server returns this row (or a newer one for the same mod/week), which
+  // stops a just-saved availability from disappearing on reconcile. The tag
+  // lives only on the cache copy, never on `row` (queued/POSTed verbatim).
   const cache = loadAvailabilityCache();
-  cache.push(row);
+  cache.push(Object.assign({}, row, { _localPending: true, _localPendingAt: Date.now() }));
   saveAvailabilityCache(cache);
   if (typeof adminState !== 'undefined') adminState.availability = cache;
   if (posted) {
@@ -34629,6 +34635,74 @@ function loadAvailabilityCache() {
 function saveAvailabilityCache(rows) {
   try { localStorage.setItem(AVAILABILITY_CACHE_KEY, JSON.stringify(rows)); }
   catch (e) {}
+}
+
+// Merge locally-saved-but-not-yet-confirmed availability rows into a fresh
+// server response.  (1.2.060326 fix — "I save availability and it
+// disappears, but the data IS in Excel.")
+//
+// WHY THIS IS NEEDED: every save APPENDS a new row to the Excel table
+// (nothing is updated in place), and the read path used to OVERWRITE the
+// local cache with whatever the server returned. But a read fired ~500ms
+// after the write often does NOT yet contain the just-appended row —
+// either because of read-after-write lag, or because PA's "List rows"
+// returns a bounded page and freshly-appended rows sit at the bottom,
+// outside that page. So the reconcile wiped the row the admin just saved
+// and it vanished from the UI even though Excel had it.
+//
+// THE FIX: when the app writes a row locally it tags the cached copy with
+// `_localPending`. On every server read we re-add any pending row that the
+// server hasn't caught up to yet — i.e. the server has NO row for that
+// (mod, week) OR its newest row for that (mod, week) is OLDER (by the
+// availabilityId epoch) than the local one. As soon as the server returns
+// an equal-or-newer row, the pending copy is dropped and the canonical
+// server row takes over — seamless, no duplicate. Pending rows are
+// de-duplicated to the newest one per (mod, week) and expire after a TTL
+// so the set can't grow unbounded.
+const AVAIL_PENDING_TTL_MS = 30 * 60 * 1000; // 30 min safety cap
+function mergePendingLocalAvailability(serverRows) {
+  const server = Array.isArray(serverRows) ? serverRows.slice() : [];
+  let prev = [];
+  try { prev = loadAvailabilityCache() || []; } catch (_) { prev = []; }
+
+  // Collect the newest pending row per (mod|week) from the previous cache.
+  const pendingByKey = new Map();
+  const now = Date.now();
+  for (const r of prev) {
+    if (!r || !r._localPending) continue;
+    if (r._localPendingAt && (now - r._localPendingAt) > AVAIL_PENDING_TTL_MS) continue; // expired
+    const id = String(r.orbitLoginId || '').toLowerCase().trim();
+    const week = coerceWeekRange(r.weekRange);
+    if (!id || !week) continue;
+    const key = id + '|' + week;
+    const epoch = _availBestEpoch(r);
+    const cur = pendingByKey.get(key);
+    if (!cur || (epoch != null && (cur.epoch == null || epoch >= cur.epoch))) {
+      pendingByKey.set(key, { row: r, epoch });
+    }
+  }
+  if (pendingByKey.size === 0) return server;
+
+  // Index the server's newest row per (mod|week) so we can tell whether the
+  // server has caught up to each pending write.
+  const serverIdx = indexLatestAvailability(server);
+  const result = server.slice();
+  let kept = 0;
+  for (const [key, p] of pendingByKey) {
+    const serverRow = serverIdx.get(key);
+    const serverEpoch = serverRow ? _availBestEpoch(serverRow) : null;
+    const localEpoch = p.epoch;
+    // Keep the pending row only while the server is behind it.
+    const serverCaughtUp = serverRow && (
+      localEpoch == null ||
+      (serverEpoch != null && serverEpoch >= localEpoch)
+    );
+    if (!serverCaughtUp) { result.push(p.row); kept++; }
+  }
+  if (kept > 0) {
+    console.log(`[Orbit] Availability merge: re-added ${kept} locally-saved row(s) the server read did not yet include.`);
+  }
+  return result;
 }
 
 // Fetch all availability rows from PA → cache locally for offline browsing.
@@ -34737,15 +34811,20 @@ async function fetchAvailabilityFromPA() {
         info.sampleKeys = Object.keys(sampleAfter).join(', ');
       }
     }
-    saveAvailabilityCache(rows);
+    // Merge in any locally-saved rows the server read hasn't caught up to
+    // yet (read-after-write lag / PA paging) so a just-saved availability
+    // doesn't vanish on reconcile. Once the server returns an equal/newer
+    // row for that (mod, week) the pending copy is dropped automatically.
+    const mergedRows = mergePendingLocalAvailability(rows);
+    saveAvailabilityCache(mergedRows);
     if (typeof adminState !== 'undefined') {
-      adminState.availability = rows;
+      adminState.availability = mergedRows;
       // Re-render if the hub view is currently visible (now lives inside Moderators)
       if (adminState.tab === 'moderators' && adminState.modView === 'availability') {
         if (typeof renderAvailabilityHub === 'function') renderAvailabilityHub();
       }
     }
-    return rows;
+    return mergedRows;
   } catch (e) {
     console.warn('[Orbit] Availability read error (network/CORS):', e.message);
     info.error = e.message || String(e);
