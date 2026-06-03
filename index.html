@@ -8322,6 +8322,29 @@ button.perf-stat-chip.scheduled.active {
   to { transform: rotate(360deg); }
 }
 
+/* Save / push-progress button — mirrors the refresh button's interaction
+   feedback. While a push is in flight the icon gently pulses; on a
+   successful push it flashes the accent colour briefly. The .offline
+   modifier tints it amber so the operator can see at a glance that data
+   is sitting in the local queue waiting for a connection. */
+#navSaveBtn { transition: color 0.18s ease, transform 0.18s ease; }
+#navSaveBtn:hover { color: var(--accent-ink); }
+#navSaveBtn:active { transform: scale(0.92); }
+#navSaveBtn.saving { color: var(--accent-ink); }
+#navSaveBtn.saving svg { animation: nav-save-pulse 0.9s ease-in-out infinite; }
+#navSaveBtn.saved svg { animation: nav-save-pop 0.5s ease; }
+#navSaveBtn.saved { color: var(--accent-ink); }
+#navSaveBtn.offline { color: #f0a020; }
+@keyframes nav-save-pulse {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50%      { transform: translateY(-2px); opacity: 0.55; }
+}
+@keyframes nav-save-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
 
 /* =========================================================
    SCENARIO STATUS BUTTONS — replaces the dropdown
@@ -11090,6 +11113,25 @@ button.perf-stat-chip.scheduled.active {
           <path d="M2.5 6a5.5 5.5 0 0 1 9.5-2.5L13.5 5M13.5 10A5.5 5.5 0 0 1 4 12.5L2.5 11M2.5 2.5V5h2.5M13.5 13.5V11h-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
+      <!-- Save / push progress — manual push of the operator's current
+           progress to the cloud (Power Automate). Progress is ALWAYS saved
+           locally on every interaction and auto-synced in the background;
+           this button is for the offline case (or whenever the operator
+           wants the reassurance of an explicit push) so they can flush
+           locally-saved progress the moment a connection is back. Sits
+           right after Refresh — the two "sync with the cloud" actions live
+           together. Icon: a cloud with an up-arrow (upload to cloud). -->
+      <button class="icon-btn" id="navSaveBtn" aria-label="Save / push progress to cloud"
+              title="Save progress to cloud (push now)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <!-- Cloud outline -->
+          <path d="M4.4 12.5a2.9 2.9 0 0 1-.4-5.77 3.4 3.4 0 0 1 6.56-1.18A2.75 2.75 0 0 1 12.2 12.5"
+                stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Up-arrow (push) -->
+          <path d="M8 13.6V7.4M8 7.4L6 9.4M8 7.4l2 2"
+                stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="menuBtn" aria-label="Open menu">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <circle cx="3" cy="8" r="1.4" fill="currentColor"/>
@@ -11455,7 +11497,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.2.052825';
+const APP_VERSION = '1.2.060326';
 // Rigs + cameras per rig. Asymmetric layout: Rig A has 5 cameras, Rig B
 // has 3. Camera ID convention is `${rig}_<position>` where position is
 // a 2-letter code: first letter = T(op) / L(ow) for vertical row, second
@@ -12019,6 +12061,89 @@ function getOverallProgress() {
 }
 
 /* =====================================================================
+   FOCUS-PRESERVATION GUARD  (1.2.060326)
+   =====================================================================
+   THE BUG IT FIXES — "the keyboard disappears every few seconds while I
+   type a note." Rebuilding a container via innerHTML destroys whatever
+   <input>/<textarea> is focused inside it; on mobile that collapses the
+   on-screen keyboard and kicks the operator out of the field mid-word.
+   Several BACKGROUND paths rebuild a container while the user may be
+   typing:
+     - the scenario-notes debounce (renderApp, fires ~400ms after each
+       typing pause — the most frequent trigger, felt as "every few
+       seconds")
+     - the SessionState poll piggy-backing refreshModAssignments → renderApp
+       (~15s while a session is active)
+     - the teammate auto-sync merge → renderApp
+     - the same poll re-rendering the open mod calendar (renderModCalBody)
+     - the admin Assignment tab's 60s poll (renderAssignment)
+
+   THE FIX — a guarded re-render. If the user is actively editing a text
+   field inside the container we're about to rebuild, we DON'T rebuild
+   now. We stash the render fn and attach a one-shot focusout listener
+   that re-runs it once focus actually leaves every editable field. The
+   typed value is never lost: the field handlers already saveState() on
+   every keystroke, so the deferred rebuild paints the latest value.
+
+   USER-INITIATED renders are unaffected: tapping a status button, a
+   stepper, Submit, etc. moves focus OFF the text field first, so
+   document.activeElement is no longer an editable element → the guard
+   returns false → the render runs immediately, exactly as before.
+   ===================================================================== */
+// Is `el` a text-entry field whose focus (and the mobile keyboard) we
+// must protect across a re-render? Checkboxes / radios / buttons / selects
+// don't lose typed data on rebuild, so they're intentionally excluded.
+function isEditableTextField(el) {
+  if (!el) return false;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'INPUT') {
+    const t = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'search', 'url', 'tel', 'email', 'password',
+            'number', 'date', 'time', 'datetime-local', 'month', 'week'
+           ].indexOf(t) !== -1;
+  }
+  return false;
+}
+// True when the focused element is a text field living inside `container`.
+function isEditingWithin(container) {
+  if (!container) return false;
+  const el = document.activeElement;
+  if (!isEditableTextField(el)) return false;
+  return container.contains(el);
+}
+// Per-container bookkeeping for deferred renders, keyed by a short string.
+const _deferredRenderFns   = {};   // key -> the render fn to re-run on blur
+const _deferredFocusBound  = {};   // key -> true while a focusout listener is live
+// Returns TRUE if the render was DEFERRED (caller must bail out now);
+// FALSE if it's safe to render immediately.
+function deferRenderWhileEditing(container, key, renderFn) {
+  if (!isEditingWithin(container)) return false;
+  // Remember the latest render request for this container.
+  _deferredRenderFns[key] = renderFn;
+  if (!_deferredFocusBound[key]) {
+    _deferredFocusBound[key] = true;
+    const handler = function () {
+      // focusout fires BEFORE focus settles on the next target, so wait a
+      // tick and re-check whether focus actually left ALL editable fields
+      // in this container (the user may have just tabbed to another field).
+      setTimeout(function () {
+        if (isEditingWithin(container)) return;   // still typing somewhere — keep waiting
+        document.removeEventListener('focusout', handler, true);
+        _deferredFocusBound[key] = false;
+        const fn = _deferredRenderFns[key];
+        _deferredRenderFns[key] = null;
+        if (typeof fn === 'function') fn();        // safe now — field is blurred
+      }, 60);
+    };
+    // Capture phase on document so the listener survives inner-HTML rebuilds
+    // of the container's children (the container element itself persists).
+    document.addEventListener('focusout', handler, true);
+  }
+  return true;
+}
+
+/* =====================================================================
    RENDER
    ===================================================================== */
 // Track the currently-visible "view" so we can distinguish navigation
@@ -12026,6 +12151,9 @@ function getOverallProgress() {
 // camera, ticking equipment, etc.). We only animate on real navigation.
 let _lastRenderedView = null;
 function renderApp() {
+  // Focus guard — never rebuild #content while the operator is typing in a
+  // scenario-notes (or any) text field; defer until they leave the field.
+  if (deferRenderWhileEditing(document.getElementById('app'), 'app', renderApp)) return;
   renderUserChip();
   renderNavTeamChip();
   renderSidebar();
@@ -21926,6 +22054,11 @@ function isImmutableAssignmentStatus(s) {
 
 /* ----------- Render Assignment view ----------- */
 function renderAssignment() {
+  // Focus guard — the Assignment tab's 60s poll (and the SessionState-rows
+  // landing) re-render #subtabBody; defer if an admin is typing in any text
+  // field inside the admin app (search box, notes) so the keyboard / caret
+  // isn't lost mid-word.
+  if (deferRenderWhileEditing(document.getElementById('adminApp'), 'adminApp', renderAssignment)) return;
   // Sync top-level tab badge count — show only active (booked + notified)
   // assignments, not cancelled ones. Cancelled bookings remain visible in
   // the calendar as small dots, but the badge reflects "what's actually
@@ -30576,11 +30709,16 @@ const scheduleSessionStateSync = triggerSessionStateSync;
 // timer, from page-unload, and from explicit user actions where the
 // operator would want their progress flushed RIGHT NOW (e.g., before
 // closing the wrap-up modal).
+// Returns a small status object so explicit callers (e.g. the nav-bar
+// Save button) can report accurate feedback. Background callers (debounce
+// timer, page-unload, wrap-up confirm) ignore the return value, so this
+// is additive and safe. Shape: { ok, reason } where reason ∈
+// {written, nochange, inflight, notconfigured, noassignment, error}.
 async function flushSessionStateSync() {
-  if (!SESSIONSTATE_PA_WRITE_URL) return;
-  if (!state || !state.username || !state.modProfile) return;
+  if (!SESSIONSTATE_PA_WRITE_URL) return { ok: false, reason: 'notconfigured' };
+  if (!state || !state.username || !state.modProfile) return { ok: false, reason: 'noassignment' };
   const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
-  if (!asgn || !asgn.id) return;
+  if (!asgn || !asgn.id) return { ok: false, reason: 'noassignment' };
 
   // Re-entry guard: if a write is already in flight, mark pending and
   // let the in-flight one finish first. After it resolves, it checks
@@ -30588,10 +30726,12 @@ async function flushSessionStateSync() {
   // intervening activity.
   if (_sessionStateSyncState.inflight) {
     _sessionStateSyncState.pendingAgain = true;
-    return;
+    return { ok: false, reason: 'inflight' };
   }
   _sessionStateSyncState.inflight = true;
 
+  // Tracks the outcome to return after the finally block runs.
+  let outcome = { ok: false, reason: 'error' };
   try {
     const orbitId  = state.modProfile.orbitLoginId;
     const team     = (adminState.teams || []).find(t => t.id === asgn.teamId);
@@ -30609,7 +30749,7 @@ async function flushSessionStateSync() {
     if (_sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
         && _sessionStateSyncState.lastSyncedStateJson === stateJson) {
       _sessionStateSyncState.inflight = false;
-      return;
+      return { ok: true, reason: 'nochange' };
     }
 
     const payload = {
@@ -30652,6 +30792,9 @@ async function flushSessionStateSync() {
       if (res && res.ok) {
         _sessionStateSyncState.lastSyncedAsgnId = String(asgn.id);
         _sessionStateSyncState.lastSyncedStateJson = stateJson;
+        outcome = { ok: true, reason: 'written' };
+      } else {
+        outcome = { ok: false, reason: 'error' };
       }
     } else {
       // Legacy fallback for older builds without fetchWithRetry.
@@ -30662,6 +30805,9 @@ async function flushSessionStateSync() {
       });
       if (!res.ok) {
         console.warn('[Orbit] SessionState write failed:', res.status);
+        outcome = { ok: false, reason: 'error' };
+      } else {
+        outcome = { ok: true, reason: 'written' };
       }
     }
   } catch (e) {
@@ -30669,6 +30815,7 @@ async function flushSessionStateSync() {
     // best-effort; localStorage is the authoritative local copy and
     // the next debounce cycle will retry. Log for debugging.
     console.warn('[Orbit] SessionState write error:', e && e.message);
+    outcome = { ok: false, reason: 'error' };
   } finally {
     _sessionStateSyncState.inflight = false;
     if (_sessionStateSyncState.pendingAgain) {
@@ -30678,6 +30825,7 @@ async function flushSessionStateSync() {
       scheduleSessionStateSync();
     }
   }
+  return outcome;
 }
 
 // Fetch SessionState rows from the cloud. Returns an array (possibly
@@ -33863,6 +34011,10 @@ function closeModCalendar() {
 function renderModCalBody() {
   const body = document.getElementById('modCalBody');
   if (!body) return;
+  // Focus guard — the SessionState poll re-renders the open calendar via
+  // refreshModAssignments; defer if the mod is typing availability notes
+  // (#mcAvailNotes) so the keyboard doesn't collapse mid-word.
+  if (deferRenderWhileEditing(document.getElementById('modCalOverlay'), 'modCal', renderModCalBody)) return;
   if (modCalState.tab === 'schedule') {
     body.innerHTML = renderModCalScheduleHTML();
     bindModCalSchedule(body);
@@ -36534,6 +36686,106 @@ function init() {
         toast('Schedule refreshed');
       } finally {
         setTimeout(() => navRefreshBtn.classList.remove('refreshing'), 600);
+      }
+    });
+  }
+
+  // Save / push-progress button. Progress is ALWAYS saved locally on every
+  // interaction and auto-synced in the background; this is the explicit
+  // "push now" affordance — the key use case being the operator who lost
+  // connection mid-session, kept logging locally, and wants to flush
+  // everything the moment they're back online. It pushes BOTH the
+  // SessionState snapshot (scenario progress) AND any queued offline
+  // worklog events, then reports exactly what happened.
+  const navSaveBtn = document.getElementById('navSaveBtn');
+  if (navSaveBtn) {
+    navSaveBtn.addEventListener('click', async () => {
+      // Re-entrancy guard — ignore taps while a push is already running.
+      if (navSaveBtn.classList.contains('saving')) return;
+
+      // Always commit the very latest local state first so whatever we
+      // push (and whatever survives a reload) is current.
+      try { if (typeof saveState === 'function') saveState(); } catch (_) {}
+
+      // Count any offline worklog events still waiting to go up — used for
+      // accurate messaging ("pushed N queued updates").
+      let queuedBefore = 0;
+      try { queuedBefore = (typeof loadSyncQueue === 'function') ? loadSyncQueue().length : 0; } catch (_) {}
+
+      const online = (typeof navigator !== 'undefined' && 'onLine' in navigator)
+        ? navigator.onLine : true;
+
+      navSaveBtn.classList.remove('saved', 'offline');
+      navSaveBtn.classList.add('saving');
+
+      // OFFLINE: don't fire network calls that will just time out. The data
+      // is already safe in localStorage + the worklog queue; reassure the
+      // operator and tint the button amber so the pending state is visible.
+      if (!online) {
+        navSaveBtn.classList.remove('saving');
+        navSaveBtn.classList.add('offline');
+        const msg = queuedBefore > 0
+          ? `Saved locally — ${queuedBefore} update${queuedBefore === 1 ? '' : 's'} will push when you\u2019re back online`
+          : 'Saved locally — will push when you\u2019re back online';
+        toast(msg);
+        return;
+      }
+
+      try {
+        // 1) Push the SessionState snapshot (scenario progress / notes).
+        let ssResult = { ok: false, reason: 'notconfigured' };
+        if (typeof flushSessionStateSync === 'function') {
+          ssResult = await flushSessionStateSync() || { ok: false, reason: 'error' };
+        }
+        // 2) Flush any queued offline worklog events.
+        if (typeof flushSyncQueue === 'function') {
+          await flushSyncQueue();
+        }
+        let queuedAfter = 0;
+        try { queuedAfter = (typeof loadSyncQueue === 'function') ? loadSyncQueue().length : 0; } catch (_) {}
+
+        // Decide the message from what actually happened.
+        let msg;
+        if (queuedAfter > 0) {
+          // Some worklog events couldn't be delivered — likely a flaky
+          // connection. They stay queued and retry automatically.
+          navSaveBtn.classList.add('offline');
+          msg = `Couldn\u2019t reach the server — ${queuedAfter} update${queuedAfter === 1 ? '' : 's'} still queued, will retry`;
+        } else if (ssResult.ok && ssResult.reason === 'written') {
+          navSaveBtn.classList.add('saved');
+          msg = queuedBefore > 0
+            ? `Progress pushed to cloud · ${queuedBefore} queued update${queuedBefore === 1 ? '' : 's'} sent`
+            : 'Progress pushed to cloud';
+        } else if (ssResult.ok && ssResult.reason === 'nochange') {
+          navSaveBtn.classList.add('saved');
+          msg = queuedBefore > 0
+            ? `Up to date · ${queuedBefore} queued update${queuedBefore === 1 ? '' : 's'} sent`
+            : 'Progress already up to date';
+        } else if (ssResult.reason === 'noassignment') {
+          // No active session/assignment to push (e.g. before "I've
+          // arrived"). Local state is still saved.
+          navSaveBtn.classList.add('saved');
+          msg = 'Saved locally — no active session to push yet';
+        } else if (ssResult.reason === 'notconfigured') {
+          navSaveBtn.classList.add('saved');
+          msg = 'Saved locally';
+        } else if (ssResult.reason === 'inflight') {
+          navSaveBtn.classList.add('saved');
+          msg = 'Sync already in progress — your progress is saved';
+        } else {
+          navSaveBtn.classList.add('offline');
+          msg = 'Saved locally — couldn\u2019t reach the server, will retry';
+        }
+        toast(msg);
+      } catch (e) {
+        console.warn('[Orbit] Manual save error:', e && e.message);
+        navSaveBtn.classList.add('offline');
+        toast('Saved locally — couldn\u2019t reach the server, will retry');
+      } finally {
+        navSaveBtn.classList.remove('saving');
+        // Clear the transient success/offline tint after a moment so the
+        // button returns to its neutral resting state.
+        setTimeout(() => navSaveBtn.classList.remove('saved', 'offline'), 2200);
       }
     });
   }
