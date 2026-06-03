@@ -34855,14 +34855,71 @@ function coerceWeekRange(val) {
   return String(val).slice(0, 10);
 }
 
+// Recency helpers (1.2.060326 fix) — see indexLatestAvailability below.
+// Extract the epoch-ms baked into an availabilityId ('avail_<ms>_<rand>').
+// Both the operator AND the admin submit paths mint IDs this way, and the
+// ID is stored as TEXT, so it survives the Excel round-trip byte-for-byte.
+// This is the most reliable recency signal we have.
+function _availIdEpoch(availabilityId) {
+  if (availabilityId == null) return null;
+  const m = String(availabilityId).match(/avail[_-](\d{11,})/i);
+  return m ? Number(m[1]) : null;
+}
+// Parse submittedAt into epoch ms. Handles ISO 8601 (what we write), the
+// localized datetime strings PA's Excel connector frequently returns
+// ("6/3/2026 4:04:42 PM"), and bare Excel serial day-numbers.
+function _availSubmittedEpoch(submittedAt) {
+  if (submittedAt == null || submittedAt === '') return null;
+  const s = String(submittedAt).trim();
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    // Looks numeric — likely an Excel serial date (days since 1899-12-30)
+    // if it falls in a plausible range. Otherwise treat as raw epoch ms.
+    const n = Number(s);
+    if (n > 20000 && n < 80000) return Math.round((n - 25569) * 86400000); // serial -> epoch ms
+    if (n > 1e12) return n; // already epoch ms
+  }
+  const t = Date.parse(s);
+  return isNaN(t) ? null : t;
+}
+// Best available epoch for a row: prefer the ID epoch, fall back to a
+// parsed submittedAt. Returns null when neither is usable.
+function _availBestEpoch(row) {
+  const idE = _availIdEpoch(row && row.availabilityId);
+  if (idE != null && !isNaN(idE)) return idE;
+  const subE = _availSubmittedEpoch(row && row.submittedAt);
+  if (subE != null && !isNaN(subE)) return subE;
+  return null;
+}
+
 // Get the LATEST submission per (orbitLoginId, weekRange).
-// When the same mod submits multiple times for the same week, the row with
-// the most recent submittedAt wins. Returns Map<"${id}|${weekRange}", row>.
+// When the same mod has multiple rows for the same week (every submit —
+// operator OR admin — appends a brand-new row; nothing is ever updated in
+// place), the NEWEST row must win so an admin's change/removal sticks
+// instead of an older row "re-appearing".
+//
+// THE BUG THIS FIXES: the old logic chose the winner by string-comparing
+// `submittedAt` (`r.submittedAt > prev.submittedAt`). That's unreliable —
+// PA/Excel hands `submittedAt` back in inconsistent, non-lexically-sortable
+// formats (ISO from optimistic local writes, "M/D/YYYY h:mm AM/PM" or an
+// Excel serial number from server reads), and a freshly-written ISO string
+// ("2026-…") can string-compare LESS than a re-read "6/3/2026 …". So an
+// older row won, and the admin's edit reverted on the next reconcile.
+//
+// THE FIX: rank rows by a real numeric epoch derived from the most
+// reliable source (the epoch inside availabilityId, then a properly parsed
+// submittedAt), with the row's position in the source array (Excel append
+// order = chronological) as the final tiebreaker. All availability
+// consumers — the hub, the admin submit modal's pre-fill, the schedule-by-
+// mod picker, team-creation/booking advisory dots, and the day/hour
+// lookups — funnel through here, so the corrected "latest" reflects
+// everywhere at once. Returns Map<"${id}|${weekRange}", row>.
 function indexLatestAvailability(rows) {
-  const m = new Map();
+  const best = new Map();   // key -> { row, epoch (number|null), idx }
   let dropped = 0;
   const droppedSamples = [];
-  for (const r of (rows || [])) {
+  const list = rows || [];
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
     if (!r || typeof r !== 'object') { dropped++; continue; }
     const id = r.orbitLoginId;
     if (!id) {
@@ -34880,11 +34937,25 @@ function indexLatestAvailability(rows) {
     // Keep the canonical week back on the row so downstream consumers see it
     r.weekRange = week;
     const key = String(id).toLowerCase().trim() + '|' + week;
-    const prev = m.get(key);
-    if (!prev || (r.submittedAt && (!prev.submittedAt || r.submittedAt > prev.submittedAt))) {
-      m.set(key, r);
+    const epoch = _availBestEpoch(r);
+    const prev = best.get(key);
+    let take;
+    if (!prev) {
+      take = true;
+    } else if (epoch != null && prev.epoch == null) {
+      take = true;                       // a timestamped row beats an untimestamped one
+    } else if (epoch == null && prev.epoch != null) {
+      take = false;
+    } else if (epoch != null && prev.epoch != null) {
+      take = (epoch > prev.epoch) || (epoch === prev.epoch && i > prev.idx);
+    } else {
+      take = i > prev.idx;               // neither timestamped — later append wins
     }
+    if (take) best.set(key, { row: r, epoch, idx: i });
   }
+  // Unwrap to the row-only Map shape callers expect.
+  const m = new Map();
+  for (const [k, v] of best) m.set(k, v.row);
   if (dropped > 0) {
     console.log(`[Orbit] indexLatestAvailability: kept ${m.size} unique (mod,week) row(s), dropped ${dropped}`);
     if (droppedSamples.length > 0) console.log('[Orbit] Dropped row samples:', droppedSamples);
