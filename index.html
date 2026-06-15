@@ -17,7 +17,17 @@
    Accent: --accent #00F0FF (electric cyan)
    ========================================================= */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+html {
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  /* Lock the page so it can't be dragged/panned around on mobile (and
+     in the home-screen app). overflow-x on the documentElement — not
+     just body — is what actually stops horizontal panning on iOS, where
+     the <html> element is the scroll container. overscroll-behavior:none
+     kills the rubber-band/bounce so the page feels fixed like a native
+     app while normal vertical content scrolling still works. */
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
 
 :root {
   /* Centific logo (recolored to electric cyan) */
@@ -142,6 +152,7 @@ body {
   letter-spacing: -0.01em;
   transition: background 0.3s ease, color 0.3s ease;
   overflow-x: hidden;
+  overscroll-behavior: none;
 }
 button { font-family: inherit; cursor: pointer; }
 input, select, textarea { font-family: inherit; }
@@ -3117,18 +3128,34 @@ input#ent_lakitu.lakitu-invalid {
 }
 
 @media (max-width: 760px) {
-  nav { padding: 0 12px; }
+  /* Inset-aware horizontal padding so content clears the rounded screen
+     corners / sensor housing in landscape; keep the safe-area top inset
+     from the base rule so the bar still sits below the status bar. */
+  nav {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+  }
+  /* Tighten the inter-item gaps on the narrow viewport so the right-hand
+     cluster (progress + user chip + action buttons) fits without
+     overflowing / clipping on a ~390px phone. */
+  .nav-left  { gap: 10px; }
+  .nav-right { gap: 6px; }
+  /* The team chip's mobile form was just a cryptic 3-letter badge
+     ("Tes") that truncated and crowded the bar. Hide it on mobile — the
+     team is shown in the sidebar and in the My Session drawer (tap the
+     user chip), so no information is lost. */
+  #navTeamChip { display: none; }
   .menu-toggle { display: flex; }
-  /* Larger mobile tap targets for nav icons. iOS Human Interface
-     Guidelines recommend ≥44×44px for comfortable touch interaction —
-     the desktop 32-34px buttons are too small to hit reliably with a
-     thumb, especially in the corners of a 6.1" iPhone screen.
-     Increasing height to 40px keeps the nav looking tight (52px bar)
-     while giving thumbs more room to land. */
+  /* Mobile tap targets. 36px keeps comfortable thumb reach while letting
+     the whole right cluster fit on a narrow phone (40px overflowed once
+     all four action buttons + the progress pill + user chip were in the
+     bar). Still well above the desktop 34px. */
   .menu-toggle,
   nav .icon-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
   /* Slightly smaller icons inside the larger button so the visual
      proportions stay correct (icon doesn't fill the whole button). */
