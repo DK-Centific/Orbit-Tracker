@@ -33652,8 +33652,22 @@ function getOperatorAssignments() {
     adminState._asgnLoaded = true;
   }
   const myId = String(state.modProfile.orbitLoginId).toLowerCase();
+  // MULTI-TEAM VISIBILITY FIX (1.3.061526):
+  // A booking is "mine" if EITHER (a) my orbitLoginId is in its modSnapshots
+  // (the historical gate) OR (b) the booking's teamId belongs to a team I'm
+  // a member of (primary or backup). The snapshot-only gate silently hid
+  // today's booking from a mod whose id wasn't captured in that booking's
+  // modSnapshots — which happens for multi-team mods when the per-booking
+  // snapshot is incomplete (partial/legacy write, id-format drift between
+  // how the mod was entered on each team, or a roster-reconstruction edge).
+  // The team-ownership clause makes visibility robust: a mod on Team 1 owns
+  // Team 1's bookings regardless of what the per-row snapshot captured.
+  const myTeamIds = (typeof getOperatorTeams === 'function')
+    ? new Set(getOperatorTeams().map(t => String(t.id)))
+    : new Set();
   const mine = (adminState.assignments || []).filter(a => {
-    return (a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId);
+    if ((a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId)) return true;
+    return a.teamId != null && myTeamIds.has(String(a.teamId));
   });
   if (mine.length === 0) return [];
 
@@ -33679,8 +33693,14 @@ function getOperatorAssignment() {
     adminState._asgnLoaded = true;
   }
   const myId = String(state.modProfile.orbitLoginId).toLowerCase();
+  // Union match — see getOperatorAssignments() for the full rationale.
+  // Snapshot membership OR team ownership.
+  const myTeamIds = (typeof getOperatorTeams === 'function')
+    ? new Set(getOperatorTeams().map(t => String(t.id)))
+    : new Set();
   const mine = (adminState.assignments || []).filter(a => {
-    return (a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId);
+    if ((a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId)) return true;
+    return a.teamId != null && myTeamIds.has(String(a.teamId));
   });
   if (mine.length === 0) return null;
   const todayStr = ymd(new Date());
@@ -33730,25 +33750,32 @@ function getOperatorAssignment() {
 // next produces a clean unlocked state for the new session — and never carries
 // over locked/submitted state from the previous one.
 function getActiveOperatorAssignment() {
-  const all = (typeof getOperatorAssignments === 'function') ? getOperatorAssignments() : [];
+  // CANONICAL CAROUSEL LIST — see getOperatorCarouselAssignments().
+  // CRITICAL (1.3.061526): this MUST index the exact same list the My Session
+  // carousel renders. Previously this indexed the UNFILTERED getOperatorAssignments()
+  // while renderMySessionSection()/goTo() maintained window._mySessionCarouselIdx
+  // against the terminal-filtered list. When the two index spaces diverged
+  // (e.g. an earlier Cancelled/past booking), this selector returned a DIFFERENT
+  // session than the one the operator was visibly looking at — surfacing a
+  // stale/past session to the banner, locks, and station UI. Indexing the same
+  // canonical list keeps the selector and the visible carousel perfectly in sync.
+  const all = (typeof getOperatorCarouselAssignments === 'function') ? getOperatorCarouselAssignments() : [];
   if (all.length > 0) {
     let idx;
     if (typeof window._mySessionCarouselIdx === 'number') {
       idx = Math.max(0, Math.min(all.length - 1, window._mySessionCarouselIdx));
     } else {
-      // No explicit carousel position yet (e.g. a fresh sign-in, before the
-      // My Session carousel has seeded its index). Default to the operator's
-      // CURRENT session — today's, else the next upcoming, else most recent —
-      // NOT all[0]. The list is sorted oldest-first, so all[0] is the OLDEST
-      // session in their whole history; defaulting to it hid today's booking
-      // on the very day a mod signed in for it (the banner/action checks
-      // `asgn.date === today` and bailed). Reusing defaultCarouselIdx keeps
-      // this selector and the visible carousel pointed at the same session.
+      // No explicit carousel position yet (fresh sign-in). Default to the
+      // operator's CURRENT session (today), else the next upcoming. The
+      // canonical list contains only current+future sessions, so this can
+      // never land on a past session.
       idx = (typeof defaultCarouselIdx === 'function') ? defaultCarouselIdx(all) : 0;
     }
     return all[idx] || null;
   }
-  if (typeof getOperatorAssignment === 'function') return getOperatorAssignment();
+  // No current or upcoming session. Per the "no past sessions" rule we do NOT
+  // fall back to a historical assignment here — return null so the entry bar
+  // and banner show the empty state instead of resurrecting a past session.
   return null;
 }
 
@@ -33765,6 +33792,43 @@ function getOperatorTeam() {
     if ((t.primaryIds || []).some(id => String(id).toLowerCase() === myId)) return true;
     return getTeamBackupIds(t).some(id => String(id).toLowerCase() === myId);
   }) || null;
+}
+
+// ALL teams the operator belongs to (primary OR backup). getOperatorTeam()
+// returns only the FIRST match, which silently breaks multi-team mods — a
+// mod on Team 1 AND Team 2 would only ever resolve to one team. The union
+// match in getOperatorAssignments()/getOperatorAssignment() needs the full
+// set so a booking owned by ANY of the mod's teams counts as theirs.
+function getOperatorTeams() {
+  if (!state.modProfile || !state.modProfile.orbitLoginId) return [];
+  if (!adminState._asgnLoaded) {
+    const stored = loadAssignmentData();
+    adminState.teams = stored.teams;
+    adminState.assignments = stored.assignments;
+    adminState._asgnLoaded = true;
+  }
+  const myId = String(state.modProfile.orbitLoginId).toLowerCase();
+  return (adminState.teams || []).filter(t => {
+    if ((t.primaryIds || []).some(id => String(id).toLowerCase() === myId)) return true;
+    return getTeamBackupIds(t).some(id => String(id).toLowerCase() === myId);
+  });
+}
+
+// CANONICAL "MY SESSION" CAROUSEL LIST — the single source of truth for what
+// the operator's session carousel shows AND what getActiveOperatorAssignment()
+// indexes into. Both MUST use this exact list so the visible carousel position
+// and the resolved "active" assignment never diverge (the index-space bug).
+//
+// Contents: the operator's CURRENT and NEXT sessions only —
+//   - non-terminal (Cancelled / Unassigned filtered out), and
+//   - date >= today (PAST sessions removed by design; history still lives in
+//     the My Schedule weekly grid and the admin calendar).
+// Sorted chronologically (inherited from getOperatorAssignments()), so index 0
+// is the soonest current/upcoming session.
+function getOperatorCarouselAssignments() {
+  const todayStr = ymd(new Date());
+  return (typeof getOperatorAssignments === 'function' ? getOperatorAssignments() : [])
+    .filter(a => !isTerminalStatus(a.status) && a.date >= todayStr);
 }
 
 // Best-effort first-name resolution for a teammate's orbitLoginId, used in
@@ -33861,7 +33925,13 @@ function renderMySessionSection() {
   // team from a booking, the mod has no commitment to fulfill and the
   // session shouldn't surface here. Completed stays visible because
   // it's still useful right after a session ends (handoff context).
-  const assignments = getOperatorAssignments().filter(a => !isTerminalStatus(a.status));
+  // CANONICAL carousel list — current + next sessions only (no past, no
+  // terminal). Past sessions used to appear here as a history scrubber; per
+  // product decision the carousel now shows ONLY upcoming work. History stays
+  // in My Schedule (weekly grid) and the admin calendar. Using the shared
+  // getOperatorCarouselAssignments() also guarantees this list and the index
+  // that getActiveOperatorAssignment() reads share one index space.
+  const assignments = getOperatorCarouselAssignments();
   const team = getOperatorTeam();
   const todayStr = ymd(new Date());
 
@@ -34528,10 +34598,12 @@ function openDoneForTheDayReminder() {
 // The worklog cache is preserved (those rows belong to the just-completed
 // assignment and remain in the admin's record).
 function switchToNextAssignment(completedAsgn) {
-  // Find the next assignment in the queue (excluding the just-completed one)
-  const all = (typeof getOperatorAssignments === 'function') ? getOperatorAssignments() : [];
-  const todayStr = ymd(new Date());
-  const next = all.find(a => a.id !== completedAsgn.id && !isTerminalStatus(a.status) && a.date >= todayStr);
+  // Find the next assignment in the queue (excluding the just-completed one).
+  // Use the canonical carousel list so the index we set below lands in the
+  // SAME index space getActiveOperatorAssignment() reads (current+next only,
+  // no terminal, no past).
+  const all = (typeof getOperatorCarouselAssignments === 'function') ? getOperatorCarouselAssignments() : [];
+  const next = all.find(a => a.id !== completedAsgn.id);
   if (!next) {
     toast('No more queued assignments');
     return;
@@ -34541,9 +34613,9 @@ function switchToNextAssignment(completedAsgn) {
   // equipment is physical/stays-packed across multiple sessions in one day.
   resetOperatorSessionState({ preserveEquipment: true });
 
-  // Recompute the carousel — getOperatorAssignments may have changed due to
-  // the just-completed assignment now being skipped from "current".
-  const updated = (typeof getOperatorAssignments === 'function') ? getOperatorAssignments() : [];
+  // Recompute the carousel — the list may have changed due to the
+  // just-completed assignment now being skipped from "current".
+  const updated = (typeof getOperatorCarouselAssignments === 'function') ? getOperatorCarouselAssignments() : [];
   const idx = updated.findIndex(a => a.id === next.id);
   if (idx >= 0) window._mySessionCarouselIdx = idx;
   else window._mySessionCarouselIdx = 0;
