@@ -6607,6 +6607,21 @@ button.perf-stat-chip.scheduled.active {
 .perf-booking-status-pill.status-cancelled { background: rgba(239, 68, 68, 0.10); color: rgb(248, 113, 113); }
 .perf-booking-status-pill.status-checkin   { background: rgba(245, 158, 11, 0.16); color: rgb(234, 179, 8); }
 .perf-booking-status-pill.status-insession { background: var(--accent-soft, rgba(0, 240, 255, 0.16)); color: var(--accent-ink); }
+/* Mismatch note: the moderator who synced the latest progress isn't on
+   the booking's team. Amber, low-key — informational, not an error. */
+.perf-mod-mismatch {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  padding: 2px 7px; border-radius: 99px;
+  background: rgba(245, 158, 11, 0.14); color: rgb(234, 179, 8);
+  border: 0.5px solid rgba(245, 158, 11, 0.30);
+  cursor: help; white-space: nowrap;
+}
+.perf-row-mismatch {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; color: rgb(234, 179, 8); cursor: help; flex: none;
+  margin-left: 2px;
+}
 
 /* Search-match emphasis for booking rows. When admin's search term
    matches a participant name, the row gets a .matched class which
@@ -16326,7 +16341,18 @@ function getLakituUrlForAssignment(asgnId) {
     return rLoose === targetLoose;
   }).sort((a, b) => String(b.lastActive || '').localeCompare(String(a.lastActive || '')));
 
+  // LAKITU GATE MATCHING (1.3.061526):
+  // Select the participantId from stateJson using the SAME gate the
+  // moderator app uses to validate a Lakitu session URL — the strict
+  // LAKITU_URL_RE (isValidLakituUrl), not a loose "has ?session="
+  // check. Walk matching rows newest-first and prefer the newest
+  // participantId that PASSES the gate. If none pass but a malformed
+  // value exists, surface the newest non-empty one anyway so the pill
+  // can show "Incorrect url" (admin chose: don't silently hide a bad
+  // value). This keeps Performance's notion of "a valid Lakitu URL"
+  // identical to the mod app's.
   let result = '';
+  let firstNonEmpty = '';
   for (const r of matching) {
     let parsed;
     try { parsed = JSON.parse(r.stateJson || '{}'); }
@@ -16340,11 +16366,17 @@ function getLakituUrlForAssignment(asgnId) {
       continue;
     }
     const pid = parsed && parsed.participantId ? String(parsed.participantId).trim() : '';
-    if (pid) {
-      result = pid;
+    if (!pid) continue;
+    if (!firstNonEmpty) firstNonEmpty = pid;  // newest non-empty (fallback)
+    const passesGate = (typeof isValidLakituUrl === 'function') ? isValidLakituUrl(pid) : true;
+    if (passesGate) {
+      result = pid;  // newest gate-valid wins
       break;
     }
   }
+  // No gate-valid URL found — fall back to the newest non-empty value so
+  // the pill surfaces it as "Incorrect url" rather than "No url".
+  if (!result) result = firstNonEmpty;
 
   // Diagnostic logging (once per asgnId per source-array). Helps
   // admin debug "why is this booking showing No url?" without
@@ -16564,6 +16596,15 @@ if (typeof window !== 'undefined') {
 // /review?session= transform will produce something openable.
 function validateLakituUrl(url) {
   if (!url || !String(url).trim()) return 'empty';
+  // Use the SAME gate as the moderator app (strict LAKITU_URL_RE via
+  // isValidLakituUrl) so "ok"/"invalid" in Performance means exactly
+  // what "valid"/"invalid" means in the mod app's session gate. The
+  // previous loose check (startsWith http + includes ?session=) could
+  // mark a malformed URL "ok" and produce a broken /review link.
+  if (typeof isValidLakituUrl === 'function') {
+    return isValidLakituUrl(url) ? 'ok' : 'invalid';
+  }
+  // Defensive fallback (isValidLakituUrl unexpectedly unavailable).
   const u = String(url).trim();
   if (!u.toLowerCase().startsWith('http')) return 'invalid';
   if (!u.includes('?session=')) return 'invalid';
@@ -17592,6 +17633,26 @@ function renderPerfBookingRowHTML(a, team, search) {
   const liveDisp = perfLiveStatusDisplay(a);
   const statusKey = liveDisp.key;
   const statusLabel = liveDisp.label;
+  // Live-progress attribution (1.3.061526): pill tooltip shows the
+  // latest update's moderator + timestamp; a ⚠ marker appears when that
+  // moderator isn't on the booking's team (progress still shown).
+  const liveAttr = ((cls === 'inprogress' || cls === 'completed') && typeof getLatestStatusForAssignment === 'function')
+    ? getLatestStatusForAssignment(a.id)
+    : null;
+  let pillTitle = statusLabel;
+  let mismatchHTML = '';
+  if (liveAttr) {
+    const when = liveAttr.lastActive || liveAttr.timestamp;
+    const d = when ? new Date(when) : null;
+    const whenLabel = (d && !isNaN(d.getTime()))
+      ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '';
+    const modName = liveAttr.moderatorName || liveAttr.moderatorId || '';
+    pillTitle = [statusLabel, modName ? `by ${modName}` : '', whenLabel].filter(Boolean).join(' — ');
+    if (liveAttr.moderatorMatch === false) {
+      mismatchHTML = `<span class="perf-row-mismatch" title="Latest progress synced by ${escapeHTML(modName || liveAttr.moderatorId)}, who isn't on this booking's team. Progress is still shown.">⚠</span>`;
+    }
+  }
   const pd = a.participantData || {};
   const participant = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'No participant';
   // Resolve team name from a.teamId — covers cases where this row
@@ -17654,7 +17715,7 @@ function renderPerfBookingRowHTML(a, team, search) {
       <span class="perf-booking-participant">${participantDisplay}</span>
       <span class="perf-booking-meta">${escapeHTML(tName + (modLabel !== '—' ? ` · ${modLabel}` : ''))}</span>
       <span class="perf-booking-date">${escapeHTML(dateLabel)}</span>
-      <span class="perf-booking-status-pill status-${statusKey}">${escapeHTML(statusLabel)}</span>
+      <span class="perf-booking-status-pill status-${statusKey}" title="${escapeHTML(pillTitle)}">${escapeHTML(statusLabel)}</span>${mismatchHTML}
       ${lakituHTML}
     </button>
   `;
@@ -18167,7 +18228,34 @@ function renderPerfStationListHTML(a) {
     return (rank[x.status] || 9) - (rank[y.status] || 9);
   });
 
+  // LATEST UPDATE line (1.3.061526): the newest SessionState row's table
+  // timestamp + the moderator it belongs to (orbitLoginId → name), with
+  // a "not on team" note when that moderator isn't on the booking.
+  const liveAttr = (typeof getLatestStatusForAssignment === 'function')
+    ? getLatestStatusForAssignment(a.id)
+    : null;
+  let latestUpdateHTML = '';
+  if (liveAttr && (liveAttr.lastActive || liveAttr.timestamp)) {
+    const when = liveAttr.lastActive || liveAttr.timestamp;
+    const d = new Date(when);
+    const whenLabel = isNaN(d.getTime())
+      ? ''
+      : (d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+         + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }));
+    const modName = liveAttr.moderatorName || liveAttr.moderatorId || '';
+    const mismatch = liveAttr.moderatorMatch === false;
+    latestUpdateHTML = `
+      <div class="perf-panel-section-title">Latest update</div>
+      <div style="font-size: 12.5px; color: var(--text2); margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+        ${whenLabel ? `<span>${escapeHTML(whenLabel)}</span>` : ''}
+        ${modName ? `<span style="color: var(--text3);">·</span><span>${escapeHTML(modName)}</span>` : ''}
+        ${mismatch ? `<span class="perf-mod-mismatch" title="The moderator who synced this progress (${escapeHTML(modName || liveAttr.moderatorId)}) isn't listed on this booking's team. The progress is still shown.">⚠ not on team</span>` : ''}
+      </div>
+    `;
+  }
+
   return `
+    ${latestUpdateHTML}
     ${merged.sessionStartedAt ? `
       <div class="perf-panel-section-title">Session</div>
       <div style="font-size: 12.5px; color: var(--text2); margin-bottom: 6px;">
@@ -32525,6 +32613,35 @@ function deriveLatestStatusFromSessionState(asgnId) {
   }
   if (!attributionRow) attributionRow = matching[0];
 
+  // LATEST-UPDATE ATTRIBUTION (1.3.061526):
+  // The "latest timestamp from the SessionState table" is the newest
+  // matching row's lastActive (matching is sorted newest-first above).
+  // Map that row's orbitLoginId → moderator name, and cross-check it
+  // against the booking's assigned mods (modSnapshots). Admin's call:
+  // still USE the progress on a mismatch, but flag it (moderatorMatch
+  // = false) so the UI can show a "not on team" note. moderatorMatch
+  // defaults true when we can't determine the roster (no modSnapshots),
+  // so we never show a false alarm.
+  const latestRow = matching[0];
+  const moderatorId = String((latestRow && latestRow.orbitLoginId) || '');
+  const moderatorName = (typeof getModeratorDisplayName === 'function' && moderatorId)
+    ? getModeratorDisplayName(moderatorId)
+    : (moderatorId || '');
+  const lastActive = (latestRow && latestRow.lastActive) || '';
+  let moderatorMatch = true;
+  if (moderatorId) {
+    const booking = (typeof adminState !== 'undefined' && adminState && Array.isArray(adminState.assignments))
+      ? adminState.assignments.find(x => {
+          const xe = String((x && x.id) || '');
+          return xe === targetExact || xe.trim().toLowerCase() === targetLoose;
+        })
+      : null;
+    if (booking && Array.isArray(booking.modSnapshots) && booking.modSnapshots.length) {
+      const mid = moderatorId.toLowerCase();
+      moderatorMatch = booking.modSnapshots.some(s => String((s && s.orbitLoginId) || '').toLowerCase() === mid);
+    }
+  }
+
   // Priority walk. First match wins.
   const checks = [
     { has: sessionCompletedAt,                        status: 'session_done',    at: sessionCompletedAt },
@@ -32543,6 +32660,13 @@ function deriveLatestStatusFromSessionState(asgnId) {
         status:        c.status,
         timestamp:     c.at || attributionRow.lastActive || new Date().toISOString(),
         orbitLoginId:  attributionRow.orbitLoginId || '',
+        // Latest-update attribution (see block above): the newest SS
+        // row's table timestamp + the moderator it belongs to, with a
+        // cross-check against the booking's assigned mods.
+        lastActive:     lastActive,
+        moderatorId:    moderatorId,
+        moderatorName:  moderatorName,
+        moderatorMatch: moderatorMatch,
         // Mark derived rows so future debugging can distinguish
         // "this came from SS inference" from "this came from a
         // local worklog write." Doesn't affect existing call sites
