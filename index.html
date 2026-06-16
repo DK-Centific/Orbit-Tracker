@@ -6567,6 +6567,8 @@ button.perf-stat-chip.scheduled.active {
 .perf-booking-dot.status-notified  { background: rgb(20, 184, 166); }
 .perf-booking-dot.status-completed { background: rgb(168, 85, 247); }
 .perf-booking-dot.status-cancelled { background: rgba(239, 68, 68, 0.55); }
+.perf-booking-dot.status-checkin   { background: rgb(245, 158, 11); }
+.perf-booking-dot.status-insession { background: var(--accent); }
 .perf-booking-participant {
   font-size: 13.5px;
   font-weight: 600;
@@ -6603,6 +6605,8 @@ button.perf-stat-chip.scheduled.active {
 .perf-booking-status-pill.status-notified  { background: rgba(20, 184, 166, 0.14); color: rgb(45, 212, 191); }
 .perf-booking-status-pill.status-completed { background: rgba(168, 85, 247, 0.14); color: rgb(192, 132, 252); }
 .perf-booking-status-pill.status-cancelled { background: rgba(239, 68, 68, 0.10); color: rgb(248, 113, 113); }
+.perf-booking-status-pill.status-checkin   { background: rgba(245, 158, 11, 0.16); color: rgb(234, 179, 8); }
+.perf-booking-status-pill.status-insession { background: var(--accent-soft, rgba(0, 240, 255, 0.16)); color: var(--accent-ink); }
 
 /* Search-match emphasis for booking rows. When admin's search term
    matches a participant name, the row gets a .matched class which
@@ -16691,16 +16695,65 @@ function highlightMatch(text, search) {
 function classifyBookingForPerf(a) {
   if (!a) return null;
   if (a.status === 'Cancelled' || a.status === 'Unassigned') return null;
-  if (a.status === 'Completed') return 'completed';
-  // Notified = an active booking with the email out, treated as "in
-  // progress" because the team has committed to it and may already
-  // be working. Booked = scheduled but not yet notified, also in
-  // the "scheduled" sense unless there's actual station progress.
-  // The actual fine-grained "started but not done" detection comes
-  // from SessionState rows — but at the booking-list level we use
-  // status as the proxy.
+  // LIVE-STATUS MAPPING (1.3.061526):
+  // Prefer the moderator's live session progress over the static
+  // assignment status. getLatestStatusForAssignment() derives the
+  // furthest-progressed worklog status (arrived → station_N_done →
+  // session_done) from the SessionState rows the mod app syncs — the
+  // admin app has no Worklog read flow, but SessionState IS fetched on
+  // this tab (perfSessionStateRows). The lookup is memoized per
+  // assignment, so calling it for every row during render is cheap.
+  const live = (typeof getLatestStatusForAssignment === 'function')
+    ? getLatestStatusForAssignment(a.id)
+    : null;
+  // Completed — admin marked it Completed OR the mod confirmed wrap-up.
+  if (a.status === 'Completed' || (live && live.status === 'session_done')) return 'completed';
+  // In progress — the mod has actually started (any worklog status from
+  // 'arrived' up to 'station_3_done'), OR admin sent the confirmation
+  // email (Notified = team committed). The live signal is stronger and
+  // catches sessions still sitting at assignment-status 'Booked' that
+  // the mod has begun — which is exactly what was hiding the Lakitu
+  // pill before. (session_done is already handled above.)
+  if (live && (typeof statusOrderIdx === 'function') && statusOrderIdx(live.status) >= 0) return 'inprogress';
   if (a.status === 'Notified') return 'inprogress';
   return 'scheduled'; // 'Booked' (or anything else not Cancelled/Completed)
+}
+
+// Resolves the status PILL display (CSS key + visible label) for a
+// Performance booking row / side panel, mapping the moderator's live
+// session progress to a human label:
+//   Cancelled / Unassigned → terminal (admin actions always win)
+//   session_done / Completed → 'Completed'  (purple)
+//   arrived                  → 'Check-in'   (amber)
+//   station_N_done           → 'In session · St N' (accent)  ← granular
+//   Notified (no live yet)   → 'Notified'   (teal)
+//   else                     → 'Booked'     (blue)
+// The station number comes from PERF_STATUS_STATION_SHORT below.
+const PERF_STATUS_STATION_SHORT = {
+  station_0a_done: 'St 0a',
+  station_0b_done: 'St 0b',
+  station_0c_done: 'St 0c',
+  station_1_done:  'St 1',
+  station_2_done:  'St 2',
+  station_3_done:  'St 3',
+};
+function perfLiveStatusDisplay(a) {
+  if (!a) return { key: 'booked', label: 'Booked' };
+  if (a.status === 'Cancelled')  return { key: 'cancelled', label: 'Cancelled' };
+  if (a.status === 'Unassigned') return { key: 'cancelled', label: 'Unassigned' };
+  const live = (typeof getLatestStatusForAssignment === 'function')
+    ? getLatestStatusForAssignment(a.id)
+    : null;
+  if (a.status === 'Completed' || (live && live.status === 'session_done')) {
+    return { key: 'completed', label: 'Completed' };
+  }
+  if (live && (typeof statusOrderIdx === 'function') && statusOrderIdx(live.status) >= 0) {
+    if (live.status === 'arrived') return { key: 'checkin', label: 'Check-in' };
+    const st = PERF_STATUS_STATION_SHORT[live.status];
+    return { key: 'insession', label: st ? `In session · ${st}` : 'In session' };
+  }
+  if (a.status === 'Notified') return { key: 'notified', label: 'Notified' };
+  return { key: 'booked', label: 'Booked' };
 }
 
 // Date-range filter helpers for the Performance tab.
@@ -16947,6 +17000,67 @@ async function ensurePerfSessionStateRows() {
   return adminState.perfSessionStateRows;
 }
 
+// ---- Performance tab live auto-refresh (1.3.061526) -------------------
+// While admin is viewing the Performance tab, poll SessionState every
+// PERF_LIVE_POLL_MS so the status pills + Lakitu pills update as the
+// moderator progresses, without admin manually refreshing. Stopped when
+// admin leaves the tab (see the tab dispatcher) and skipped while the
+// browser tab is hidden, so it costs nothing in the background.
+//
+// ⚠ Quota note: this adds one SessionState read per interval per admin
+// who has the Performance tab open. PERF_LIVE_POLL_MS matches the
+// existing SessionState cache TTL (30s) so we're not fetching faster
+// than the data can meaningfully change.
+const PERF_LIVE_POLL_MS = 30000;
+
+async function refreshPerfLiveData() {
+  if (typeof adminState === 'undefined' || !adminState) return;
+  // Force a re-fetch: the cache TTL would otherwise short-circuit
+  // ensurePerfSessionStateRows() as "fresh". Zeroing the fetched-at
+  // stamp (rather than nulling the rows) keeps the current rows visible
+  // if the new fetch fails — no flash to empty.
+  adminState._perfSSFetchedAt = 0;
+  if (typeof ensurePerfSessionStateRows === 'function') {
+    await ensurePerfSessionStateRows();
+  }
+  // Re-render the tile grid in place — preserves expanded tiles, search,
+  // date-range, and scroll position (same path renderPerformance uses).
+  const grid = document.getElementById('perfTileGrid');
+  if (grid && typeof renderPerfTilesHTML === 'function') {
+    const view = adminState.perfView || 'teams';
+    const search = (adminState.perfSearch || '').trim().toLowerCase();
+    grid.innerHTML = renderPerfTilesHTML(view, search);
+    if (typeof wirePerfTileGrid === 'function') wirePerfTileGrid(grid);
+  }
+  // Refresh the open side panel too, so its live status / station detail
+  // tracks along.
+  const panel = document.getElementById('perfPanel');
+  if (panel && panel.classList.contains('open') && panel.dataset.asgnId
+      && typeof openPerformancePanel === 'function') {
+    openPerformancePanel(panel.dataset.asgnId);
+  }
+}
+
+function startPerfLivePoll() {
+  if (adminState._perfLivePollTimer) return;  // already running
+  adminState._perfLivePollTimer = setInterval(() => {
+    // Only poll while the browser tab is visible AND the Performance tab
+    // is still the active admin view. The teardown in the tab dispatcher
+    // is the primary stop; this visibility guard saves needless traffic
+    // when admin tabs away from the whole browser window.
+    if (document.visibilityState !== 'visible') return;
+    if (adminState.tab !== 'performance') return;
+    refreshPerfLiveData();
+  }, PERF_LIVE_POLL_MS);
+}
+
+function stopPerfLivePoll() {
+  if (adminState._perfLivePollTimer) {
+    clearInterval(adminState._perfLivePollTimer);
+    adminState._perfLivePollTimer = null;
+  }
+}
+
 function renderPerformance(body) {
   // Auto-load adjacent data the tab needs. Most likely already loaded
   // (admin lands here via the top-tab; assignments/teams come from
@@ -16983,6 +17097,10 @@ function renderPerformance(body) {
       openPerformancePanel(panel.dataset.asgnId);
     }
   });
+
+  // Start the live auto-refresh poll (idempotent — no-op if already
+  // running). Stopped by the tab dispatcher when admin leaves this tab.
+  if (typeof startPerfLivePoll === 'function') startPerfLivePoll();
 
   const view = adminState.perfView || 'teams';
   const search = (adminState.perfSearch || '').trim().toLowerCase();
@@ -17467,10 +17585,13 @@ function renderPerfTileBodyHTML(tileId, bookings, team, search) {
 
 function renderPerfBookingRowHTML(a, team, search) {
   const cls = classifyBookingForPerf(a);
-  const statusKey = a.status === 'Cancelled' ? 'cancelled'
-                  : a.status === 'Completed' ? 'completed'
-                  : a.status === 'Notified'  ? 'notified'
-                  : 'booked';
+  // Status pill now reflects the moderator's LIVE session progress
+  // (Check-in / In session · St N / Completed), falling back to the
+  // assignment status (Booked / Notified / Cancelled) when there's no
+  // live progress yet. See perfLiveStatusDisplay().
+  const liveDisp = perfLiveStatusDisplay(a);
+  const statusKey = liveDisp.key;
+  const statusLabel = liveDisp.label;
   const pd = a.participantData || {};
   const participant = [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() || 'No participant';
   // Resolve team name from a.teamId — covers cases where this row
@@ -17533,7 +17654,7 @@ function renderPerfBookingRowHTML(a, team, search) {
       <span class="perf-booking-participant">${participantDisplay}</span>
       <span class="perf-booking-meta">${escapeHTML(tName + (modLabel !== '—' ? ` · ${modLabel}` : ''))}</span>
       <span class="perf-booking-date">${escapeHTML(dateLabel)}</span>
-      <span class="perf-booking-status-pill status-${statusKey}">${escapeHTML(a.status || 'Booked')}</span>
+      <span class="perf-booking-status-pill status-${statusKey}">${escapeHTML(statusLabel)}</span>
       ${lakituHTML}
     </button>
   `;
@@ -17802,10 +17923,9 @@ function openPerformancePanel(asgnId) {
   const timeLabel = (typeof fmtTimeOfDay === 'function')
     ? `${fmtTimeOfDay(a.startMin)} – ${fmtTimeOfDay(a.endMin)}`
     : '';
-  const statusKey = a.status === 'Cancelled' ? 'cancelled'
-                  : a.status === 'Completed' ? 'completed'
-                  : a.status === 'Notified'  ? 'notified'
-                  : 'booked';
+  // Eyebrow shows the live session status (same mapping as the row pill)
+  // rather than the raw assignment status, so the panel and row agree.
+  const panelDisp = perfLiveStatusDisplay(a);
   // Lakitu pill — same three-state model as the per-row pill (ok /
   // empty / invalid). 'panel' variant produces a slightly larger pill
   // with "Open in Lakitu" text vs. the row's tighter "Lakitu" label.
@@ -17830,7 +17950,7 @@ function openPerformancePanel(asgnId) {
     <div class="perf-panel-head">
       <div class="perf-panel-head-top">
         <div style="min-width: 0;">
-          <div class="perf-panel-eyebrow">${escapeHTML(a.status || 'Booked')}${a.id ? ` · ${escapeHTML(String(a.id).slice(0, 8))}` : ''}</div>
+          <div class="perf-panel-eyebrow">${escapeHTML(panelDisp.label)}${a.id ? ` · ${escapeHTML(String(a.id).slice(0, 8))}` : ''}</div>
           <h2 class="perf-panel-title" id="perfPanelTitle">${escapeHTML(participant)}</h2>
         </div>
         <button type="button" class="perf-panel-close" id="perfPanelCloseBtn" aria-label="Close">×</button>
@@ -18735,6 +18855,12 @@ function renderAdminTabBody() {
   if (adminState.tab !== 'assignment' && adminState._asgnPollTimer) {
     clearInterval(adminState._asgnPollTimer);
     adminState._asgnPollTimer = null;
+  }
+  // Same teardown for the Performance live-refresh poll — stop it when
+  // admin navigates away so we don't keep fetching SessionState (and
+  // don't re-render a grid that's no longer on screen).
+  if (adminState.tab !== 'performance' && typeof stopPerfLivePoll === 'function') {
+    stopPerfLivePoll();
   }
   if (adminState.tab === 'overview') {
     renderOverview(body);
