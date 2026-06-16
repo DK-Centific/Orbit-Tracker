@@ -9642,6 +9642,27 @@ button.perf-stat-chip.scheduled.active {
   color: var(--text);
 }
 
+/* SELF-SYNC banner (1.3.061526): same layout as the teammate live
+   banner, but for "you're signed in on another browser and it has
+   newer progress." Distinct cyan accent (vs the teammate green dot)
+   so the two are visually distinguishable. No dismiss button — it
+   persists until Sync is clicked (per spec). Reuses the teammate
+   banner's inner element classes for text + button styling. */
+.self-sync-banner {
+  background: linear-gradient(135deg,
+    rgba(0, 240, 255, 0.12) 0%,
+    rgba(0, 240, 255, 0.05) 100%);
+  border-color: rgba(0, 240, 255, 0.34);
+}
+.self-sync-banner .teammate-live-banner-dot {
+  background: var(--accent);
+  animation: selfSyncPulse 2s ease-in-out infinite;
+}
+@keyframes selfSyncPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.50); }
+  50%      { box-shadow: 0 0 0 6px rgba(0, 240, 255, 0); }
+}
+
 .teammate-sync-overlay {
   position: fixed; inset: 0;
   z-index: 700;
@@ -31778,6 +31799,11 @@ const _sessionStateSyncState = {
   pendingAgain:          false,
   lastSyncedAsgnId:      null,
   lastSyncedStateJson:   null,
+  // lastActive ISO of this browser's most recent successful self write
+  // (or a self-sync we adopted). Used as the baseline for self-sync
+  // detection: a cloud self-row newer than this came from another
+  // browser. '' / null until the first write.
+  lastSyncedActive:      null,
 };
 
 // Trigger an interaction-driven cloud write. Called ONLY from
@@ -31905,6 +31931,7 @@ async function flushSessionStateSync() {
       if (res && res.ok) {
         _sessionStateSyncState.lastSyncedAsgnId = String(asgn.id);
         _sessionStateSyncState.lastSyncedStateJson = stateJson;
+        _sessionStateSyncState.lastSyncedActive = payload.lastActive;
         outcome = { ok: true, reason: 'written' };
       } else {
         outcome = { ok: false, reason: 'error' };
@@ -31920,6 +31947,9 @@ async function flushSessionStateSync() {
         console.warn('[Orbit] SessionState write failed:', res.status);
         outcome = { ok: false, reason: 'error' };
       } else {
+        _sessionStateSyncState.lastSyncedAsgnId = String(asgn.id);
+        _sessionStateSyncState.lastSyncedStateJson = stateJson;
+        _sessionStateSyncState.lastSyncedActive = payload.lastActive;
         outcome = { ok: true, reason: 'written' };
       }
     }
@@ -32060,14 +32090,17 @@ function newestSessionStatePerUser(rows) {
 // assignment. Returns the row + parsed state if found, else null.
 // Used at login and when entering the operator app to decide whether
 // to surface the "continue from teammate?" prompt.
-async function findTeammateSessionState() {
+async function findTeammateSessionState(prefetchedRows) {
   const DIAG = (typeof window !== 'undefined' && window._teammateDiag);
   if (!state || !state.modProfile || !state.modProfile.orbitLoginId) {
     if (DIAG) console.info('[Orbit][TeammateDiag] No mod profile → returning null');
     return null;
   }
 
-  const rows = await fetchSessionStateRows();
+  // Reuse rows passed in by the poller (so a single poll tick fetches
+  // SessionState once and feeds both the self-sync and teammate checks).
+  // Falls back to fetching when called standalone (login, diag helper).
+  const rows = Array.isArray(prefetchedRows) ? prefetchedRows : await fetchSessionStateRows();
   if (!rows) {
     if (DIAG) console.warn('[Orbit][TeammateDiag] fetchSessionStateRows returned null (fetch failure or no read URL)');
     return null;
@@ -32285,6 +32318,61 @@ function mergeTeammateState(syncableState) {
   // Immediate cloud-flush so the teammate's view picks this up on
   // their next poll (no debounce wait). Fire-and-forget.
   flushSessionStateSync();
+}
+
+// SELF-SYNC across browsers (1.3.061526)
+// =====================================================================
+// When the SAME moderator is signed in on two browsers and works in
+// one, the other (inactive) browser should detect the newer progress
+// and offer to load it. The teammate path above deliberately EXCLUDES
+// the user's own orbitLoginId, so this is its mirror: find the newest
+// SessionState row for MY orbitLoginId on MY current assignment.
+//
+// `prefetchedRows` lets the poll tick share one SessionState fetch
+// between this and the teammate check.
+async function findSelfSessionStateUpdate(prefetchedRows) {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return null;
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (!asgn || !asgn.id) return null;
+  const rows = Array.isArray(prefetchedRows) ? prefetchedRows : await fetchSessionStateRows();
+  if (!rows) return null;
+  const myIdLower = String(state.modProfile.orbitLoginId).toLowerCase();
+  let winner = null;  // newest self-row for this assignment
+  for (const r of rows) {
+    if (!r || !r.orbitLoginId || !r.assignmentId) continue;
+    if (String(r.orbitLoginId).toLowerCase() !== myIdLower) continue;
+    if (String(r.assignmentId) !== String(asgn.id)) continue;
+    if (!winner || (r.lastActive || '') > (winner.lastActive || '')) winner = r;
+  }
+  if (!winner) return null;
+  let parsed = null;
+  try { parsed = JSON.parse(winner.stateJson || '{}'); }
+  catch (_) { return null; }
+  return { row: winner, syncableState: parsed };
+}
+
+// REPLACE local state wholesale with the adopted (other-browser) state.
+// Per spec the user chose "take the other browser's latest state
+// wholesale" rather than merge — so each syncable field is overwritten
+// (not overlaid). Identity fields (username, modProfile, theme) live
+// outside the syncable subset and are untouched.
+function applySelfSyncReplace(s) {
+  if (!s || typeof s !== 'object') return;
+  state.participantId      = s.participantId      || '';
+  state.participantName    = s.participantName    || '';
+  state.participantAddress = s.participantAddress || '';
+  state.sessionDate        = s.sessionDate        || '';
+  state.equipment          = (s.equipment && typeof s.equipment === 'object') ? { ...s.equipment } : {};
+  state.stations           = (s.stations && typeof s.stations === 'object')
+    ? JSON.parse(JSON.stringify(s.stations))
+    : {};
+  state.sessionCompletedAt = s.sessionCompletedAt || null;
+  state.arrivedAt          = s.arrivedAt          || '';
+  state.calGuideAck        = s.calGuideAck         || null;
+  // Personal per-device reminder tracking is re-derived from the
+  // adopted arrival anchor (same rationale as mergeTeammateState).
+  state.remindersShown = [];
+  saveState();
 }
 
 // Page-unload handler — ensures any pending debounced sync flushes
@@ -33035,6 +33123,13 @@ function _hasActiveSessionWork() {
     const STALE_MS = 10 * 60 * 1000;  // 10 min; if no teammate write in this long, drop back to idle
     if (Date.now() - adminState._lastTeammateLiveAt < STALE_MS) return true;
   }
+  // Same promotion when this user's OTHER browser is actively writing
+  // (self-sync). Keeps the inactive browser polling at the fast cadence
+  // so the "new changes" banner appears promptly.
+  if (adminState && adminState._lastSelfLiveAt) {
+    const STALE_MS = 10 * 60 * 1000;
+    if (Date.now() - adminState._lastSelfLiveAt < STALE_MS) return true;
+  }
   return false;
 }
 
@@ -33079,9 +33174,22 @@ function startSessionStatePolling() {
     if (typeof refreshModAssignments === 'function' && _hasActiveSessionWork()) {
       refreshModAssignments({ silent: true }).catch(() => { /* silent */ });
     }
-    checkAndOfferTeammateSync()
-      .catch(() => { /* silent */ })
-      .finally(scheduleNext);
+    // Fetch SessionState ONCE per tick and feed both the self-sync check
+    // (this user's other browser) and the teammate check. Self-sync takes
+    // priority: if it shows its banner, suppress the teammate banner so
+    // the two don't stack. Both reuse the shared rows to avoid a second
+    // network read per tick.
+    (async () => {
+      let rows = null;
+      try { rows = await fetchSessionStateRows(); } catch (_) { /* silent */ }
+      let selfShown = false;
+      try { selfShown = await checkAndOfferSelfSync(rows); } catch (_) { /* silent */ }
+      if (selfShown) {
+        if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+      } else {
+        try { await checkAndOfferTeammateSync(rows); } catch (_) { /* silent */ }
+      }
+    })().finally(scheduleNext);
   };
   scheduleNext();
 }
@@ -36722,7 +36830,7 @@ function startApp() {
 // "Meaningful" check: at least one scenario in the teammate's state
 // isn't "Not Started" — otherwise it's just an empty default state
 // they wrote without doing any work. Don't prompt for empty merges.
-async function checkAndOfferTeammateSync() {
+async function checkAndOfferTeammateSync(prefetchedRows) {
   if (!SESSIONSTATE_PA_READ_URL) return;
   // Skip if the user's own session is already complete for today.
   // Their work is done; merging a teammate's in-progress snapshot
@@ -36733,7 +36841,7 @@ async function checkAndOfferTeammateSync() {
     if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
     return;
   }
-  const result = await findTeammateSessionState();
+  const result = await findTeammateSessionState(prefetchedRows);
   if (!result || !result.syncableState) {
     // No teammate work in cloud → hide any stale banner.
     if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
@@ -37089,6 +37197,128 @@ function showOrUpdateTeammateLiveBanner(result) {
 
 function hideTeammateLiveBanner() {
   const banner = document.getElementById('teammateLiveBanner');
+  if (banner) banner.remove();
+}
+
+// SELF-SYNC check + banner (1.3.061526)
+// =====================================================================
+// Detects when this moderator's OTHER browser has written newer
+// progress for the current assignment and shows a persistent banner
+// offering to load it. Returns true when the banner is shown (so the
+// poller can suppress the teammate banner to avoid stacking).
+async function checkAndOfferSelfSync(prefetchedRows) {
+  if (!SESSIONSTATE_PA_READ_URL) return false;
+  const result = await findSelfSessionStateUpdate(prefetchedRows);
+  if (!result || !result.syncableState || !result.row) {
+    if (typeof hideSelfSyncBanner === 'function') hideSelfSyncBanner();
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = null;
+    return false;
+  }
+  const winnerActive = result.row.lastActive || '';
+  const baseline = _sessionStateSyncState.lastSyncedActive || '';
+
+  // Timestamp guard: a self-row at-or-older than this browser's last
+  // write is our own (or stale) — never prompt for it. This is what
+  // stops the ACTIVE browser from prompting itself.
+  if (baseline && winnerActive && winnerActive <= baseline) {
+    if (typeof hideSelfSyncBanner === 'function') hideSelfSyncBanner();
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = null;
+    return false;
+  }
+
+  // Content guard: if the cloud's newest self-row is byte-identical to
+  // our current local state, there's nothing to load — suppress.
+  let localJson = '', cloudJson = '';
+  try { localJson = JSON.stringify(extractSyncableState(state)); } catch (_) {}
+  try { cloudJson = JSON.stringify(result.syncableState); } catch (_) {}
+  if (localJson && cloudJson && localJson === cloudJson) {
+    if (typeof hideSelfSyncBanner === 'function') hideSelfSyncBanner();
+    if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = null;
+    return false;
+  }
+
+  // Staleness guard: ignore prior-day leftovers (same 6h window as the
+  // teammate check).
+  if (winnerActive) {
+    const age = Date.now() - new Date(winnerActive).getTime();
+    if (age > 6 * 60 * 60 * 1000) {
+      if (typeof hideSelfSyncBanner === 'function') hideSelfSyncBanner();
+      if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = null;
+      return false;
+    }
+  }
+
+  // Mark self-live so the poll cadence stays ACTIVE (the other browser
+  // is clearly working right now).
+  if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = Date.now();
+  showOrUpdateSelfSyncBanner(result);
+  return true;
+}
+
+function showOrUpdateSelfSyncBanner(result) {
+  if (!result || !result.syncableState || !result.row) return;
+  const at = result.row.lastActive || '';
+
+  // "how long ago" suffix, refreshed each poll tick.
+  let agoLabel = '';
+  if (at) {
+    const ms = Date.now() - new Date(at).getTime();
+    if (ms < 60000) agoLabel = 'just now';
+    else if (ms < 3600000) agoLabel = Math.floor(ms / 60000) + ' min ago';
+    else agoLabel = Math.floor(ms / 3600000) + ' hr ago';
+  }
+
+  let banner = document.getElementById('selfSyncBanner');
+  const isNew = !banner;
+  if (isNew) {
+    banner = document.createElement('div');
+    banner.id = 'selfSyncBanner';
+    // Reuse the teammate banner's base layout + the self-sync accent.
+    banner.className = 'teammate-live-banner self-sync-banner';
+    const app = document.getElementById('app');
+    if (!app) return;
+    const nav = app.querySelector('nav');
+    if (nav && nav.nextSibling) app.insertBefore(banner, nav.nextSibling);
+    else app.appendChild(banner);
+  }
+  // No dismiss button — the banner persists until Sync is clicked.
+  banner.innerHTML = `
+    <span class="teammate-live-banner-dot" aria-hidden="true"></span>
+    <div class="teammate-live-banner-text">
+      <div class="teammate-live-banner-title">New changes from your other session</div>
+      <div class="teammate-live-banner-sub">You${'\u2019'}re signed in on another browser${agoLabel ? ` — updated ${escapeHTML(agoLabel)}` : ''}. Click Sync to load the latest.</div>
+    </div>
+    <button type="button" class="teammate-live-banner-sync-btn" id="selfSyncBannerSyncBtn">Sync</button>
+  `;
+  const syncBtn = document.getElementById('selfSyncBannerSyncBtn');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      // Visual "syncing" feedback on the button.
+      syncBtn.disabled = true;
+      syncBtn.textContent = 'Syncing…';
+      // REPLACE local state wholesale with the adopted latest.
+      applySelfSyncReplace(result.syncableState);
+      // Advance the baseline so we don't immediately re-prompt for the
+      // state we just adopted. Also prime the no-op diff guard so the
+      // next flush doesn't write an identical row.
+      _sessionStateSyncState.lastSyncedActive = result.row.lastActive || new Date().toISOString();
+      try {
+        _sessionStateSyncState.lastSyncedStateJson = JSON.stringify(extractSyncableState(state));
+        const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+        _sessionStateSyncState.lastSyncedAsgnId = asgn ? String(asgn.id) : _sessionStateSyncState.lastSyncedAsgnId;
+      } catch (_) {}
+      saveState();
+      hideSelfSyncBanner();
+      if (typeof adminState !== 'undefined' && adminState) adminState._lastSelfLiveAt = null;
+      if (typeof showToast === 'function') showToast('Synced the latest changes from your other session', 'success', 3500);
+      if (typeof renderApp === 'function') renderApp();
+      if (typeof applyAssignmentToEntryFields === 'function') applyAssignmentToEntryFields();
+    });
+  }
+}
+
+function hideSelfSyncBanner() {
+  const banner = document.getElementById('selfSyncBanner');
   if (banner) banner.remove();
 }
 
