@@ -35,6 +35,12 @@ html {
      overscroll-behavior:none keeps the native-feeling no-bounce. */
   overflow-x: clip;
   overscroll-behavior: none;
+  /* Disable double-tap-to-zoom (and the legacy 300ms tap delay) app-wide.
+     `manipulation` still allows scrolling AND pinch-zoom, so accessibility
+     zoom is preserved — it only kills double-tap zoom, which fired
+     accidentally when mods tapped the iteration steppers quickly on a
+     phone. The explicit control rule below is belt-and-suspenders. */
+  touch-action: manipulation;
 }
 
 :root {
@@ -2053,6 +2059,14 @@ a.icon-btn:focus-visible {
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
+/* Belt-and-suspenders for double-tap zoom: the tap targets mods hit most
+   (iteration steppers, status chips, buttons, inputs, links, anything with a
+   click handler) explicitly opt out of double-tap zoom. Pinch-zoom + scroll
+   still work. */
+button, a, label, input, select, textarea,
+.iter-stepper, .iter-btn, .scenario-status-btn, .cal-ref-btn, [onclick] {
+  touch-action: manipulation;
+}
 /* Iteration stepper — used in the scenario table */
 .iter-stepper {
   display: inline-flex;
@@ -8865,6 +8879,9 @@ button.perf-stat-chip.scheduled.active {
 @keyframes calrefFade { from { opacity: 0; } to { opacity: 1; } }
 .calref-modal {
   width: min(880px, 100%);
+  max-height: 90dvh;            /* never taller than the viewport */
+  display: flex;
+  flex-direction: column;       /* header fixed; frame fills the rest */
   background: var(--surface, #141414);
   border: 0.5px solid var(--border-strong, rgba(255,255,255,0.18));
   border-radius: 12px;
@@ -8877,6 +8894,7 @@ button.perf-stat-chip.scheduled.active {
   justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 0.5px solid var(--border, rgba(255,255,255,0.1));
+  flex-shrink: 0;
 }
 .calref-title {
   font-family: var(--font);
@@ -8901,6 +8919,7 @@ button.perf-stat-chip.scheduled.active {
   width: 100%;
   aspect-ratio: 16 / 9;
   background: #000;
+  flex-shrink: 0;
 }
 .calref-frame iframe {
   position: absolute;
@@ -8908,6 +8927,17 @@ button.perf-stat-chip.scheduled.active {
   width: 100%;
   height: 100%;
   border: 0;
+}
+/* Mobile: the vertically-centered 16:9 box was too short for the Drive
+   player's chrome, so the video got clipped by the modal's bottom edge.
+   Top-align the modal, fill the width, and let the frame grow to a tall
+   slice of the viewport so the whole player (controls + the landscape
+   video, letterboxed) is fully visible. dvh tracks the real visible
+   height on mobile browsers. */
+@media (max-width: 760px) {
+  .calref-overlay { padding: 10px; align-items: flex-start; }
+  .calref-modal { width: 100%; max-height: 92dvh; margin-top: 6dvh; }
+  .calref-frame { aspect-ratio: auto; flex: 1 1 auto; min-height: 52dvh; }
 }
 .scenario-status-btn {
   font-family: var(--font);
@@ -32969,6 +32999,12 @@ const APPROVAL_AUTO_GRACE_MS = 5 * 60 * 1000;    // 5 min
 // (authoritative → revoke stale local approvals) from "couldn't reach cloud"
 // (network hiccup → leave local state, let the TTL handle fail-closed).
 let _apprLastReadOk = false;
+// How long an admin's just-made decision is held as a local override on top
+// of the resolved cloud list. This makes the deciding admin's action show
+// instantly AND survive a truncated read (see the 256-row pagination note)
+// until a successful read returns the decision row. Cleared as soon as the
+// cloud read catches up; otherwise expires after this window.
+const APPROVAL_OVERRIDE_TTL_MS = 60 * 60 * 1000;   // 60 min
 
 // Resolve the acting admin's identity for decided_by / decided_by_id.
 function currentAdminIdentity() {
@@ -33012,11 +33048,13 @@ function approvalAgeMin(appr) {
   const t = Date.parse((appr && (appr.submitted_at || appr.last_modified)) || '');
   return isNaN(t) ? 0 : (Date.now() - t) / 60000;
 }
-// Eligible for the time gate: still open, past 3:30 PT, pending > 15 min.
+// Eligible for the auto-approve gate: still open and pending ≥ 15 min.
+// (The old 3:30 PM PT time-of-day cutoff was removed — auto-approval is now
+// purely a 15-minute window regardless of time of day.)
 function isApprovalAutoEligible(appr) {
   if (!appr) return false;
   if (appr.status !== 'Pending' && appr.status !== 'InReview') return false;
-  return isPastAutoApproveCutoff() && approvalAgeMin(appr) >= APPROVAL_AUTO_MIN;
+  return approvalAgeMin(appr) >= APPROVAL_AUTO_MIN;
 }
 
 // --- read / resolve / write ---
@@ -33081,8 +33119,34 @@ async function ensureApprovalData(opts) {
   const rows = await fetchApprovalRows();
   adminState.approvalRows = rows;
   adminState.approvals = resolveApprovals(rows);
+  applyApprovalOverrides();   // re-inject the admin's own just-made decisions
   adminState._apprFetchedAt = now;
   return adminState.approvals;
+}
+
+// Re-inject locally-decided rows on top of the resolved cloud list. Why: in
+// real-time use the append-only ApprovalRequests table can exceed the PA
+// "List rows" 256-row cap; if pagination isn't enabled the newest rows (the
+// decisions) get truncated from the read, so the resolved list still shows
+// Pending even though the decision is in Excel. The override makes the
+// deciding admin see their action immediately and keeps it visible until a
+// successful read returns that row (cloud caught up) or the TTL lapses.
+// NOTE: this is a client-side safety net — the real fix is enabling
+// pagination on the Approval Read flow so ALL admins see ALL decisions.
+function applyApprovalOverrides() {
+  const ov = adminState._apprOverrides;
+  if (!ov) return;
+  const now = Date.now();
+  const list = adminState.approvals || (adminState.approvals = []);
+  Object.keys(ov).forEach(id => {
+    const entry = ov[id];
+    if (!entry || (now - entry.at) > APPROVAL_OVERRIDE_TTL_MS) { delete ov[id]; return; }
+    const idx = list.findIndex(a => String(a.approval_id) === String(id));
+    const cloud = idx >= 0 ? list[idx] : null;
+    const cloudEpoch = cloud ? (cloud._epoch || Date.parse((cloud.last_modified || cloud.submitted_at) || '') || 0) : -1;
+    if (cloud && cloudEpoch >= entry.row._epoch) { delete ov[id]; return; }  // cloud caught up
+    if (idx >= 0) list[idx] = entry.row; else list.push(entry.row);          // inject / replace stale
+  });
 }
 
 // --- mutations ---
@@ -33133,7 +33197,16 @@ async function adminDecideApproval(approvalId, decision, note) {
   row.last_modified = nowIso;
   row.app_version = APP_VERSION;
   const ok = await writeApprovalEvent(row);
-  if (ok) await ensureApprovalData({ force: true });
+  if (ok) {
+    // Hold this decision as a local override so it shows instantly and
+    // survives a truncated (256-capped) read until the cloud read returns it.
+    adminState._apprOverrides = adminState._apprOverrides || {};
+    adminState._apprOverrides[approvalId] = {
+      row: { ...row, _epoch: Date.parse(nowIso) || Date.now() },
+      at: Date.now(),
+    };
+    await ensureApprovalData({ force: true });
+  }
   return ok;
 }
 // Time-gate auto-approve writer (client timer or, server-side, the sweep flow).
