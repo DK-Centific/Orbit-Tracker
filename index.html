@@ -8780,6 +8780,97 @@ button.perf-stat-chip.scheduled.active {
   gap: 4px;
   align-items: center;
 }
+/* Calibration reference-video buttons (CAL_EXT / CAL_GND scenarios) */
+.cal-ref-videos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.cal-ref-label {
+  font-family: var(--font-mono, var(--font));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  opacity: 0.72;
+}
+.cal-ref-btn {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 0.5px solid var(--accent, #22d3ee);
+  background: color-mix(in srgb, var(--accent, #22d3ee) 12%, transparent);
+  color: var(--accent, #22d3ee);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.cal-ref-btn:hover { background: color-mix(in srgb, var(--accent, #22d3ee) 22%, transparent); }
+.cal-ref-btn:active { transform: scale(0.97); }
+/* In-app video modal */
+.calref-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: calrefFade 0.18s ease;
+}
+@keyframes calrefFade { from { opacity: 0; } to { opacity: 1; } }
+.calref-modal {
+  width: min(880px, 100%);
+  background: var(--surface, #141414);
+  border: 0.5px solid var(--border-strong, rgba(255,255,255,0.18));
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+.calref-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border, rgba(255,255,255,0.1));
+}
+.calref-title {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #F0EDE5);
+}
+.calref-close {
+  font-size: 16px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 0.5px solid var(--border-strong, rgba(255,255,255,0.18));
+  background: transparent;
+  color: var(--text, #F0EDE5);
+  cursor: pointer;
+}
+.calref-close:hover { background: rgba(255, 255, 255, 0.08); }
+.calref-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.calref-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
 .scenario-status-btn {
   font-family: var(--font);
   font-size: 12px;
@@ -13750,7 +13841,7 @@ function bindEquipmentRows() {
 //   - A "Skip" button as a separate trailing chip
 //   - Currently active status is visually emphasized
 //   - "Partially Recorded" shows a small hint when no note has been entered
-function scenarioStatusButtonsHTML(station, sd, scenarioNum) {
+function scenarioStatusButtonsHTML(station, sd, scenarioNum, scenarioId) {
   // Stations 0b/0c (recordFlow): no Calibrated/Skip buttons. Instead a small
   // state machine — Ready to record → (open Lakitu) → Completed recording?
   // Yes/No → complete. State lives in _recordFlowState (transient UI state);
@@ -13758,6 +13849,9 @@ function scenarioStatusButtonsHTML(station, sd, scenarioNum) {
   if (station.recordFlow) {
     return recordFlowControlsHTML(station, sd, scenarioNum);
   }
+  // Calibration scenarios (Extrinsic/Ground checkerboard) are mandatory: no
+  // Skip button, and they carry the reference-video buttons.
+  const isCal = scenarioId === 'CAL_EXT' || scenarioId === 'CAL_GND';
   const current = sd.status || 'Not Started';
   // "Not Started" is the default — don't show a button to set it to that.
   // Operators advance INTO statuses; they don't reset.
@@ -13766,7 +13860,23 @@ function scenarioStatusButtonsHTML(station, sd, scenarioNum) {
   const skipMissingNote = isScenarioSkipMissingNote(sd);
   const skipped = sd.status === SKIPPED_STATUS;
 
+  const skipBtn = isCal ? '' : `
+      <button class="scenario-status-btn s-skipped scenario-skip-btn ${skipped ? 'active' : ''}"
+              type="button"
+              data-key="${station.key}" data-num="${scenarioNum}" data-status="${SKIPPED_STATUS}"
+              title="Skip this scenario (note required)">
+        ${skipped ? '↺ Unskip' : 'Skip'}
+      </button>`;
+  const calRefHTML = isCal ? `
+    <div class="cal-ref-videos">
+      <span class="cal-ref-label">\uD83C\uDFA5 Reference videos:</span>
+      <button type="button" class="cal-ref-btn" onclick="openCalRefVideo(1)">Video 1</button>
+      <button type="button" class="cal-ref-btn" onclick="openCalRefVideo(2)">Video 2</button>
+      <button type="button" class="cal-ref-btn" onclick="openCalRefVideo(3)">Video 3</button>
+    </div>` : '';
+
   return `
+    ${calRefHTML}
     <div class="scenario-status-group ${STATUS_CLASS[current] || ''}" data-key="${station.key}" data-num="${scenarioNum}">
       ${choices.map(opt => {
         const active = current === opt;
@@ -13779,16 +13889,50 @@ function scenarioStatusButtonsHTML(station, sd, scenarioNum) {
             ${escapeHTML(opt === 'Partially Recorded' ? 'Partial' : opt === 'All Recorded' ? 'Recorded' : opt)}
           </button>`;
       }).join('')}
-      <button class="scenario-status-btn s-skipped scenario-skip-btn ${skipped ? 'active' : ''}"
-              type="button"
-              data-key="${station.key}" data-num="${scenarioNum}" data-status="${SKIPPED_STATUS}"
-              title="Skip this scenario (note required)">
-        ${skipped ? '↺ Unskip' : 'Skip'}
-      </button>
+      ${skipBtn}
     </div>
     ${partialMissingNote ? `<div class="scenario-note-required" data-kind="partial">⚠️ Note required for Partial</div>` : ''}
-    ${skipMissingNote ? `<div class="scenario-note-required" data-kind="skip">⚠️ Note required for Skip</div>` : ''}
+    ${!isCal && skipMissingNote ? `<div class="scenario-note-required" data-kind="skip">⚠️ Note required for Skip</div>` : ''}
   `;
+}
+
+/* =====================================================================
+   CALIBRATION REFERENCE VIDEOS — v1.3.061526
+   =====================================================================
+   Three Google Drive reference clips shown as buttons inside the
+   calibration scenarios (CAL_EXT / CAL_GND) of Stations 0A/1/2/3. They
+   open in an in-app modal (iframe to Drive /preview) — NOT a new tab. */
+const CALREF_VIDEOS = {
+  1: 'https://drive.google.com/file/d/1fyc7h0-EXsOPfSb9fgoOrHlKhPqOtR69/preview',
+  2: 'https://drive.google.com/file/d/1VngwilH1t2FkmNoX_c3MVfh6bMPC-6NX/preview',
+  3: 'https://drive.google.com/file/d/19ovfOen08VfJbDjo5Dr81j2vlTT9ujin/preview',
+};
+function _calRefEsc(e) { if (e.key === 'Escape') closeCalRefVideo(); }
+function closeCalRefVideo() {
+  const ov = document.getElementById('calRefOverlay');
+  if (ov) ov.remove();
+  document.removeEventListener('keydown', _calRefEsc);
+}
+function openCalRefVideo(n) {
+  const url = CALREF_VIDEOS[n];
+  if (!url) return;
+  closeCalRefVideo();
+  const ov = document.createElement('div');
+  ov.id = 'calRefOverlay';
+  ov.className = 'calref-overlay';
+  ov.innerHTML =
+    '<div class="calref-modal" role="dialog" aria-modal="true" aria-label="Calibration reference video ' + n + '">' +
+      '<div class="calref-head">' +
+        '<span class="calref-title">\uD83C\uDFA5 Reference video ' + n + '</span>' +
+        '<button type="button" class="calref-close" onclick="closeCalRefVideo()" aria-label="Close">\u2715</button>' +
+      '</div>' +
+      '<div class="calref-frame">' +
+        '<iframe src="' + url + '" allow="autoplay; encrypted-media; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>' +
+      '</div>' +
+    '</div>';
+  ov.addEventListener('click', e => { if (e.target === ov) closeCalRefVideo(); });
+  document.body.appendChild(ov);
+  document.addEventListener('keydown', _calRefEsc);
 }
 
 /* =====================================================================
@@ -14167,7 +14311,7 @@ function renderStation(key, opts) {
                 <td class="col-id">${escapeHTML(sc.id)}</td>
                 <td class="col-name">${escapeHTML(sc.name)}</td>
                 <td>${station.recordFlow ? '<span class="iter-auto" title="Counted automatically when recording is confirmed">' + iters + ' / ' + (sc.iter || 1) + '</span>' : iterStepperHTML(station.key, sc.num, iters, iterClass, sc.iter)}</td>
-                <td>${scenarioStatusButtonsHTML(station, sd, sc.num)}</td>
+                <td>${scenarioStatusButtonsHTML(station, sd, sc.num, sc.id)}</td>
                 ${station.type === 'capture' ? `
                   <td>
                     <input class="scenario-notes" data-num="${sc.num}" data-key="${station.key}"
@@ -14197,7 +14341,7 @@ function renderStation(key, opts) {
               </div>
               <div class="scenario-card-controls">
                 ${station.recordFlow ? '' : iterStepperHTML(station.key, sc.num, iters, iterClass, sc.iter)}
-${scenarioStatusButtonsHTML(station, sd, sc.num)}
+${scenarioStatusButtonsHTML(station, sd, sc.num, sc.id)}
                 ${station.type === 'capture' ? `
                   <input class="scenario-notes" data-num="${sc.num}" data-key="${station.key}"
                     type="text" placeholder="Add notes…" value="${escapeHTML(sd.notes || '')}">
@@ -15056,7 +15200,26 @@ function calibrationComplete(k) {
     return !!(sd && (typeof isScenarioComplete === 'function' ? isScenarioComplete(sd) : false));
   });
 }
-function gateApproved(k) { const g = getGate(k); return g.status === 'Approved' || g.status === 'AutoApproved'; }
+// Authoritative unlock check. A local Approved/AutoApproved is NOT trusted on
+// its own — that's the local-memory bypass we must prevent. It only unlocks
+// when the backend has positively confirmed it (verifiedAt stamped by a
+// successful read in pollMyApprovals) within APPROVAL_VERIFY_TTL_MS, or when a
+// client auto-approve is still inside its write-propagation grace window.
+// Anything else — fabricated/edited localStorage, a stale approval from a
+// previous session, or a backend read that's failing/misreading — fails
+// CLOSED (locked).
+function gateApproved(k) {
+  const g = getGate(k);
+  if (g.status !== 'Approved' && g.status !== 'AutoApproved') return false;
+  // No backend read configured → nothing to verify against; fall back to local
+  // status (offline/legacy). In production the read URL is always set, so the
+  // confirmation requirement below is what actually governs unlocking.
+  if (!APPROVAL_PA_READ_URL) return true;
+  const now = Date.now();
+  if (g.verifiedAt && (now - g.verifiedAt) < APPROVAL_VERIFY_TTL_MS) return true;
+  if (g.status === 'AutoApproved' && g.autoLocalAt && (now - g.autoLocalAt) < APPROVAL_AUTO_GRACE_MS) return true;
+  return false;
+}
 // 0A prerequisite: Stations 1–3 stay fully locked until Station 0A's
 // calibration is approved (or auto-approved).
 function isZeroAApproved() { return gateApproved('station0_cal'); }
@@ -15075,9 +15238,14 @@ function isGateActive(k) {
   if (gateApproved(k)) return false;
   const g = getGate(k);
   if (['Pending', 'InReview', 'Rejected'].indexOf(g.status) >= 0) return true;
-  // Engaged-but-not-yet-submitted: applies to Station 0A AND capture
-  // stations 1/2/3 alike — once either calibration scenario is touched,
-  // the gate surfaces (slide-down with "Submit for review").
+  // Capture Stations 1/2/3: the non-calibration scenarios are LOCKED from the
+  // moment the station is entered (Station 0A already approved) and stay
+  // locked until THIS station's calibration is approved — regardless of
+  // whether calibration has been engaged yet. Reaching here means the station
+  // is not yet approved, so the gate is active.
+  if (isGatedCaptureStation(k)) return true;
+  // Station 0A: surface only once a calibration scenario is touched (it has no
+  // other scenarios to lock; the slide-down is just its submit affordance).
   return isCalibrationEngaged(k);
 }
 function isScenarioGateLocked(k, num) {
@@ -15328,8 +15496,13 @@ function decorateApprovalGate(c, station) {
 // --- poll: mirror cloud decisions into local gates + client auto-approve ---
 async function pollMyApprovals() {
   let resolved = [];
+  let readOk = false;
   if (APPROVAL_PA_READ_URL) {
-    try { resolved = resolveApprovals(await fetchApprovalRows()); } catch (_) { resolved = []; }
+    try {
+      _apprLastReadOk = false;
+      resolved = resolveApprovals(await fetchApprovalRows());
+      readOk = (_apprLastReadOk === true);   // set inside fetchApprovalRows
+    } catch (_) { resolved = []; readOk = false; }
   }
   const asgnId = _gateAsgnId();
   const orbitId = (state.modProfile && state.modProfile.orbitLoginId) || state.username || '';
@@ -15340,21 +15513,49 @@ async function pollMyApprovals() {
         String(a.assignment_id) === String(asgnId) &&
         String(a.station) === label &&
         String(a.orbit_login_id || '').toLowerCase() === String(orbitId).toLowerCase());
-      if (!mine) continue;
       const g = getGate(k);
-      if (mine.status !== g.status) {
-        setGate(k, { status: mine.status, approvalId: mine.approval_id, decidedBy: mine.decided_by || '', note: mine.feedback_note || '' });
-        if (mine.status === 'Approved' || mine.status === 'AutoApproved') {
-          // Slide the layer up and away, THEN re-render (unlocks scenarios).
-          animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
-          showApprovalApprovedPopup();
-        } else if (mine.status === 'Rejected') {
-          showApprovalRejectedPopup(mine.decided_by, mine.feedback_note);
-          if (typeof renderApp === 'function') renderApp();
-        } else {
+      if (mine) {
+        const cloudStatus = mine.status;
+        if (cloudStatus === 'Approved' || cloudStatus === 'AutoApproved') {
+          // Cloud confirms approval — stamp verifiedAt EVERY time so the TTL
+          // stays fresh while the session is live. Fire the popup only on the
+          // transition into an (unlocked) approved state.
+          const wasApproved = gateApproved(k);
+          setGate(k, {
+            status: cloudStatus, verifiedAt: Date.now(),
+            approvalId: mine.approval_id, decidedBy: mine.decided_by || '', note: mine.feedback_note || '',
+          });
+          if (!wasApproved) {
+            animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
+            showApprovalApprovedPopup();
+          }
+        } else if (cloudStatus !== g.status) {
+          // Pending / InReview / Rejected — mirror it and clear verifiedAt
+          // (no longer an approved state).
+          setGate(k, {
+            status: cloudStatus, verifiedAt: null,
+            approvalId: mine.approval_id, decidedBy: mine.decided_by || '', note: mine.feedback_note || '',
+          });
+          if (cloudStatus === 'Rejected') showApprovalRejectedPopup(mine.decided_by, mine.feedback_note);
           if (typeof renderApp === 'function') renderApp();
         }
+      } else if (readOk) {
+        // Successful read with NO row for this gate → cloud is authoritative:
+        // a local Approved/AutoApproved here is stale or fabricated. Revoke it
+        // (fail closed) UNLESS a client auto-approve is still inside its
+        // write-propagation grace window (its row may not be readable yet).
+        if (g.status === 'Approved' || g.status === 'AutoApproved') {
+          const inGrace = g.status === 'AutoApproved' && g.autoLocalAt &&
+            (Date.now() - g.autoLocalAt) < APPROVAL_AUTO_GRACE_MS;
+          if (!inGrace) {
+            console.warn('[Orbit] revoking unverified gate approval (no cloud row):', k);
+            setGate(k, { status: 'none', verifiedAt: null, autoLocalAt: null });
+            if (typeof renderApp === 'function') renderApp();
+          }
+        }
       }
+      // readOk === false and no row → couldn't reach cloud; leave local state
+      // and let gateApproved's TTL govern fail-closed behavior.
     }
   }
   runClientAutoApprove();
@@ -15368,7 +15569,7 @@ function runClientAutoApprove() {
     const g = getGate(k);
     if (g.status !== 'Pending' && g.status !== 'InReview') continue;
     if (!isApprovalAutoEligible({ status: g.status, submitted_at: g.submittedAt })) continue;
-    setGate(k, { status: 'AutoApproved' });
+    setGate(k, { status: 'AutoApproved', autoLocalAt: Date.now() });
     if (APPROVAL_PA_WRITE_URL) {
       const ctx = _gateModContext();
       writeApprovalAutoApprove({
@@ -16584,7 +16785,43 @@ function firstWordOf(name) {
 }
 
 /* ----------- Render shell ----------- */
+// =====================================================================
+// ADMIN SCROLL PRESERVATION (re-entrancy-safe)
+// ---------------------------------------------------------------------
+// Admin re-renders replace large innerHTML subtrees (renderAdmin rebuilds
+// #adminContent; renderAssignment rebuilds #subtabBody). Clearing a tall
+// subtree collapses the document height, so the browser clamps the window's
+// scroll to the top — that's the "jumps to the top every few seconds / when I
+// click a button" bug. The window is the page scroller (body has no fixed
+// height / overflow), so we capture window.scrollY and restore it after the
+// rebuild lays out.
+//
+// The latch matters: a single user action often triggers a NESTED cascade
+// (renderAdmin -> renderAdminTabBody -> renderAssignment). Only the FIRST
+// (outermost) call captures, BEFORE any innerHTML clear, so it records the
+// real position; nested calls are no-ops. One double-rAF restore runs after
+// the whole synchronous cascade paints, then disarms.
+let _scrollPreserveY = 0;
+let _scrollPreserveArmed = false;
+function armScrollPreserve() {
+  if (_scrollPreserveArmed) return;   // first capture in this cascade wins
+  _scrollPreserveArmed = true;
+  _scrollPreserveY = window.scrollY || window.pageYOffset || (document.documentElement && document.documentElement.scrollTop) || 0;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (_scrollPreserveY > 0 && document.visibilityState === 'visible') {
+        window.scrollTo(0, _scrollPreserveY);
+      }
+      _scrollPreserveArmed = false;
+    });
+  });
+}
+// Intentional tab switches should land at the top, not preserve the prior
+// tab's offset — force the pending restore to a no-op (stay clamped at top).
+function resetScrollPreserveToTop() { _scrollPreserveY = 0; }
+
 function renderAdmin() {
+  armScrollPreserve();
   const c = document.getElementById('adminContent');
   c.innerHTML = `
     <div class="admin-hero">
@@ -16625,6 +16862,7 @@ function renderAdmin() {
         b.classList.toggle('active', b.dataset.tab === adminState.tab);
       });
       renderAdminTabBody();
+      resetScrollPreserveToTop();   // intentional tab switch → land at top
     });
   });
   renderAdminTabBody();
@@ -24017,6 +24255,11 @@ function isImmutableAssignmentStatus(s) {
 
 /* ----------- Render Assignment view ----------- */
 function renderAssignment() {
+  // Preserve window scroll across this #subtabBody rebuild (poll refresh AND
+  // in-tab button actions both land here). Re-entrancy latch: when called as
+  // part of a renderAdmin cascade the capture already happened, so this is a
+  // no-op; when called directly (e.g. a calendar/team button) it captures here.
+  armScrollPreserve();
   // Focus guard — the Assignment tab's 60s poll (and the SessionState-rows
   // landing) re-render #subtabBody; defer if an admin is typing in any text
   // field inside the admin app (search box, notes) so the keyboard / caret
@@ -29694,6 +29937,77 @@ async function saveAssignment() {
     }
   }
 
+  // =====================================================================
+  // MODERATOR DOUBLE-BOOKING GUARD — one session per moderator per DAY.
+  // ---------------------------------------------------------------------
+  // A moderator can be on only one booked team for a given calendar date.
+  // If any primary moderator on the team being booked already appears on
+  // another active booking for the SAME date (a different team, or the
+  // same team at another time), block the save and name the clash. Other
+  // dates are unaffected — this is a same-day-only rule. The booking being
+  // edited is exempt (skipped by id) so re-saving it never self-conflicts.
+  //
+  // "Who is booked" on an existing row is read from its modSnapshots (the
+  // moderators captured at booking time), falling back to the team's
+  // current primaryIds when an older row has no snapshot. Cancelled and
+  // Unassigned rows aren't live bookings, so they don't occupy anyone.
+  // =====================================================================
+  if (team) {
+    const myModIds = (team.primaryIds || []).map(id => String(id).toLowerCase()).filter(Boolean);
+    if (myModIds.length) {
+      const clashes = [];          // { modId, teamName, time }
+      const seenMods = new Set();  // one entry per clashing moderator
+      for (const a of adminState.assignments) {
+        if (!a || a.id === m.editingId) continue;
+        if (String(a.date) !== String(m.date)) continue;
+        const st = a.status || 'Booked';
+        if (st === 'Cancelled' || st === 'Unassigned') continue;
+        let otherIds = (Array.isArray(a.modSnapshots) && a.modSnapshots.length)
+          ? a.modSnapshots.map(s => s && s.orbitLoginId).filter(Boolean)
+          : [];
+        if (!otherIds.length) {
+          const ot = adminState.teams.find(t => t.id === a.teamId);
+          otherIds = ot ? (ot.primaryIds || []) : [];
+        }
+        const otherSet = new Set(otherIds.map(id => String(id).toLowerCase()));
+        for (const mid of myModIds) {
+          if (otherSet.has(mid) && !seenMods.has(mid)) {
+            seenMods.add(mid);
+            const otherTeam = adminState.teams.find(t => t.id === a.teamId);
+            clashes.push({
+              modId: mid,
+              teamName: otherTeam ? otherTeam.name : (a.teamName || 'another team'),
+              time: (typeof fmtTimeOfDay === 'function' && a.startMin != null) ? fmtTimeOfDay(a.startMin) : '',
+            });
+          }
+        }
+      }
+      if (clashes.length) {
+        const dObj = parseYMD(m.date);
+        const dLabel = dObj
+          ? dObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+          : m.date;
+        const list = clashes.map(cl => {
+          let nm = (typeof getModeratorDisplayName === 'function' && getModeratorDisplayName(cl.modId)) || '';
+          if (!nm) {
+            const mo = (typeof getModeratorByOrbitId === 'function') ? getModeratorByOrbitId(cl.modId) : null;
+            nm = mo ? (mo.name || [mo.firstName, mo.lastName].filter(Boolean).join(' ')) : cl.modId;
+          }
+          return `<li><strong style="color: var(--text);">${escapeHTML(nm)}</strong> — already booked with <strong>${escapeHTML(cl.teamName)}</strong>${cl.time ? ' · ' + escapeHTML(cl.time) : ''}</li>`;
+        }).join('');
+        await appAlert({
+          title:   'Moderator already booked',
+          message: `This team can't be booked on <strong>${escapeHTML(dLabel)}</strong> — a moderator on it is already assigned to another session that day:`
+            + `<ul style="margin: 10px 0 12px 18px; padding: 0; font-size: 13.5px; color: var(--text2);">${list}</ul>`
+            + `Each moderator can run only one session per day. Book a different team, swap out the clashing moderator, or pick another date.`,
+          html:    true,
+          variant: 'warning',
+        });
+        return;
+      }
+    }
+  }
+
   // Resolve participant: either from the live list, or — when editing and the
   // participant has dropped from "available" — from the original record.
   let participantData = null;
@@ -32602,6 +32916,21 @@ const APPROVAL_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.
 const APPROVAL_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/41d9757babff4eb7ac2d3881804af96c/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=FMNIOJoSnhglArGlE5DuEZqEERwyQSV7fzp1cQqCO1g';   // PA "Approval Read" flow — list all rows (pagination ON)
 const APPROVAL_CACHE_TTL_MS = 30000;
 const APPROVAL_AUTO_MIN     = 15;   // minutes pending before the time gate auto-approves
+// --- Cloud-authoritative gate verification (anti-bypass) ---
+// A local Approved/AutoApproved only unlocks if it was confirmed by a
+// SUCCESSFUL backend read within this window. pollMyApprovals refreshes the
+// per-gate `verifiedAt` stamp on every confirming read (~every active poll),
+// so a live session stays unlocked; a prolonged read outage lets it lapse and
+// re-locks (fail closed). Tolerant enough to ride out transient failures.
+const APPROVAL_VERIFY_TTL_MS = 10 * 60 * 1000;   // 10 min
+// Grace window after a CLIENT auto-approve during which we trust the local
+// AutoApproved while its write propagates to Excel and a read can confirm it.
+const APPROVAL_AUTO_GRACE_MS = 5 * 60 * 1000;    // 5 min
+// Set by fetchApprovalRows: true after a successful read (incl. 0 rows),
+// false after a failed read. Lets pollMyApprovals tell "cloud says no row"
+// (authoritative → revoke stale local approvals) from "couldn't reach cloud"
+// (network hiccup → leave local state, let the TTL handle fail-closed).
+let _apprLastReadOk = false;
 
 // Resolve the acting admin's identity for decided_by / decided_by_id.
 function currentAdminIdentity() {
@@ -32663,6 +32992,7 @@ async function fetchApprovalRows() {
     });
     const rows = (typeof extractArray === 'function') ? extractArray(data) : (Array.isArray(data) ? data : (data && data.value) || []);
     if (typeof adminState !== 'undefined') adminState._apprReadError = null;   // read succeeded
+    _apprLastReadOk = true;   // authoritative: cloud reached (even if 0 rows)
     if (!rows.length) {
       console.warn('[Orbit] approval read → 0 rows. Raw response shape:', JSON.stringify(data).slice(0, 300));
     } else {
@@ -32673,6 +33003,7 @@ async function fetchApprovalRows() {
   } catch (e) {
     console.warn('[Orbit] approval read failed:', e && e.message);
     if (typeof adminState !== 'undefined') adminState._apprReadError = (e && e.message) || 'network error';
+    _apprLastReadOk = false;   // could not reach cloud — do NOT revoke on this tick
     return [];
   }
 }
