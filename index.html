@@ -3448,6 +3448,136 @@ input#ent_lakitu.lakitu-invalid {
 }
 .admin-tab-count:empty { display: none; }
 
+/* =========================================================
+   APPROVAL TAB (1.3.061526) — list + side panel, modeled on
+   the Performance tab. Status pills mirror the perf palette.
+   ========================================================= */
+.appr-wrap { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .appr-wrap { grid-template-columns: 1fr; } }
+.appr-list { display: flex; flex-direction: column; gap: 7px; }
+.appr-empty { padding: 40px 20px; text-align: center; color: var(--text3); font-size: 13.5px; }
+.appr-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 13px; border-radius: 11px;
+  background: var(--card-bg); border: 0.5px solid var(--border);
+  cursor: pointer; transition: border-color 0.16s ease, background 0.16s ease;
+}
+.appr-row:hover { background: var(--bg3); }
+.appr-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.appr-row-main { flex: 1; min-width: 0; }
+.appr-row-team { font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.appr-row-sub  { font-size: 11.5px; color: var(--text3); margin-top: 1px; }
+.appr-pill {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+}
+.appr-pill.pending  { background: rgba(245,158,11,0.16);  color: var(--amber-text); }
+.appr-pill.inreview { background: rgba(6,182,212,0.16);   color: #0e7490; }
+.appr-pill.approved { background: rgba(22,163,74,0.16);   color: #15803d; }
+.appr-pill.autoapproved { background: rgba(22,163,74,0.12); color: #15803d; }
+.appr-pill.rejected { background: rgba(239,68,68,0.14);   color: #b91c1c; }
+[data-theme="dark"] .appr-pill.inreview { color: #67e8f9; }
+[data-theme="dark"] .appr-pill.approved,
+[data-theme="dark"] .appr-pill.autoapproved { color: #4ade80; }
+[data-theme="dark"] .appr-pill.rejected { color: #fca5a5; }
+
+.appr-panel {
+  position: sticky; top: calc(52px + env(safe-area-inset-top) + 12px);
+  background: var(--card-bg); border: 0.5px solid var(--border);
+  border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.appr-panel-empty { color: var(--text3); font-size: 13px; text-align: center; padding: 24px 8px; }
+.appr-panel-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); }
+.appr-panel-title { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.appr-icon-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.appr-icon-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 8px; border: 0.5px solid var(--border-strong);
+  background: var(--bg3); color: var(--text); font-size: 12.5px; font-weight: 500;
+  text-decoration: none; cursor: pointer; transition: background 0.16s ease;
+}
+.appr-icon-btn:hover { background: var(--bg4); }
+.appr-icon-btn.disabled { opacity: 0.45; pointer-events: none; }
+.appr-note {
+  width: 100%; box-sizing: border-box; min-height: 56px; resize: vertical;
+  border-radius: 9px; border: 0.5px solid var(--border); background: var(--bg2);
+  padding: 9px 10px; font: inherit; font-size: 12.5px; color: var(--text);
+}
+.appr-decide-row { display: flex; gap: 9px; }
+.appr-btn-approve, .appr-btn-reject {
+  flex: 1; padding: 10px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: filter 0.16s ease;
+}
+.appr-btn-approve { border: none; background: #16a34a; color: #fff; }
+.appr-btn-approve:hover { filter: brightness(1.06); }
+.appr-btn-reject { border: 0.5px solid #ef4444; background: transparent; color: #ef4444; }
+.appr-btn-reject:hover { background: rgba(239,68,68,0.08); }
+.appr-decided-note {
+  font-size: 12px; color: var(--text2); background: var(--bg3);
+  border-radius: 9px; padding: 9px 11px; border: 0.5px solid var(--border);
+}
+
+/* Non-blocking "new requests" banner (reuses self-sync visual language) */
+.appr-incoming-banner {
+  display: flex; align-items: center; gap: 11px;
+  margin: 0 0 14px; padding: 10px 14px; border-radius: 11px;
+  background: linear-gradient(135deg, rgba(6,182,212,0.12), rgba(6,182,212,0.05));
+  border: 0.5px solid rgba(6,182,212,0.34);
+}
+.appr-incoming-banner-dot { width: 8px; height: 8px; border-radius: 50%; background: #06b6d4; flex-shrink: 0; animation: selfSyncPulse 2s ease-in-out infinite; }
+.appr-incoming-banner-text { flex: 1; font-size: 13px; color: var(--text); }
+.appr-incoming-banner-btn {
+  padding: 6px 13px; border-radius: 7px; border: 0.5px solid #06b6d4;
+  background: rgba(6,182,212,0.14); color: #0e7490; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+[data-theme="dark"] .appr-incoming-banner-btn { color: #67e8f9; }
+
+/* Moderator approval gate (1.3.061526) — locked scenario rows + the
+   slide-down "submit for review" layer on capture stations. */
+.appr-locked { opacity: 0.42; position: relative; }
+.appr-locked::after {
+  content: '🔒'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; opacity: 0.8; pointer-events: none;
+}
+.appr-locked .scenario-status-btn,
+.appr-locked .scenario-notes,
+.appr-locked button { cursor: not-allowed !important; }
+.appr-slidedown {
+  margin: 12px 0 0; border-radius: 12px; overflow: hidden;
+  border: 0.5px solid rgba(245,158,11,0.40);
+  background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04));
+}
+.appr-slidedown.pending { border-color: rgba(6,182,212,0.40); background: linear-gradient(135deg, rgba(6,182,212,0.12), rgba(6,182,212,0.04)); }
+.appr-slidedown.rejected { border-color: rgba(239,68,68,0.40); background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04)); }
+/* Open animation plays only on first appearance (.appr-enter, added once
+   by decorateApprovalGate). Close animation (.appr-exit) is added when the
+   gate resolves, slides the layer up + collapses it, then it's removed. */
+.appr-slidedown.appr-enter { animation: apprSlideDown 0.40s cubic-bezier(0.32,0.72,0,1) both; }
+.appr-slidedown.appr-exit  { animation: apprSlideUp 0.38s cubic-bezier(0.4,0,0.2,1) both; pointer-events: none; }
+@keyframes apprSlideDown {
+  from { opacity: 0; transform: translateY(-10px); max-height: 0; }
+  to   { opacity: 1; transform: translateY(0);     max-height: 460px; }
+}
+@keyframes apprSlideUp {
+  from { opacity: 1; transform: translateY(0);     max-height: 460px; margin-top: 12px; }
+  to   { opacity: 0; transform: translateY(-10px); max-height: 0;     margin-top: 0; padding-top: 0; padding-bottom: 0; }
+}
+.appr-slidedown-inner { padding: 14px 16px; }
+.appr-slidedown-title { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; margin-bottom: 4px; }
+.appr-slidedown-sub { font-size: 12.5px; color: var(--text2); line-height: 1.45; margin-bottom: 11px; }
+.appr-slidedown-note { font-size: 12.5px; color: var(--text2); background: var(--bg3); border-radius: 8px; padding: 8px 11px; margin-bottom: 11px; }
+.appr-submit-btn {
+  padding: 9px 18px; border-radius: 9px; border: none; background: var(--text); color: var(--bg);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter 0.16s ease;
+}
+.appr-submit-btn:hover { filter: brightness(1.08); }
+.appr-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.appr-waiting-row { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: #0e7490; }
+[data-theme="dark"] .appr-waiting-row { color: #67e8f9; }
+.appr-waiting-dot { width: 8px; height: 8px; border-radius: 50%; background: #06b6d4; animation: selfSyncPulse 2s ease-in-out infinite; }
+.station-item.locked { opacity: 0.55; }
+.appr-slidedown-row > td { padding: 0 !important; border: none !important; background: transparent !important; }
+
 /* Subtab toggle (Moderators / Participants) inside Moderator Hub */
 .subtab-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -12608,20 +12738,24 @@ function renderSidebar() {
     const status = getStationStatus(st.key);
     const isActive = currentStationKey === st.key;
     const num = i === 0 ? '0a' : i === 1 ? '0b' : i === 2 ? '0c' : String(i - 2);
+    const zlock = (typeof isStationZeroALocked === 'function') && isStationZeroALocked(st.key);
     return `
-      <div class="station-item ${isActive ? 'active' : ''}" data-key="${st.key}">
+      <div class="station-item ${isActive ? 'active' : ''} ${zlock ? 'locked' : ''}" data-key="${st.key}">
         <div class="station-num">${num}</div>
         <div class="station-info">
           <div class="station-label">${st.label}</div>
           <div class="station-sub">${st.sub}</div>
         </div>
-        <span class="status-pill ${status}" title="${prettyStatus(status)}">${pillLabel(status)}</span>
+        ${zlock
+          ? `<span class="status-pill" style="background: var(--bg4); color: var(--text3);" title="Locked until Station 0A is approved">🔒</span>`
+          : `<span class="status-pill ${status}" title="${prettyStatus(status)}">${pillLabel(status)}</span>`}
       </div>
     `;
   }).join('');
   list.querySelectorAll('.station-item').forEach(el => {
     el.addEventListener('click', () => {
       const k = el.dataset.key;
+      if (typeof guardEnterStation === 'function' && !guardEnterStation(k)) return;
       currentStationKey = k;
       renderApp();
       closeSidebarMobile();
@@ -14396,6 +14530,11 @@ ${scenarioStatusButtonsHTML(station, sd, sc.num)}
   });
 
   bindEntryFields();
+
+  // Approval gate decoration — locks non-calibration scenarios and shows
+  // the slide-down "submit for review" layer on capture stations when the
+  // gate is active. Runs every render so it survives renderApp() rebuilds.
+  if (typeof decorateApprovalGate === 'function') decorateApprovalGate(c, station);
 }
 
 /* =====================================================================
@@ -14498,6 +14637,10 @@ function onAccordionHeadTap(key) {
   const tapped = c.querySelector(`.acc-item[data-key="${key}"]`);
   if (!tapped) return;
   const alreadyOpen = tapped.classList.contains('open');
+
+  // 0A gate — block opening a locked capture station (allow collapsing an
+  // already-open one).
+  if (!alreadyOpen && typeof guardEnterStation === 'function' && !guardEnterStation(key)) return;
 
   // Tapping the open station collapses it back to the bare list.
   if (alreadyOpen) {
@@ -14809,6 +14952,18 @@ function submitStation() {
     return;
   }
 
+  // Approval gate — Station 0a's calibration must be approved (or
+  // auto-approved) before the moderator can advance past it. Blocks the
+  // submit and surfaces the waiting/submit popup. Other stations: no-op.
+  if (currentStationKey === 'station0_cal' && gate0aBlocksAdvance()) return;
+  // 0A prerequisite — Stations 1–3 can't be submitted until 0A is approved
+  // (defense-in-depth; navigation is already blocked, but a stale render or
+  // programmatic call shouldn't slip through).
+  if (typeof isStationZeroALocked === 'function' && isStationZeroALocked(currentStationKey)) {
+    if (typeof showToast === 'function') showToast('Station 0A must be approved first.', 'warning', 3000);
+    return;
+  }
+
   const idx = STATIONS.findIndex(s => s.key === currentStationKey);
   const isLast = idx === STATIONS.length - 1;
 
@@ -14836,6 +14991,10 @@ window.submitStation = submitStation;
 
 function goToStation(delta) {
   const idx = STATIONS.findIndex(s => s.key === currentStationKey);
+  // Approval gate: block advancing forward off Station 0a until its
+  // calibration is approved/auto-approved (mirrors the submitStation gate
+  // so the nav arrows can't bypass it).
+  if (delta > 0 && STATIONS[idx] && STATIONS[idx].key === 'station0_cal' && gate0aBlocksAdvance()) return;
   const next = Math.max(0, Math.min(STATIONS.length - 1, idx + delta));
   currentStationKey = STATIONS[next].key;
   renderApp();
@@ -14849,6 +15008,380 @@ function showWelcome() {
 }
 window.showWelcome = showWelcome;
 window.goToStation = goToStation;
+
+/* =====================================================================
+   MODERATOR APPROVAL GATE (1.3.061526)
+   =====================================================================
+   The visible half of the calibration approval gate. Self-contained:
+   one decoration hook at the end of renderStation + one guard in
+   submitStation/goToStation. State lives in state.approvalGate, keyed
+   `${assignmentId}|${stationKey}`. Status mirrors the cloud
+   ApprovalRequests log (updated by pollMyApprovals); the gate UI works
+   client-side immediately even before the PA URLs are wired (submit
+   no-ops on the cloud write but the lock/slide-down/popups still run).
+   ===================================================================== */
+const GATE_CAL_NUMS     = ['01', '02'];                       // CAL_EXT, CAL_GND (keyed by `num`)
+const GATE_CAPTURE_KEYS = ['station1', 'station2', 'station3'];
+const GATE_ALL_KEYS     = ['station0_cal', 'station1', 'station2', 'station3'];
+
+function isGatedCaptureStation(k) { return GATE_CAPTURE_KEYS.indexOf(k) >= 0; }
+function isGatedStation(k)        { return k === 'station0_cal' || isGatedCaptureStation(k); }
+function gateStationLabel(k) {
+  return ({ station0_cal: 'Station0a', station1: 'Station1', station2: 'Station2', station3: 'Station3' })[k] || k;
+}
+function _gateAsgnId() {
+  const a = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  return (a && a.id) ? String(a.id) : '';
+}
+function _gateKey(k) { return _gateAsgnId() + '|' + k; }
+function getGate(k) {
+  state.approvalGate = state.approvalGate || {};
+  return state.approvalGate[_gateKey(k)] || { status: 'none' };
+}
+function setGate(k, patch) {
+  state.approvalGate = state.approvalGate || {};
+  const id = _gateKey(k);
+  state.approvalGate[id] = { ...(state.approvalGate[id] || { status: 'none' }), ...patch };
+  saveState();
+}
+function _calStatus(k, num) {
+  const sd = state.stations[k] && state.stations[k].scenarios[num];
+  return sd ? (sd.status || 'Not Started') : 'Not Started';
+}
+function isCalibrationEngaged(k) { return GATE_CAL_NUMS.some(n => _calStatus(k, n) !== 'Not Started'); }
+function calibrationComplete(k) {
+  return GATE_CAL_NUMS.every(n => {
+    const sd = state.stations[k] && state.stations[k].scenarios[n];
+    return !!(sd && (typeof isScenarioComplete === 'function' ? isScenarioComplete(sd) : false));
+  });
+}
+function gateApproved(k) { const g = getGate(k); return g.status === 'Approved' || g.status === 'AutoApproved'; }
+// 0A prerequisite: Stations 1–3 stay fully locked until Station 0A's
+// calibration is approved (or auto-approved).
+function isZeroAApproved() { return gateApproved('station0_cal'); }
+function isStationZeroALocked(k) { return isGatedCaptureStation(k) && !isZeroAApproved(); }
+// Nav guard — returns false (and warns) when entry is blocked by the 0A gate.
+function guardEnterStation(k) {
+  if (isStationZeroALocked(k)) {
+    if (typeof showToast === 'function') showToast('Station 0A must be approved before Stations 1\u20133 unlock.', 'warning', 3200);
+    return false;
+  }
+  return true;
+}
+// Active = should lock other scenarios / show the slide-down.
+function isGateActive(k) {
+  if (!isGatedStation(k)) return false;
+  if (gateApproved(k)) return false;
+  const g = getGate(k);
+  if (['Pending', 'InReview', 'Rejected'].indexOf(g.status) >= 0) return true;
+  // Engaged-but-not-yet-submitted: applies to Station 0A AND capture
+  // stations 1/2/3 alike — once either calibration scenario is touched,
+  // the gate surfaces (slide-down with "Submit for review").
+  return isCalibrationEngaged(k);
+}
+function isScenarioGateLocked(k, num) {
+  return isGateActive(k) && GATE_CAL_NUMS.indexOf(String(num)) < 0;
+}
+
+// Resolve the moderator's identity / team / lakitu for an approval row.
+function _gateModContext() {
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  const orbitId = (state.modProfile && state.modProfile.orbitLoginId) || state.username || '';
+  let modName = (typeof getModeratorDisplayName === 'function' && getModeratorDisplayName(orbitId)) || '';
+  if (!modName && state.modProfile) {
+    modName = state.modProfile.name ||
+      ((state.modProfile.firstName || '') + ' ' + (state.modProfile.lastName || '')).trim();
+  }
+  modName = modName || orbitId;
+  const team = (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
+  const teamId   = (team && (team.teamId || team.id || team.team_id)) || (asgn && (asgn.teamId || asgn.team_id)) || '';
+  const teamName = (team && (team.teamName || team.name || team.team_name)) || (asgn && (asgn.teamName || asgn.team_name)) || '';
+  const lakitu = (state.participantId && typeof isValidLakituUrl === 'function' && isValidLakituUrl(state.participantId))
+    ? state.participantId : '';
+  return { asgn, orbitId, modName, teamId, teamName, lakitu };
+}
+
+// Submit (or resubmit) the calibration for review for a station.
+async function submitApprovalFromStation(stationKey, resubmit) {
+  const ctx = _gateModContext();
+  if (!ctx.asgn || !ctx.asgn.id) {
+    appAlert({ title: 'No active session', message: 'Start your booked session before submitting calibration for review.' });
+    return;
+  }
+  const g = getGate(stationKey);
+  const apprId = g.approvalId || ('appr_' + ctx.orbitId + '_' + ctx.asgn.id + '_' + gateStationLabel(stationKey) + '_' + Date.now());
+  const resubmitCount = (g.resubmitCount || 0) + (resubmit ? 1 : 0);
+  // Optimistic local state — gate goes Pending immediately so the UI
+  // reflects "waiting" even if the cloud write is a no-op (empty URL).
+  setGate(stationKey, {
+    approvalId: apprId, status: 'Pending',
+    submittedAt: new Date().toISOString(), resubmitCount,
+    note: '', decidedBy: '',
+  });
+  if (typeof renderApp === 'function') renderApp();
+  showApprovalWaitingPopup(stationKey);
+  // Fire-and-forget cloud write (no-op until APPROVAL_PA_WRITE_URL is set).
+  createApprovalRequest({
+    approval_id: apprId, assignmentId: ctx.asgn.id,
+    teamId: ctx.teamId, teamName: ctx.teamName,
+    orbitLoginId: ctx.orbitId, moderatorName: ctx.modName,
+    station: gateStationLabel(stationKey), scenario: 'calibration',
+    lakituUrl: ctx.lakitu, resubmit: !!resubmit, resubmitCount,
+  });
+}
+
+// --- popups (reuse appAlert) ---
+function showApprovalWaitingPopup() {
+  appAlert({
+    title: 'Submitted for review', html: true, okLabel: 'Got it',
+    message: 'The admin has been notified to review your calibration recording.',
+  });
+}
+function showApprovalApprovedPopup() {
+  appAlert({
+    title: 'Review complete — Approved', okLabel: 'Confirm',
+    message: 'Your calibration recording was approved. The remaining scenarios are now unlocked.',
+  });
+}
+function showApprovalRejectedPopup(by, note) {
+  const safeBy = escapeHTML(by || 'the admin');
+  const safeNote = note ? ('<br><br>“' + escapeHTML(note) + '”') : '';
+  appAlert({
+    title: 'Review complete — Rejected', html: true, okLabel: 'Confirm',
+    message: 'Rejected by <strong>' + safeBy + '</strong>.' + safeNote + '<br><br>The other scenarios stay locked. Please resubmit for review.',
+  }).then(() => { if (typeof renderApp === 'function') renderApp(); });
+}
+
+// --- decoration: lock non-calibration scenarios + inject the slide-down ---
+// Tracks whether the slide-down's entrance animation has already played
+// for a given gate (keyed by `${assignmentId}|${stationKey}`). Because
+// renderStation rebuilds #content on every render (including the 15s
+// poll), the slide-down element is recreated each time — without this we
+// would re-run the open animation on every tick. Reset when the gate
+// goes inactive so a fresh engagement animates again.
+const _apprSlideShown = {};
+
+// Smoothly slide the layer(s) up and remove them when the gate resolves,
+// THEN re-render (which rebuilds #content with the scenarios unlocked).
+function animateApprovalSlideAway(done) {
+  const root = document.getElementById('content');
+  const els = root ? root.querySelectorAll('.appr-slidedown') : [];
+  if (!els.length) { if (typeof done === 'function') done(); return; }
+  els.forEach(el => { el.classList.remove('appr-enter'); el.classList.add('appr-exit'); });
+  setTimeout(() => { if (typeof done === 'function') done(); }, 380);
+}
+
+// Lock every scenario row/card in this station (used by the 0A-prerequisite
+// lock — Stations 1–3 are fully locked until 0A is approved).
+function _lockAllScenarios(c, k) {
+  c.querySelectorAll('.scenario-status-group').forEach(grp => {
+    if (String(grp.getAttribute('data-key')) !== String(k)) return;
+    const container = grp.closest('tr') || grp.closest('.scenario-card');
+    if (!container) return;
+    container.classList.add('appr-locked');
+    container.querySelectorAll('button, input').forEach(el => {
+      el.setAttribute('disabled', 'disabled');
+      el.style.pointerEvents = 'none';
+    });
+  });
+  // Disable the station's Submit (advance) button too.
+  c.querySelectorAll('.actions-bar .right button[onclick*="submitStation"]').forEach(b => {
+    b.setAttribute('disabled', 'disabled'); b.style.pointerEvents = 'none'; b.style.opacity = '0.5';
+  });
+}
+
+function decorateApprovalGate(c, station) {
+  if (!c || !station) return;
+  const k = station.key;
+  // Gate applies to Station 0A (station0_cal) and capture Stations 1/2/3.
+  // 0b/0c (enroll/house) are never gated. 0A shows the same slide-down as
+  // 1/2/3; the only difference is 0A has no LEVEL-1 prerequisite of its
+  // own and no non-cal scenarios to lock.
+  if (!isGatedStation(k)) return;
+  // Clear any prior gate layers before deciding what to re-add.
+  c.querySelectorAll('.appr-slidedown-row').forEach(e => e.remove());
+  c.querySelectorAll('.appr-slidedown').forEach(e => e.remove());
+
+  // LEVEL 1 — 0A prerequisite. Until Station 0A is approved, the whole
+  // capture station is locked (all scenarios incl. calibration) with an
+  // explanatory banner. Takes precedence over the per-station cal gate.
+  if (isStationZeroALocked(k)) {
+    _lockAllScenarios(c, k);
+    const wrapL = c.querySelector('.scenario-table-wrap');
+    if (wrapL) {
+      const b = document.createElement('div');
+      b.className = 'appr-slidedown';
+      b.innerHTML = '<div class="appr-slidedown-inner">' +
+        '<div class="appr-slidedown-title">\uD83D\uDD12 Locked until Station 0A is approved</div>' +
+        '<div class="appr-slidedown-sub">Complete Station 0A and get its calibration approved before Stations 1\u20133 unlock.</div>' +
+        '</div>';
+      wrapL.insertAdjacentElement('beforebegin', b);
+    }
+    _apprSlideShown[_gateKey(k)] = false;
+    return;
+  }
+
+  // LEVEL 2 — per-station calibration gate (only once 0A is approved).
+  if (!isGateActive(k)) { _apprSlideShown[_gateKey(k)] = false; return; }
+
+  // Lock every non-calibration scenario row/card in this station.
+  c.querySelectorAll('.scenario-status-group').forEach(grp => {
+    const num = grp.getAttribute('data-num');
+    const key = grp.getAttribute('data-key');
+    if (String(key) !== String(k)) return;
+    if (!isScenarioGateLocked(k, num)) return;
+    const container = grp.closest('tr') || grp.closest('.scenario-card');
+    if (!container) return;
+    container.classList.add('appr-locked');
+    container.querySelectorAll('button, input').forEach(el => {
+      el.setAttribute('disabled', 'disabled');
+      el.style.pointerEvents = 'none';
+    });
+  });
+
+  // Build the slide-down content for the current gate status.
+  const g = getGate(k);
+  // Station 0A's approval unlocks Stations 1–3; capture stations' approval
+  // unlocks the rest of that station's own scenarios. Word the copy to match.
+  const isZeroA = (k === 'station0_cal');
+  const unlockSub = isZeroA ? 'Stations 1\u20133 stay locked until this is approved.'
+                            : 'The other scenarios stay locked until an admin approves.';
+  const pendingSub = isZeroA ? 'Waiting for an admin decision. Stations 1\u20133 stay locked until it\u2019s approved.'
+                             : 'Waiting for an admin decision. Other scenarios stay locked until it\u2019s approved.';
+  let inner = '', stateClass = '';
+  if (g.status === 'Pending' || g.status === 'InReview') {
+    stateClass = 'pending';
+    inner = '<div class="appr-slidedown-title">Calibration submitted for review</div>' +
+            '<div class="appr-slidedown-sub">' + pendingSub + '</div>' +
+            '<div class="appr-waiting-row"><span class="appr-waiting-dot"></span> Awaiting review' + (g.status === 'InReview' ? ' \u00b7 admin reviewing\u2026' : '\u2026') + '</div>';
+  } else if (g.status === 'Rejected') {
+    stateClass = 'rejected';
+    const note = g.note ? '<div class="appr-slidedown-note">\u201c' + escapeHTML(g.note) + '\u201d \u2014 ' + escapeHTML(g.decidedBy || 'admin') + '</div>' : '';
+    inner = '<div class="appr-slidedown-title">Calibration rejected</div>' +
+            '<div class="appr-slidedown-sub">Re-record the calibration video, then resubmit for review.</div>' +
+            note +
+            '<button class="appr-submit-btn" data-act="resubmit">Resubmit for review</button>';
+  } else {
+    const ready = calibrationComplete(k);
+    inner = '<div class="appr-slidedown-title">Calibration video must be done first</div>' +
+            '<div class="appr-slidedown-sub">Record CAL_EXT and CAL_GND, then submit for review. ' + unlockSub + '</div>' +
+            '<button class="appr-submit-btn" data-act="submit"' + (ready ? '' : ' disabled title="Complete CAL_EXT and CAL_GND first"') + '>Submit for review</button>';
+  }
+
+  // The layer slides down FROM the CAL_GND scenario (num '02'). Insert it
+  // directly after CAL_GND in BOTH the desktop table and the mobile card
+  // list so it appears anchored to that scenario in whichever layout shows.
+  const gk = _gateKey(k);
+  const firstShow = !_apprSlideShown[gk];
+  const enterCls = firstShow ? ' appr-enter' : '';
+  const buildDiv = () => {
+    const d = document.createElement('div');
+    d.className = 'appr-slidedown' + (stateClass ? ' ' + stateClass : '') + enterCls;
+    d.innerHTML = '<div class="appr-slidedown-inner">' + inner + '</div>';
+    return d;
+  };
+  let anchored = false;
+  // Desktop table — colspan row directly under the CAL_GND <tr>.
+  const calRow = c.querySelector('.scenario-table tbody tr[data-num="02"]');
+  if (calRow) {
+    const cols = c.querySelectorAll('.scenario-table thead th').length || 6;
+    const tr = document.createElement('tr');
+    tr.className = 'appr-slidedown-row';
+    const td = document.createElement('td');
+    td.colSpan = cols; td.style.padding = '0'; td.style.border = 'none';
+    td.appendChild(buildDiv());
+    tr.appendChild(td);
+    calRow.insertAdjacentElement('afterend', tr);
+    anchored = true;
+  }
+  // Mobile cards — directly under the CAL_GND card.
+  const calGrp = c.querySelector('.scenario-card-list .scenario-status-group[data-num="02"]');
+  const calCard = calGrp ? calGrp.closest('.scenario-card') : null;
+  if (calCard) { calCard.insertAdjacentElement('afterend', buildDiv()); anchored = true; }
+  // Fallback — if CAL_GND can't be found, append after the table wrap.
+  if (!anchored) {
+    const wrap = c.querySelector('.scenario-table-wrap');
+    if (wrap) wrap.insertAdjacentElement('afterend', buildDiv());
+  }
+  if (firstShow) _apprSlideShown[gk] = true;
+
+  // Bind the submit / resubmit buttons (class-based — there may be two
+  // layers, one per layout).
+  c.querySelectorAll('.appr-submit-btn[data-act="submit"]').forEach(b =>
+    b.addEventListener('click', () => submitApprovalFromStation(k, false)));
+  c.querySelectorAll('.appr-submit-btn[data-act="resubmit"]').forEach(b =>
+    b.addEventListener('click', () => submitApprovalFromStation(k, true)));
+}
+
+// --- poll: mirror cloud decisions into local gates + client auto-approve ---
+async function pollMyApprovals() {
+  let resolved = [];
+  if (APPROVAL_PA_READ_URL) {
+    try { resolved = resolveApprovals(await fetchApprovalRows()); } catch (_) { resolved = []; }
+  }
+  const asgnId = _gateAsgnId();
+  const orbitId = (state.modProfile && state.modProfile.orbitLoginId) || state.username || '';
+  if (asgnId && orbitId) {
+    for (const k of GATE_ALL_KEYS) {
+      const label = gateStationLabel(k);
+      const mine = resolved.find(a =>
+        String(a.assignment_id) === String(asgnId) &&
+        String(a.station) === label &&
+        String(a.orbit_login_id || '').toLowerCase() === String(orbitId).toLowerCase());
+      if (!mine) continue;
+      const g = getGate(k);
+      if (mine.status !== g.status) {
+        setGate(k, { status: mine.status, approvalId: mine.approval_id, decidedBy: mine.decided_by || '', note: mine.feedback_note || '' });
+        if (mine.status === 'Approved' || mine.status === 'AutoApproved') {
+          // Slide the layer up and away, THEN re-render (unlocks scenarios).
+          animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
+          showApprovalApprovedPopup();
+        } else if (mine.status === 'Rejected') {
+          showApprovalRejectedPopup(mine.decided_by, mine.feedback_note);
+          if (typeof renderApp === 'function') renderApp();
+        } else {
+          if (typeof renderApp === 'function') renderApp();
+        }
+      }
+    }
+  }
+  runClientAutoApprove();
+}
+
+// Client-side time gate: flips eligible local Pending/InReview gates to
+// AutoApproved (≥3:30 PM PT, pending >15 min) and writes the event when
+// the backend is wired. The server sweep is the safety net for closed tabs.
+function runClientAutoApprove() {
+  for (const k of GATE_ALL_KEYS) {
+    const g = getGate(k);
+    if (g.status !== 'Pending' && g.status !== 'InReview') continue;
+    if (!isApprovalAutoEligible({ status: g.status, submitted_at: g.submittedAt })) continue;
+    setGate(k, { status: 'AutoApproved' });
+    if (APPROVAL_PA_WRITE_URL) {
+      const ctx = _gateModContext();
+      writeApprovalAutoApprove({
+        approval_id: g.approvalId, assignment_id: ctx.asgn ? ctx.asgn.id : '',
+        team_id: ctx.teamId, team_name: ctx.teamName,
+        orbit_login_id: ctx.orbitId, moderator_name: ctx.modName,
+        station: gateStationLabel(k), scenario: 'calibration', lakitu_url: ctx.lakitu,
+        submitted_at: g.submittedAt || '', resubmit_count: String(g.resubmitCount || 0),
+      });
+    }
+    animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
+    showApprovalApprovedPopup();
+  }
+}
+
+// Station 0a submit/advance gate. Returns true if progression is BLOCKED
+// (caller should stop), false if approved and the caller may proceed.
+function gate0aBlocksAdvance() {
+  const g = getGate('station0_cal');
+  if (g.status === 'Approved' || g.status === 'AutoApproved') return false;
+  if (g.status === 'Pending' || g.status === 'InReview') { showApprovalWaitingPopup('station0_cal'); return true; }
+  // not submitted yet, or rejected → (re)submit + wait
+  submitApprovalFromStation('station0_cal', g.status === 'Rejected');
+  return true;
+}
 
 /* =====================================================================
    EXCEL EXPORT
@@ -15436,6 +15969,20 @@ function canonicalAdminUsername(name) {
   if (!name) return name;
   const lower = String(name).toLowerCase();
   return ADMIN_USERNAMES.find(u => u.toLowerCase() === lower) || name;
+}
+// Backend admin role — an account in the Moderators/login directory whose
+// role column marks it as an admin is treated as an admin (in addition to
+// the hardcoded ADMIN_USERNAMES list). Tolerant of common column names and
+// values so the directory can be managed without code changes.
+// ASSUMPTION: the role lives in a column named role / Role / user_role /
+// Role Type / type / access, with a value of "admin" or "administrator".
+// If your directory uses a different column/value, tell me and I'll adjust.
+function directoryRoleIsAdmin(row) {
+  if (!row) return false;
+  const r = pickField(row, 'role', 'Role', 'user_role', 'UserRole', 'User Role',
+                            'roleType', 'Role Type', 'type', 'Type', 'access', 'Access');
+  const v = String(r || '').trim().toLowerCase();
+  return v === 'admin' || v === 'administrator' || v.indexOf('admin') === 0;
 }
 const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
@@ -16042,6 +16589,10 @@ function renderAdmin() {
         <span class="admin-tab-count" id="topAsgnCount">${activeAssignmentCount() || ''}</span>
       </button>
       <button class="admin-tab ${adminState.tab === 'performance' ? 'active' : ''}" data-tab="performance" role="tab">Performance</button>
+      <button class="admin-tab ${adminState.tab === 'approval' ? 'active' : ''}" data-tab="approval" role="tab">
+        Approval
+        <span class="admin-tab-count" id="topApprCount">${pendingApprovalCount() || ''}</span>
+      </button>
     </div>
 
     <div id="adminTabBody"></div>
@@ -16065,6 +16616,9 @@ function renderAdmin() {
     });
   });
   renderAdminTabBody();
+  // App-wide incoming-approval poll powers the "new requests" banner on
+  // any admin tab. Idempotent + inert until APPROVAL_PA_READ_URL is set.
+  if (typeof startApprovalPoll === 'function') startApprovalPoll();
 }
 
 
@@ -18960,6 +19514,251 @@ function setupDonutHover(completed, remaining, total) {
 }
 
 
+// =====================================================================
+// ADMIN — APPROVAL TAB (1.3.061526)
+// List of incoming/pending approvals (Performance-style) + a review
+// side panel (Lakitu + Ring icons, Approve/Reject + optional note).
+// Reads the ApprovalRequests log via ensureApprovalData(); decisions
+// write back via adminDecideApproval(). Inert until the PA URLs are set.
+// =====================================================================
+function pendingApprovalCount() {
+  const list = (typeof adminState !== 'undefined' && adminState.approvals) || [];
+  return list.filter(a => a.status === 'Pending' || a.status === 'InReview').length;
+}
+function apprStatusClass(s) {
+  return ({ Pending: 'pending', InReview: 'inreview', Approved: 'approved', AutoApproved: 'autoapproved', Rejected: 'rejected' })[s] || 'pending';
+}
+function apprStatusLabel(s) {
+  return ({ Pending: 'Pending', InReview: 'In review', Approved: 'Approved', AutoApproved: 'Auto-approved', Rejected: 'Rejected' })[s] || s || 'Pending';
+}
+function apprStationLabel(station) {
+  // Stored as Station0a / Station1.. — render with a space for display.
+  const map = { Station0a: 'Station 0a', Station1: 'Station 1', Station2: 'Station 2', Station3: 'Station 3' };
+  return map[station] || station || '—';
+}
+// Sort: open requests first (oldest submitted first = most urgent), then
+// decided ones (most recently decided first).
+function sortedApprovals() {
+  const list = ((adminState && adminState.approvals) || []).slice();
+  const isOpen = a => a.status === 'Pending' || a.status === 'InReview';
+  return list.sort((a, b) => {
+    const ao = isOpen(a), bo = isOpen(b);
+    if (ao !== bo) return ao ? -1 : 1;
+    if (ao) return (Date.parse(a.submitted_at || '') || 0) - (Date.parse(b.submitted_at || '') || 0);
+    return (Date.parse(b.decided_at || b.last_modified || '') || 0) - (Date.parse(a.decided_at || a.last_modified || '') || 0);
+  });
+}
+
+function renderApprovalTab(body) {
+  if (!body) return;
+  body.innerHTML = `
+    <div id="apprIncomingSlot"></div>
+    <div class="appr-wrap">
+      <div class="appr-list" id="apprList">
+        <div class="appr-empty">Loading approval requests…</div>
+      </div>
+      <div class="appr-panel" id="apprPanel">
+        <div class="appr-panel-empty">Select a request to review.</div>
+      </div>
+    </div>
+  `;
+  // First paint from cache (instant), then refresh from cloud.
+  if (adminState.approvals) { renderApprovalListInto(); renderApprovalPanelInto(); }
+  ensureApprovalData({ force: true }).then(() => {
+    // Mark everything currently visible as "seen" so the incoming banner
+    // doesn't fire for requests the admin is already looking at.
+    markApprovalsSeen();
+    if (adminState.tab === 'approval') { renderApprovalListInto(); renderApprovalPanelInto(); refreshTopApprCount(); }
+  });
+  // List auto-refresh while the tab is open.
+  if (adminState._apprTabPoll) clearInterval(adminState._apprTabPoll);
+  adminState._apprTabPoll = setInterval(() => {
+    if (adminState.tab !== 'approval') return;
+    ensureApprovalData({ force: true }).then(() => {
+      if (adminState.tab !== 'approval') return;
+      markApprovalsSeen();
+      renderApprovalListInto();
+      renderApprovalPanelInto();
+      refreshTopApprCount();
+    });
+  }, APPROVAL_CACHE_TTL_MS);
+}
+
+function renderApprovalListInto() {
+  const listEl = document.getElementById('apprList');
+  if (!listEl) return;
+  const list = sortedApprovals();
+  if (!list.length) {
+    listEl.innerHTML = `<div class="appr-empty">No approval requests yet.${APPROVAL_PA_READ_URL ? '' : ' (Backend not yet connected.)'}</div>`;
+    return;
+  }
+  const sel = adminState._apprSelected || '';
+  listEl.innerHTML = list.map(a => {
+    const team = escapeHTML(a.team_name || a.team_id || 'Team');
+    const mod  = escapeHTML(a.moderator_name || a.orbit_login_id || '');
+    const st   = escapeHTML(apprStationLabel(a.station));
+    const cls  = apprStatusClass(a.status);
+    const lbl  = escapeHTML(apprStatusLabel(a.status));
+    const isSel = String(a.approval_id) === String(sel) ? ' selected' : '';
+    return `<div class="appr-row${isSel}" data-appr="${escapeHTML(String(a.approval_id))}">
+      <div class="appr-row-main">
+        <div class="appr-row-team">${team}</div>
+        <div class="appr-row-sub">${mod}${mod ? ' · ' : ''}${st}</div>
+      </div>
+      <span class="appr-pill ${cls}">${lbl}</span>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('.appr-row').forEach(row => {
+    row.addEventListener('click', () => selectApproval(row.dataset.appr));
+  });
+}
+
+function renderApprovalPanelInto() {
+  const panel = document.getElementById('apprPanel');
+  if (!panel) return;
+  const id = adminState._apprSelected || '';
+  const a = ((adminState.approvals) || []).find(x => String(x.approval_id) === String(id));
+  if (!a) {
+    panel.innerHTML = `<div class="appr-panel-empty">Select a request to review.</div>`;
+    return;
+  }
+  const reviewUrl = a.lakitu_url
+    ? (typeof lakituReviewUrl === 'function' ? lakituReviewUrl(a.lakitu_url) : a.lakitu_url)
+    : '';
+  const decided = (a.status === 'Approved' || a.status === 'Rejected' || a.status === 'AutoApproved');
+  const lakituBtn = reviewUrl
+    ? `<a class="appr-icon-btn" href="${escapeHTML(reviewUrl)}" target="_blank" rel="noopener">↗ Lakitu session</a>`
+    : `<span class="appr-icon-btn disabled" title="No Lakitu URL submitted">↗ Lakitu session</span>`;
+  const decidedBlock = decided
+    ? `<div class="appr-decided-note">
+         <strong>${escapeHTML(apprStatusLabel(a.status))}</strong>${a.decided_by ? ' by ' + escapeHTML(a.decided_by) : ''}.
+         ${a.feedback_note ? '<br>“' + escapeHTML(a.feedback_note) + '”' : ''}
+       </div>`
+    : `<textarea class="appr-note" id="apprNote" placeholder="Feedback note (optional)">${escapeHTML(a.feedback_note || '')}</textarea>
+       <div class="appr-decide-row">
+         <button class="appr-btn-approve" id="apprApproveBtn">Approve</button>
+         <button class="appr-btn-reject"  id="apprRejectBtn">Reject</button>
+       </div>`;
+  panel.innerHTML = `
+    <div class="appr-panel-eyebrow">${escapeHTML(apprStatusLabel(a.status))} · ${escapeHTML(apprStationLabel(a.station))}</div>
+    <div class="appr-panel-title">${escapeHTML(a.moderator_name || a.orbit_login_id || '')}${a.team_name ? ' — ' + escapeHTML(a.team_name) : ''}</div>
+    <div class="appr-icon-row">
+      ${lakituBtn}
+      <a class="appr-icon-btn" href="https://ring.com" target="_blank" rel="noopener">◎ Ring</a>
+    </div>
+    ${decidedBlock}
+  `;
+  const approveBtn = document.getElementById('apprApproveBtn');
+  const rejectBtn  = document.getElementById('apprRejectBtn');
+  const noteEl     = document.getElementById('apprNote');
+  if (approveBtn) approveBtn.addEventListener('click', () => decideSelectedApproval('approve', noteEl ? noteEl.value : ''));
+  if (rejectBtn)  rejectBtn.addEventListener('click',  () => decideSelectedApproval('reject',  noteEl ? noteEl.value : ''));
+}
+
+function selectApproval(id) {
+  adminState._apprSelected = id;
+  // Opening a Pending request flips it to In review (fire-and-forget).
+  const a = ((adminState.approvals) || []).find(x => String(x.approval_id) === String(id));
+  if (a && a.status === 'Pending') {
+    a.status = 'InReview';  // optimistic
+    if (APPROVAL_PA_WRITE_URL) adminDecideApproval(id, 'inreview').then(() => {
+      if (adminState.tab === 'approval') { renderApprovalListInto(); renderApprovalPanelInto(); refreshTopApprCount(); }
+    });
+  }
+  renderApprovalListInto();
+  renderApprovalPanelInto();
+}
+
+function decideSelectedApproval(decision, note) {
+  const id = adminState._apprSelected;
+  if (!id) return;
+  const approveBtn = document.getElementById('apprApproveBtn');
+  const rejectBtn  = document.getElementById('apprRejectBtn');
+  if (approveBtn) approveBtn.disabled = true;
+  if (rejectBtn)  rejectBtn.disabled = true;
+  if (!APPROVAL_PA_WRITE_URL) {
+    if (typeof showToast === 'function') showToast('Approval backend not connected yet (no write URL).', 'warn', 3500);
+    if (approveBtn) approveBtn.disabled = false;
+    if (rejectBtn)  rejectBtn.disabled = false;
+    return;
+  }
+  adminDecideApproval(id, decision, note).then(ok => {
+    if (ok) {
+      if (typeof showToast === 'function') showToast(decision === 'approve' ? 'Approved' : 'Rejected', 'success', 2500);
+    } else if (typeof showToast === 'function') showToast('Could not save decision — try again.', 'error', 3500);
+    if (adminState.tab === 'approval') { renderApprovalListInto(); renderApprovalPanelInto(); refreshTopApprCount(); }
+  });
+}
+
+function refreshTopApprCount() {
+  const el = document.getElementById('topApprCount');
+  if (el) el.textContent = pendingApprovalCount() || '';
+}
+
+// --- app-wide incoming-approval poll + banner ---
+function markApprovalsSeen() {
+  adminState._seenApprovalIds = adminState._seenApprovalIds || new Set();
+  ((adminState.approvals) || []).forEach(a => {
+    if (a.status === 'Pending' || a.status === 'InReview') adminState._seenApprovalIds.add(String(a.approval_id));
+  });
+}
+let _apprIncomingPoll = null;
+function startApprovalPoll() {
+  if (_apprIncomingPoll) return;
+  if (!APPROVAL_PA_READ_URL) return;  // inert until wired
+  const tick = () => {
+    const adminVisible = document.getElementById('adminApp') && document.getElementById('adminApp').classList.contains('active');
+    if (!adminVisible) return;
+    ensureApprovalData({ force: true }).then(() => {
+      adminState._seenApprovalIds = adminState._seenApprovalIds || new Set();
+      const openNow = ((adminState.approvals) || []).filter(a => a.status === 'Pending' || a.status === 'InReview');
+      const fresh = openNow.filter(a => !adminState._seenApprovalIds.has(String(a.approval_id)));
+      refreshTopApprCount();
+      if (adminState.tab === 'approval') {
+        // On the tab: just refresh + absorb as seen (no banner needed).
+        markApprovalsSeen();
+        renderApprovalListInto();
+        renderApprovalPanelInto();
+      } else if (fresh.length) {
+        showApprovalIncomingBanner(fresh.length);
+      }
+    });
+  };
+  _apprIncomingPoll = setInterval(tick, APPROVAL_CACHE_TTL_MS);
+  tick();
+}
+function stopApprovalPoll() {
+  if (_apprIncomingPoll) { clearInterval(_apprIncomingPoll); _apprIncomingPoll = null; }
+}
+function showApprovalIncomingBanner(n) {
+  const host = document.getElementById('adminApp');
+  if (!host) return;
+  let banner = document.getElementById('apprIncomingBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'apprIncomingBanner';
+    banner.className = 'appr-incoming-banner';
+    const nav = host.querySelector('nav');
+    if (nav && nav.nextSibling) host.insertBefore(banner, nav.nextSibling);
+    else host.insertBefore(banner, host.firstChild);
+  }
+  banner.innerHTML = `
+    <span class="appr-incoming-banner-dot" aria-hidden="true"></span>
+    <span class="appr-incoming-banner-text">${n} new approval request${n === 1 ? '' : 's'} — refresh to review</span>
+    <button type="button" class="appr-incoming-banner-btn" id="apprIncomingBtn">Refresh</button>
+  `;
+  const btn = document.getElementById('apprIncomingBtn');
+  if (btn) btn.addEventListener('click', () => {
+    adminState.tab = 'approval';
+    hideApprovalIncomingBanner();
+    if (typeof renderAdmin === 'function') renderAdmin();
+  });
+}
+function hideApprovalIncomingBanner() {
+  const b = document.getElementById('apprIncomingBanner');
+  if (b) b.remove();
+}
+
 function renderAdminTabBody() {
   const body = document.getElementById('adminTabBody');
   // Clean up the Assignment-tab polling timer when admin navigates AWAY
@@ -18981,12 +19780,23 @@ function renderAdminTabBody() {
   if (adminState.tab !== 'performance' && typeof stopPerfLivePoll === 'function') {
     stopPerfLivePoll();
   }
+  // Stop the Approval tab's list auto-refresh when leaving the tab. (The
+  // app-wide incoming-approval poll keeps running — it's what powers the
+  // "new requests" banner on other tabs.)
+  if (adminState.tab !== 'approval' && adminState._apprTabPoll) {
+    clearInterval(adminState._apprTabPoll);
+    adminState._apprTabPoll = null;
+  }
   if (adminState.tab === 'overview') {
     renderOverview(body);
     return;
   }
   if (adminState.tab === 'performance') {
     renderPerformance(body);
+    return;
+  }
+  if (adminState.tab === 'approval') {
+    renderApprovalTab(body);
     return;
   }
   // Assignment as a top-level tab. Previously lived under Moderator Hub as
@@ -31743,6 +32553,188 @@ const WORKLOG_PA_READ_URL = '';
 const SESSIONSTATE_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2df48d7fd8e844b49496d626bb49db61/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=QMfifDLshKjEw2Vpto85Qsu9SnQc6tVIXeRwPW_AmdU';
 const SESSIONSTATE_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/0c5d3ab19b7443c598a18136830a32bc/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=eDKkJNTraDxG47g0RnzLCW7ineUS4YuwpZsCnC0Cmmw';
 
+/* =====================================================================
+   APPROVAL GATE — backend foundation (1.3.061526)
+   =====================================================================
+   "Reference Recording for calibration" approval gate. A moderator
+   submits a calibration recording for review (Station 0a, 1, 2, 3);
+   an admin approves/rejects from the Approval tab; both sides poll the
+   ApprovalRequests table (append-only event log, latest-per-approval_id
+   resolution — the same pattern as WorkLog). Wire the two URLs below
+   once the PA flows exist; everything degrades gracefully while empty.
+
+   Excel table: ApprovalRequests (one row per state change). Current
+   state = newest row per approval_id by last_modified epoch.
+   ===================================================================== */
+const APPROVAL_PA_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab87a7c7cfa4456d88d14c0b82ec6571/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HWJq3ruIIfSrmHpCHFRzhR_YqYozaBbUAJEd2DJYOmc';   // PA "Approval Write" flow — append one event row
+const APPROVAL_PA_READ_URL  = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/41d9757babff4eb7ac2d3881804af96c/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=FMNIOJoSnhglArGlE5DuEZqEERwyQSV7fzp1cQqCO1g';   // PA "Approval Read" flow — list all rows (pagination ON)
+const APPROVAL_CACHE_TTL_MS = 30000;
+const APPROVAL_AUTO_MIN     = 15;   // minutes pending before the time gate auto-approves
+
+// Resolve the acting admin's identity for decided_by / decided_by_id.
+function currentAdminIdentity() {
+  const id = (typeof state !== 'undefined' && state && state.username) ? String(state.username) : '';
+  let name = '';
+  // 1) Prefer the signed-in admin's own backend account (directory row
+  //    with an admin role), cached on state.modProfile at login. This is
+  //    what gets printed as decided_by when they send an approval back.
+  const p = (typeof state !== 'undefined' && state) ? state.modProfile : null;
+  if (p) {
+    name = p.name ||
+      [pickField(p, 'firstName', 'first_name', 'FirstName', 'First Name'),
+       pickField(p, 'lastName',  'last_name',  'LastName',  'Last Name')].filter(Boolean).join(' ').trim();
+  }
+  // 2) Directory lookup by login id (covers admins matched to a Moderators row).
+  if (!name && id && typeof getModeratorDisplayName === 'function') {
+    const dn = getModeratorDisplayName(id);
+    if (dn && dn !== id) name = dn;   // only accept a real resolved name
+  }
+  // 3) Fall back to the canonical username, then a generic label.
+  if (!name && typeof canonicalAdminUsername === 'function') name = canonicalAdminUsername(id);
+  return { id, name: name || id || 'Admin' };
+}
+
+// Pacific-time hour/minute (DST-safe via Intl) for the 3:30 PM gate.
+function pacificHourMinute() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const h = (parseInt(parts.find(p => p.type === 'hour').value, 10) || 0) % 24;
+    const m = parseInt(parts.find(p => p.type === 'minute').value, 10) || 0;
+    return { h, m };
+  } catch (_) { const d = new Date(); return { h: d.getHours(), m: d.getMinutes() }; }
+}
+function isPastAutoApproveCutoff() {
+  const { h, m } = pacificHourMinute();
+  return (h > 15) || (h === 15 && m >= 30);  // >= 15:30 PT
+}
+function approvalAgeMin(appr) {
+  const t = Date.parse((appr && (appr.submitted_at || appr.last_modified)) || '');
+  return isNaN(t) ? 0 : (Date.now() - t) / 60000;
+}
+// Eligible for the time gate: still open, past 3:30 PT, pending > 15 min.
+function isApprovalAutoEligible(appr) {
+  if (!appr) return false;
+  if (appr.status !== 'Pending' && appr.status !== 'InReview') return false;
+  return isPastAutoApproveCutoff() && approvalAgeMin(appr) >= APPROVAL_AUTO_MIN;
+}
+
+// --- read / resolve / write ---
+async function fetchApprovalRows() {
+  if (!APPROVAL_PA_READ_URL) return [];
+  try {
+    const res = await fetchWithRetry(APPROVAL_PA_READ_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    });
+    if (!res || !res.ok) return [];
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch (_) { return []; }
+    const rows = (typeof extractArray === 'function') ? extractArray(data) : (Array.isArray(data) ? data : (data && data.value) || []);
+    if (rows.length === 256) console.warn('[Orbit] Approval read returned exactly 256 rows — enable PA "List rows" pagination (threshold 5000).');
+    return rows;
+  } catch (e) { console.warn('[Orbit] fetchApprovalRows failed:', e && e.message); return []; }
+}
+// Group append-only rows → newest row per approval_id (current state).
+function resolveApprovals(rows) {
+  const byId = new Map();
+  for (const r of (rows || [])) {
+    const id = r && r.approval_id;
+    if (!id) continue;
+    const epoch = Date.parse((r.last_modified || r.submitted_at) || '') || 0;
+    const prev = byId.get(id);
+    if (!prev || epoch >= (prev._epoch || 0)) byId.set(id, { ...r, _epoch: epoch });
+  }
+  return [...byId.values()];
+}
+async function writeApprovalEvent(row) {
+  if (!APPROVAL_PA_WRITE_URL) { console.warn('[Orbit] APPROVAL_PA_WRITE_URL not configured — approval not written.'); return false; }
+  try {
+    const res = await fetchWithRetry(APPROVAL_PA_WRITE_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row),
+    });
+    return !!(res && res.ok);
+  } catch (e) { console.warn('[Orbit] writeApprovalEvent failed:', e && e.message); return false; }
+}
+async function ensureApprovalData(opts) {
+  opts = opts || {};
+  const now = Date.now();
+  if (!opts.force && adminState._apprFetchedAt && (now - adminState._apprFetchedAt) < APPROVAL_CACHE_TTL_MS && adminState.approvals) {
+    return adminState.approvals;
+  }
+  const rows = await fetchApprovalRows();
+  adminState.approvalRows = rows;
+  adminState.approvals = resolveApprovals(rows);
+  adminState._apprFetchedAt = now;
+  return adminState.approvals;
+}
+
+// --- mutations ---
+// Moderator submit / resubmit. Returns the approval_id (stable key) or null.
+async function createApprovalRequest(p) {
+  p = p || {};
+  const orbitId = p.orbitLoginId || '';
+  const asgn    = p.assignmentId || '';
+  const station = p.station || '';
+  const id = p.approval_id || `appr_${orbitId}_${asgn}_${String(station).replace(/\s+/g, '')}_${Date.now()}`;
+  const nowIso = new Date().toISOString();
+  const row = {
+    approval_id: id,
+    event_type:  p.resubmit ? 'resubmitted' : 'submitted',
+    status:      'Pending',
+    assignment_id: asgn,
+    team_id:     p.teamId || '',
+    team_name:   p.teamName || '',
+    orbit_login_id: orbitId,
+    moderator_name: p.moderatorName || '',
+    station:     station,
+    scenario:    p.scenario || 'calibration',
+    lakitu_url:  p.lakituUrl || '',
+    submitted_at: nowIso,
+    decided_at: '', decided_by: '', decided_by_id: '', feedback_note: '',
+    resubmit_count: String(p.resubmitCount || 0),
+    last_modified: nowIso,
+    app_version: APP_VERSION,
+  };
+  const ok = await writeApprovalEvent(row);
+  return ok ? id : null;
+}
+// Admin decision: decision = 'approve' | 'reject' | 'inreview'.
+async function adminDecideApproval(approvalId, decision, note) {
+  const cur = (adminState.approvals || []).find(a => String(a.approval_id) === String(approvalId));
+  if (!cur) return false;
+  const who = currentAdminIdentity();
+  const nowIso = new Date().toISOString();
+  const status = decision === 'approve' ? 'Approved' : decision === 'reject' ? 'Rejected' : 'InReview';
+  const evt    = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'inreview';
+  const row = { ...cur }; delete row._epoch;
+  row.event_type = evt;
+  row.status = status;
+  row.decided_at = nowIso;
+  row.decided_by = who.name;
+  row.decided_by_id = who.id;
+  if (note != null) row.feedback_note = String(note || '');
+  row.last_modified = nowIso;
+  row.app_version = APP_VERSION;
+  const ok = await writeApprovalEvent(row);
+  if (ok) await ensureApprovalData({ force: true });
+  return ok;
+}
+// Time-gate auto-approve writer (client timer or, server-side, the sweep flow).
+async function writeApprovalAutoApprove(appr) {
+  if (!appr) return false;
+  const nowIso = new Date().toISOString();
+  const row = { ...appr }; delete row._epoch;
+  row.event_type = 'autoapproved';
+  row.status = 'AutoApproved';
+  row.decided_at = nowIso;
+  row.decided_by = 'Auto (time gate)';
+  row.decided_by_id = 'system';
+  row.last_modified = nowIso;
+  row.app_version = APP_VERSION;
+  return writeApprovalEvent(row);
+}
+
 // Coalesce window for cloud writes. Local saves are instant; cloud
 // syncs wait this long after the last triggering interaction to merge
 // bursts (e.g. a status-change click that also fires a state-mutation
@@ -33199,6 +34191,9 @@ function startSessionStatePolling() {
       } else {
         try { await checkAndOfferTeammateSync(rows); } catch (_) { /* silent */ }
       }
+      // Approval gate: mirror admin decisions into local gates, fire the
+      // approved/rejected popups, and run the client-side auto-approve.
+      try { await pollMyApprovals(); } catch (_) { /* silent */ }
     })().finally(scheduleNext);
   };
   scheduleNext();
@@ -35031,6 +36026,38 @@ function resetOperatorSessionState(opts) {
   //   - centific_orbit_worklog_cache_v1 (record of past status events)
   //   - centific_orbit_worklog_queue_v1 (pending PA writes — must still flush)
   //   - centific_orbit_worklog_session_v1 (sessionId mapping per assignment)
+}
+
+// Day-boundary guard for the RESTORE path (login + auto-resume).
+//
+// Session state is persisted per-username and is intentionally NOT cleared
+// on logout, so a mod can resume on the same device. But loadState()
+// restores it verbatim and never refreshes a stale sessionDate — so a mod
+// who closes the app at night and reopens the next morning gets yesterday's
+// participant + scenario data back, with no way to "switch to today's
+// session." The midnight watcher only covers the app-open-across-midnight
+// case (and only for completed sessions), so it can't catch a fresh load.
+//
+// This runs right after state is restored: if the restored session belongs
+// to a day BEFORE today (PST, the team-reference day used by the midnight
+// watcher), reset to a fresh session for today — preserving identity,
+// theme, and equipment, and refilling the entry fields from today's
+// assignment via resetOperatorSessionState(). Returns true if it reset.
+function maybeResetStaleSession() {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return false;
+  const today = getPSTDateString();
+  const sd = state.sessionDate || '';
+  // Only reset when there is a real prior-day date. A fresh defaultState
+  // (sessionDate = today) or a today/future session is left untouched.
+  if (!sd || sd >= today) return false;
+  console.log('[Orbit] Stale session on load (sessionDate ' + sd + ' < ' + today + ') — resetting to a fresh session for today.');
+  resetOperatorSessionState({ preserveEquipment: true });
+  state.sessionCompletedAt = null;
+  // defaultState() seeds sessionDate from local time (todayISO); align it
+  // to the PST reference day so the comparison basis stays consistent.
+  state.sessionDate = today;
+  saveState();
+  return true;
 }
 
 
@@ -38141,6 +39168,27 @@ async function doLogin() {
     const profile = {
       orbitLoginId: orbitId, firstName: fName, lastName: lName, phoneNumber: phone, centificEmail: cEmail,
     };
+    profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
+
+    // Backend admin role — if this directory account is flagged as an
+    // admin (role column = "admin"), route to the ADMIN app instead of the
+    // operator app, and keep the profile so the admin's real name is what
+    // prints as decided_by when they send an approval decision back.
+    if (directoryRoleIsAdmin(matched)) {
+      const savedA = loadState(orbitId);
+      if (savedA && savedA.username && savedA.username.toLowerCase() === orbitId.toLowerCase()) {
+        state = savedA; state.username = orbitId;
+      } else {
+        state = defaultState(); state.username = orbitId;
+      }
+      state.modProfile = profile;
+      state.isAdmin = true;          // persisted flag so auto-resume re-routes to admin
+      saveState();
+      setLastLoginUsername(orbitId);
+      setLoginLoading(false);
+      startAdminApp();
+      return;
+    }
 
     // Try to restore saved state for THIS specific user. Pass orbitId
     // so loadState() looks in the per-username slot
@@ -38159,6 +39207,10 @@ async function doLogin() {
       state.username = orbitId;
     }
     state.modProfile = profile;
+    // Day-boundary guard: if the restored slot is from a prior day, reset to
+    // a fresh session for today. The mod closed the app and reopened on a
+    // new day — yesterday's participant/station data must not carry over.
+    if (maybeResetStaleSession()) resumed = false;
     saveState();
     setLastLoginUsername(orbitId);
     setLoginLoading(false);
@@ -38244,9 +39296,12 @@ function init() {
   let saved = lastUser ? loadState(lastUser) : loadState();
   if (saved && saved.username) {
     state = saved;
-    if (isAdminUsername(state.username)) {
+    if (isAdminUsername(state.username) || state.isAdmin) {
       startAdminApp();
     } else {
+      // Day-boundary guard — same as the login branch: a refresh/relaunch on
+      // a new day must not resurrect yesterday's session.
+      maybeResetStaleSession();
       startApp();
     }
   } else {
@@ -38503,6 +39558,8 @@ function init() {
       resetCalGuideSeen(state.username);
     }
     closeMenu();
+    if (typeof stopApprovalPoll === 'function') stopApprovalPoll();
+    if (typeof hideApprovalIncomingBanner === 'function') hideApprovalIncomingBanner();
     document.getElementById('app').style.display = 'none';
     document.getElementById('adminApp').classList.remove('active');
     document.getElementById('loginScreen').style.display = 'flex';
