@@ -3489,6 +3489,7 @@ input#ent_lakitu.lakitu-invalid {
 .appr-panel-empty { color: var(--text3); font-size: 13px; text-align: center; padding: 24px 8px; }
 .appr-panel-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); }
 .appr-panel-title { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.appr-panel-meta { font-size: 12px; color: var(--text3); margin: 3px 0 2px; letter-spacing: -0.005em; }
 .appr-icon-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .appr-icon-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -15278,8 +15279,13 @@ function decorateApprovalGate(c, station) {
   // directly after CAL_GND in BOTH the desktop table and the mobile card
   // list so it appears anchored to that scenario in whichever layout shows.
   const gk = _gateKey(k);
-  const firstShow = !_apprSlideShown[gk];
-  const enterCls = firstShow ? ' appr-enter' : '';
+  // Replay the slide-open on each STATE change (engaged → pending → rejected),
+  // not only the first appearance — so the "submitted for review" card slides
+  // in smoothly too. A key combining status + resubmit count makes a fresh
+  // resubmit re-animate; unchanged poll ticks (same key) do not.
+  const slideKey = (g.status || 'engaged') + ':' + (g.resubmitCount || 0);
+  const animate = _apprSlideShown[gk] !== slideKey;
+  const enterCls = animate ? ' appr-enter' : '';
   const buildDiv = () => {
     const d = document.createElement('div');
     d.className = 'appr-slidedown' + (stateClass ? ' ' + stateClass : '') + enterCls;
@@ -15309,7 +15315,7 @@ function decorateApprovalGate(c, station) {
     const wrap = c.querySelector('.scenario-table-wrap');
     if (wrap) wrap.insertAdjacentElement('afterend', buildDiv());
   }
-  if (firstShow) _apprSlideShown[gk] = true;
+  if (animate) _apprSlideShown[gk] = slideKey;
 
   // Bind the submit / resubmit buttons (class-based — there may be two
   // layers, one per layout).
@@ -19542,6 +19548,14 @@ function apprStationLabel(station) {
   const map = { Station0a: 'Station 0a', Station1: 'Station 1', Station2: 'Station 2', Station3: 'Station 3' };
   return map[station] || station || '—';
 }
+// Format an ISO timestamp for the approval UI → "Jun 18, 9:24 PM" (local).
+function apprFmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  try { return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+  catch (_) { return d.toISOString().slice(0, 16).replace('T', ' '); }
+}
 // Sort: open requests first (oldest submitted first = most urgent), then
 // decided ones (most recently decided first).
 function sortedApprovals() {
@@ -19608,13 +19622,14 @@ function renderApprovalListInto() {
     const team = escapeHTML(a.team_name || a.team_id || 'Team');
     const mod  = escapeHTML(a.moderator_name || a.orbit_login_id || '');
     const st   = escapeHTML(apprStationLabel(a.station));
+    const ts   = escapeHTML(apprFmtTime(a.submitted_at));
     const cls  = apprStatusClass(a.status);
     const lbl  = escapeHTML(apprStatusLabel(a.status));
     const isSel = String(a.approval_id) === String(sel) ? ' selected' : '';
     return `<div class="appr-row${isSel}" data-appr="${escapeHTML(String(a.approval_id))}">
       <div class="appr-row-main">
         <div class="appr-row-team">${team}</div>
-        <div class="appr-row-sub">${mod}${mod ? ' · ' : ''}${st}</div>
+        <div class="appr-row-sub">${mod}${mod ? ' · ' : ''}${st}${ts ? ' · ' + ts : ''}</div>
       </div>
       <span class="appr-pill ${cls}">${lbl}</span>
     </div>`;
@@ -19650,9 +19665,15 @@ function renderApprovalPanelInto() {
          <button class="appr-btn-approve" id="apprApproveBtn">Approve</button>
          <button class="appr-btn-reject"  id="apprRejectBtn">Reject</button>
        </div>`;
+  const subTs = apprFmtTime(a.submitted_at);
+  const decTs = apprFmtTime(a.decided_at);
+  const metaLine = (subTs || decTs)
+    ? `<div class="appr-panel-meta">${subTs ? 'Submitted ' + escapeHTML(subTs) : ''}${decTs ? (subTs ? ' · ' : '') + 'Decided ' + escapeHTML(decTs) : ''}</div>`
+    : '';
   panel.innerHTML = `
     <div class="appr-panel-eyebrow">${escapeHTML(apprStatusLabel(a.status))} · ${escapeHTML(apprStationLabel(a.station))}</div>
     <div class="appr-panel-title">${escapeHTML(a.moderator_name || a.orbit_login_id || '')}${a.team_name ? ' — ' + escapeHTML(a.team_name) : ''}</div>
+    ${metaLine}
     <div class="appr-icon-row">
       ${lakituBtn}
       <a class="appr-icon-btn" href="https://ring.com" target="_blank" rel="noopener">◎ Ring</a>
@@ -34165,6 +34186,9 @@ let _sessionStatePollInterval = null;
 function startSessionStatePolling() {
   if (_sessionStatePollInterval) return;
   if (!SESSIONSTATE_PA_READ_URL) return;
+  // Guards a slow SessionState read from piling up across ticks (the read
+  // can run for its full retry budget). Approvals poll independently of it.
+  let _ssChainInflight = false;
   // Use a recursive setTimeout (not setInterval) so the cadence can
   // adapt to current activity level on every tick without having to
   // tear down + rebuild the interval.
@@ -34207,18 +34231,28 @@ function startSessionStatePolling() {
     // priority: if it shows its banner, suppress the teammate banner so
     // the two don't stack. Both reuse the shared rows to avoid a second
     // network read per tick.
+    // SessionState self/teammate sync — runs in PARALLEL and must NOT gate
+    // the approval poll or the next tick. Guarded against pile-up so a slow
+    // read doesn't spawn overlapping fetches across ticks.
+    if (!_ssChainInflight) {
+      _ssChainInflight = true;
+      (async () => {
+        let rows = null;
+        try { rows = await fetchSessionStateRows(); } catch (_) { /* silent */ }
+        let selfShown = false;
+        try { selfShown = await checkAndOfferSelfSync(rows); } catch (_) { /* silent */ }
+        if (selfShown) {
+          if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
+        } else {
+          try { await checkAndOfferTeammateSync(rows); } catch (_) { /* silent */ }
+        }
+      })().finally(() => { _ssChainInflight = false; });
+    }
+    // Approval gate: mirror admin decisions into local gates, fire the
+    // approved/rejected popups, run client-side auto-approve. Runs every
+    // tick and drives the cadence (it's a fast read) so a slow/timed-out
+    // SessionState read never delays an admin decision reaching the mod.
     (async () => {
-      let rows = null;
-      try { rows = await fetchSessionStateRows(); } catch (_) { /* silent */ }
-      let selfShown = false;
-      try { selfShown = await checkAndOfferSelfSync(rows); } catch (_) { /* silent */ }
-      if (selfShown) {
-        if (typeof hideTeammateLiveBanner === 'function') hideTeammateLiveBanner();
-      } else {
-        try { await checkAndOfferTeammateSync(rows); } catch (_) { /* silent */ }
-      }
-      // Approval gate: mirror admin decisions into local gates, fire the
-      // approved/rejected popups, and run the client-side auto-approve.
       try { await pollMyApprovals(); } catch (_) { /* silent */ }
     })().finally(scheduleNext);
   };
