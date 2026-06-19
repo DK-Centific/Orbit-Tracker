@@ -33084,14 +33084,47 @@ async function fetchApprovalRows() {
   }
 }
 // Group append-only rows → newest row per approval_id (current state).
+// Robust timestamp → epoch. Handles ISO strings AND Excel serial-date
+// numbers (days since 1899-12-30), which PA sometimes returns for date
+// columns. Returns 0 when nothing parses.
+function approvalEpoch(r) {
+  const raw = (r && (r.last_modified || r.submitted_at)) || '';
+  let t = Date.parse(raw);
+  if (!isNaN(t)) return t;
+  const n = Number(raw);
+  if (!isNaN(n) && n > 20000 && n < 90000) {           // plausible Excel serial date
+    return Math.round((n - 25569) * 86400 * 1000);     // serial → unix ms
+  }
+  return 0;
+}
+// Status precedence — used ONLY to break ties when two rows for the same
+// approval_id carry the same (or unparseable/equal) timestamp. A decision
+// must never be masked by the original submitted row.
+const _APPR_STATUS_RANK = { Pending: 0, InReview: 1, Rejected: 2, AutoApproved: 3, Approved: 3 };
+function _apprRank(s) { return _APPR_STATUS_RANK[s] != null ? _APPR_STATUS_RANK[s] : 0; }
+
+// Collapse append-only rows → the current row per approval_id. Newest
+// timestamp wins. CRITICAL: the previous version keyed solely on a
+// Date.parse'd timestamp with a position-dependent `>=` tie-break — so if
+// last_modified came back as an Excel serial number (or empty), every epoch
+// became 0 and whichever row was iterated LAST won. Depending on read order
+// that could be the original Pending row, silently masking a logged Approved
+// (the "status bypass"). Now: ties are broken by status precedence, so a
+// decision always beats Pending, and a genuinely newer timestamp (e.g. a
+// resubmission reopening to Pending) still wins because newer epoch > prev.
 function resolveApprovals(rows) {
   const byId = new Map();
   for (const r of (rows || [])) {
     const id = r && r.approval_id;
     if (!id) continue;
-    const epoch = Date.parse((r.last_modified || r.submitted_at) || '') || 0;
+    const epoch = approvalEpoch(r);
     const prev = byId.get(id);
-    if (!prev || epoch >= (prev._epoch || 0)) byId.set(id, { ...r, _epoch: epoch });
+    if (!prev) { byId.set(id, { ...r, _epoch: epoch }); continue; }
+    const newer = epoch > prev._epoch;
+    const tie   = epoch === prev._epoch;
+    if (newer || (tie && _apprRank(r.status) >= _apprRank(prev.status))) {
+      byId.set(id, { ...r, _epoch: epoch });
+    }
   }
   return [...byId.values()];
 }
