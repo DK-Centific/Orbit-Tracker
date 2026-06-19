@@ -32635,29 +32635,14 @@ function isApprovalAutoEligible(appr) {
 async function fetchApprovalRows() {
   if (!APPROVAL_PA_READ_URL) return [];
   try {
-    const res = await fetchWithRetry(APPROVAL_PA_READ_URL, {
+    // fetchWithRetry returns PARSED JSON on success (or throws). Do NOT
+    // treat it as a Response — it has no .ok/.text().
+    const data = await fetchWithRetry(APPROVAL_PA_READ_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
-    if (!res || !res.ok) {
-      let bodyTxt = '';
-      try { bodyTxt = res ? await res.text() : ''; } catch (_) {}
-      const st = (res && res.status) || '(no response)';
-      console.warn('[Orbit] approval read HTTP', st, '·', bodyTxt.slice(0, 600));
-      if (typeof adminState !== 'undefined') adminState._apprReadError = 'HTTP ' + st;
-      return [];
-    }
-    const text = await res.text();
-    let data; try { data = JSON.parse(text); } catch (_) {
-      console.warn('[Orbit] approval read — response was not JSON. First 300 chars:', String(text).slice(0, 300));
-      if (typeof adminState !== 'undefined') adminState._apprReadError = 'invalid response (not JSON)';
-      return [];
-    }
     const rows = (typeof extractArray === 'function') ? extractArray(data) : (Array.isArray(data) ? data : (data && data.value) || []);
     if (typeof adminState !== 'undefined') adminState._apprReadError = null;   // read succeeded
     if (!rows.length) {
-      // Read succeeded but yielded no rows — almost always the read flow's
-      // Response action isn't returning the table rows (body must be set
-      // via the fx Expression pill to the List-rows output / its `value`).
       console.warn('[Orbit] approval read → 0 rows. Raw response shape:', JSON.stringify(data).slice(0, 300));
     } else {
       console.log('[Orbit] approval read →', rows.length, 'rows');
@@ -32665,7 +32650,7 @@ async function fetchApprovalRows() {
     if (rows.length === 256) console.warn('[Orbit] Approval read returned exactly 256 rows — enable PA "List rows" pagination (threshold 5000).');
     return rows;
   } catch (e) {
-    console.warn('[Orbit] fetchApprovalRows failed:', e && e.message);
+    console.warn('[Orbit] approval read failed:', e && e.message);
     if (typeof adminState !== 'undefined') adminState._apprReadError = (e && e.message) || 'network error';
     return [];
   }
@@ -32685,26 +32670,17 @@ function resolveApprovals(rows) {
 async function writeApprovalEvent(row) {
   if (!APPROVAL_PA_WRITE_URL) { console.warn('[Orbit] APPROVAL_PA_WRITE_URL not configured — approval not written.'); return false; }
   try {
-    // Log the exact JSON being sent — copy this from the console to use
-    // as the PA trigger's "sample payload to generate schema", guaranteeing
-    // the schema matches the real request 1:1.
+    // Log the exact JSON being sent — handy for the PA sample payload.
     console.log('[Orbit] approval write payload \u2192', JSON.stringify(row));
-    const res = await fetchWithRetry(APPROVAL_PA_WRITE_URL, {
+    // fetchWithRetry resolves on 2xx (returning parsed JSON) and THROWS on
+    // any failure. So "resolved without throwing" == success; we don't
+    // inspect .ok (the return is the parsed body, not a Response).
+    await fetchWithRetry(APPROVAL_PA_WRITE_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row),
     });
-    if (!res || !res.ok) {
-      // Surface WHY the write failed — status + response body — so a
-      // mis-wired "Approval Write" flow (bad table mapping, missing
-      // schema, 4xx/5xx) is diagnosable from the console instead of
-      // silently doing nothing.
-      let bodyTxt = '';
-      try { bodyTxt = res ? await res.text() : ''; } catch (_) {}
-      console.warn('[Orbit] writeApprovalEvent HTTP', (res && res.status) || '(no response)', '·', bodyTxt.slice(0, 600));
-      return false;
-    }
     console.log('[Orbit] writeApprovalEvent OK — approval_id', row.approval_id, '· status', row.status);
     return true;
-  } catch (e) { console.warn('[Orbit] writeApprovalEvent threw:', e && e.message); return false; }
+  } catch (e) { console.warn('[Orbit] writeApprovalEvent failed:', e && e.message); return false; }
 }
 async function ensureApprovalData(opts) {
   opts = opts || {};
