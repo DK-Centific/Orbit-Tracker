@@ -15120,14 +15120,20 @@ async function submitApprovalFromStation(stationKey, resubmit) {
   });
   if (typeof renderApp === 'function') renderApp();
   showApprovalWaitingPopup(stationKey);
-  // Fire-and-forget cloud write (no-op until APPROVAL_PA_WRITE_URL is set).
-  createApprovalRequest({
+  // Cloud write. The gate stays locally "Pending" regardless, but a
+  // silent server-write failure is exactly why nothing shows up in Excel
+  // (and the admin queue) — so await the result and tell the moderator if
+  // it didn't reach the server.
+  const writtenId = await createApprovalRequest({
     approval_id: apprId, assignmentId: ctx.asgn.id,
     teamId: ctx.teamId, teamName: ctx.teamName,
     orbitLoginId: ctx.orbitId, moderatorName: ctx.modName,
     station: gateStationLabel(stationKey), scenario: 'calibration',
     lakituUrl: ctx.lakitu, resubmit: !!resubmit, resubmitCount,
   });
+  if (!writtenId && typeof showToast === 'function') {
+    showToast('Saved locally, but logging to the server failed — it won\u2019t appear in the admin queue yet. Check the Approval Write flow / connection.', 'error', 6500);
+  }
 }
 
 // --- popups (reuse appAlert) ---
@@ -15970,19 +15976,19 @@ function canonicalAdminUsername(name) {
   const lower = String(name).toLowerCase();
   return ADMIN_USERNAMES.find(u => u.toLowerCase() === lower) || name;
 }
-// Backend admin role — an account in the Moderators/login directory whose
-// role column marks it as an admin is treated as an admin (in addition to
-// the hardcoded ADMIN_USERNAMES list). Tolerant of common column names and
-// values so the directory can be managed without code changes.
-// ASSUMPTION: the role lives in a column named role / Role / user_role /
-// Role Type / type / access, with a value of "admin" or "administrator".
-// If your directory uses a different column/value, tell me and I'll adjust.
+// Role recognition — the Moderators table's `LoginRole` column is the
+// authoritative source. LoginRole = "Admin" routes to the admin app;
+// "Mod"/"Moderator" (or any other / blank value) lands on the moderator
+// app. Accepts a few header spellings/casings for robustness, but the
+// canonical header is `LoginRole`.
+function directoryLoginRole(row) {
+  if (!row) return '';
+  const r = pickField(row, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE');
+  return String(r || '').trim();
+}
 function directoryRoleIsAdmin(row) {
-  if (!row) return false;
-  const r = pickField(row, 'role', 'Role', 'user_role', 'UserRole', 'User Role',
-                            'roleType', 'Role Type', 'type', 'Type', 'access', 'Access');
-  const v = String(r || '').trim().toLowerCase();
-  return v === 'admin' || v === 'administrator' || v.indexOf('admin') === 0;
+  const v = directoryLoginRole(row).toLowerCase();
+  return v === 'admin' || v === 'administrator';
 }
 const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
@@ -32653,8 +32659,19 @@ async function writeApprovalEvent(row) {
     const res = await fetchWithRetry(APPROVAL_PA_WRITE_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row),
     });
-    return !!(res && res.ok);
-  } catch (e) { console.warn('[Orbit] writeApprovalEvent failed:', e && e.message); return false; }
+    if (!res || !res.ok) {
+      // Surface WHY the write failed — status + response body — so a
+      // mis-wired "Approval Write" flow (bad table mapping, missing
+      // schema, 4xx/5xx) is diagnosable from the console instead of
+      // silently doing nothing.
+      let bodyTxt = '';
+      try { bodyTxt = res ? await res.text() : ''; } catch (_) {}
+      console.warn('[Orbit] writeApprovalEvent HTTP', (res && res.status) || '(no response)', '·', bodyTxt.slice(0, 600));
+      return false;
+    }
+    console.log('[Orbit] writeApprovalEvent OK — approval_id', row.approval_id, '· status', row.status);
+    return true;
+  } catch (e) { console.warn('[Orbit] writeApprovalEvent threw:', e && e.message); return false; }
 }
 async function ensureApprovalData(opts) {
   opts = opts || {};
@@ -39170,10 +39187,10 @@ async function doLogin() {
     };
     profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
 
-    // Backend admin role — if this directory account is flagged as an
-    // admin (role column = "admin"), route to the ADMIN app instead of the
-    // operator app, and keep the profile so the admin's real name is what
-    // prints as decided_by when they send an approval decision back.
+    // Role routing — the Moderators table's `LoginRole` column decides
+    // the app. LoginRole = "Admin" → admin app (keeping the profile so the
+    // admin's real name prints as decided_by on approvals). Any other value
+    // ("Mod"/"Moderator"/blank) falls through to the moderator app below.
     if (directoryRoleIsAdmin(matched)) {
       const savedA = loadState(orbitId);
       if (savedA && savedA.username && savedA.username.toLowerCase() === orbitId.toLowerCase()) {
