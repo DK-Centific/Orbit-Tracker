@@ -12722,6 +12722,23 @@ function getOverallProgress() {
   return { done, total, pct: Math.round((done / total) * 100) };
 }
 
+// Strict "is the whole session done" gate used to allow finishing. Every
+// station must be 'complete' by the app's own canonical rule (getStationStatus
+// — all scenarios complete + cameras confirmed for capture stations) AND have
+// at least one logged scenario, so an untouched/empty station can never count
+// as complete (getStationStatus returns 'complete' for an empty scenario set,
+// which we explicitly reject here).
+function isEntireSessionComplete() {
+  if (!Array.isArray(STATIONS) || !state || !state.stations) return false;
+  for (const st of STATIONS) {
+    if (getStationStatus(st.key) !== 'complete') return false;
+    const data = state.stations[st.key];
+    const n = (data && data.scenarios) ? Object.keys(data.scenarios).length : 0;
+    if (n === 0) return false;
+  }
+  return true;
+}
+
 /* =====================================================================
    FOCUS-PRESERVATION GUARD  (1.2.060326)
    =====================================================================
@@ -15191,8 +15208,18 @@ function submitStation() {
   // reflects the just-incremented station status.
   if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
 
-  // Last station → open wrap-up checklist (reopen-able if cancelled earlier)
+  // Last station → open wrap-up checklist (reopen-able if cancelled earlier).
+  // GATE: only allow finishing when EVERY station/scenario is complete. This
+  // stops a mod from completing the session with unfinished work.
   if (isLast) {
+    if (!isEntireSessionComplete()) {
+      const p = (typeof getOverallProgress === 'function') ? getOverallProgress() : null;
+      const detail = p ? ` (${p.done}/${p.total} stations done)` : '';
+      if (typeof showToast === 'function') {
+        showToast('Finish every station and scenario before completing the session' + detail + '.', 'warning', 3800);
+      }
+      return;
+    }
     openWrapUpModal(asgn);
     return;
   }
@@ -33715,31 +33742,31 @@ async function findTeammateSessionState(prefetchedRows) {
     }
     if (DIAG) console.info('FALLBACK path: my team IDs:', [...myTeamIds], '/ total teams:', adminState.teams.length);
     if (myTeamIds.size > 0) {
-      // Build a map of orbitLoginId → all team IDs that user is on.
-      // Then look for SessionState rows by users who share at least
-      // one team with me.
-      const userTeamMap = new Map();
-      for (const t of adminState.teams) {
-        if (!t) continue;
-        const allMemberIds = [...(t.primaryIds || []), ...(t.backupIds || [])];
-        for (const id of allMemberIds) {
-          const key = String(id || '').toLowerCase();
-          if (!key || key === myIdLower) continue;
-          if (!userTeamMap.has(key)) userTeamMap.set(key, new Set());
-          userTeamMap.get(key).add(String(t.id));
+      // Resolve each candidate row's TEAM (the team whose session that row
+      // represents) and match ONLY rows for a team I'm actually on — primary
+      // OR backup. This is the cross-team mixup fix: the previous version
+      // matched any row whose WRITER merely shared some team with me, so if
+      // my team-1 partner was also on team 2 and running team 2's session, I
+      // wrongly received team 2's progress sync even though I'm not on team 2.
+      // Keying on the SESSION's team is correct and also satisfies the backup
+      // case automatically (myTeamIds already includes teams where I'm a
+      // backup, built from primaryIds + backupIds above).
+      const asgnTeam = new Map();   // assignmentId → teamId, from loaded assignments
+      if (Array.isArray(adminState.assignments)) {
+        for (const a of adminState.assignments) {
+          if (a && a.id != null) asgnTeam.set(String(a.id), String(a.teamId || ''));
         }
       }
-      if (DIAG) console.info('Users sharing a team with me:', [...userTeamMap.keys()]);
-
+      const rowTeamId = (r) => {
+        const direct = String(r.teamId || r.TeamId || r.team_id || '');
+        if (direct) return direct;                          // teamId on the SessionState row
+        return asgnTeam.get(String(r.assignmentId)) || '';  // else derive from the assignment
+      };
       const fallbackMatches = newestByUser.filter(r => {
         const writerId = String(r.orbitLoginId || '').toLowerCase();
         if (!writerId || writerId === myIdLower) return false;
-        const writerTeams = userTeamMap.get(writerId);
-        if (!writerTeams) return false;
-        for (const tid of writerTeams) {
-          if (myTeamIds.has(tid)) return true;
-        }
-        return false;
+        const tid = rowTeamId(r);
+        return !!tid && myTeamIds.has(tid);   // the session's team must be MINE
       });
       if (DIAG) console.info('FALLBACK matches:', fallbackMatches.length);
 
@@ -36296,39 +36323,37 @@ function openWrapUpModal(asgn) {
     if (allChecked) {
       confirmBtn.addEventListener('click', () => {
         close();
-        pushWorklogStatus(asgn, 'session_done', { notes: 'Wrap-up checklist complete' });
-        // Stamp the local completion marker so the login welcome modal
-        // recognizes "today's session is done" on next login or after
-        // PST midnight. This field is included in extractSyncableState
-        // so cross-device + teammate views see it too. Stamping ISO
-        // string instead of a boolean lets us compare timestamps when
-        // merging cloud state (newest completion wins).
-        state.sessionCompletedAt = new Date().toISOString();
-        saveState();
-        // Push the final SessionState to the cloud so admin's
-        // Performance panel and teammate-sync see the completion
-        // marker + any final stationCompletedAt entries + the last
-        // pasted participantId (Lakitu URL). Without this trigger,
-        // the wrap-up completion stays purely local — the cloud's
-        // last SessionState row would be from whatever the
-        // previous interaction-driven sync was, which may not
-        // reflect "session is done." (1.2.052823 fix)
-        if (typeof triggerSessionStateSync === 'function') {
-          try { triggerSessionStateSync(); } catch (_) {}
-        }
-        // Also flush IMMEDIATELY (don't wait for the debounce). The
-        // user is at a terminal action — they're done with the
-        // session; this is the right moment to spend the network
-        // round trip to ensure the cloud truth catches up.
-        if (typeof flushSessionStateSync === 'function') {
-          try { flushSessionStateSync(); } catch (_) {}
-        }
+        // Everything after close() is defensive. Previously an unguarded
+        // throw in any of these steps (e.g. pushWorklogStatus or renderApp)
+        // aborted the rest of the handler — the modal closed but the session
+        // never completed and no "what next" modal opened, leaving the mod
+        // stuck on the station page. Now each step is isolated and the
+        // "what next" modal always opens (with a hard finish-and-logout
+        // fallback if even that throws).
+        try { pushWorklogStatus(asgn, 'session_done', { notes: 'Wrap-up checklist complete' }); }
+        catch (e) { console.warn('[Orbit] session_done worklog failed:', e); }
+        // Stamp the local completion marker (ISO string so cross-device /
+        // teammate merges can compare timestamps; included in
+        // extractSyncableState).
+        try { state.sessionCompletedAt = new Date().toISOString(); saveState(); } catch (_) {}
+        // Push final SessionState so admin Performance + teammate-sync see the
+        // completion marker, then flush immediately (terminal action — worth
+        // the round trip).
+        try { if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync(); } catch (_) {}
+        try { if (typeof flushSessionStateSync === 'function') flushSessionStateSync(); } catch (_) {}
         // Send back to welcome (locked state)
         currentStationKey = null;
-        renderApp();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Then open the "what next" modal
-        setTimeout(() => openSessionCompleteModal(asgn), 250);
+        try { renderApp(); } catch (e) { console.warn('[Orbit] renderApp after completion failed:', e); }
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+        // Then open the "what next" modal — with a guaranteed fallback so the
+        // session always ends even if that modal errors.
+        setTimeout(() => {
+          try { openSessionCompleteModal(asgn); }
+          catch (e) {
+            console.warn('[Orbit] session-complete modal failed — finishing for the day:', e);
+            if (typeof finishSessionForDay === 'function') finishSessionForDay();
+          }
+        }, 250);
       });
     }
   };
@@ -36461,15 +36486,16 @@ function openDoneForTheDayReminder() {
     overlay.classList.remove('open');
     setTimeout(() => overlay.remove(), 250);
   };
-  // Both the X and the "Got it" button trigger close + auto-logout-and-clear.
+  // Both the X and the "Got it" button trigger close + reset-and-logout.
   // This is the explicit user contract for "Session done for the day": once
-  // they acknowledge the reminder, their working state is cleared.
+  // they acknowledge the reminder, their progress is reset and they're signed
+  // out automatically. finishSessionForDay() guarantees the logout happens
+  // even if the progress reset throws.
   const closeAndClear = () => {
     close();
     setTimeout(() => {
-      if (typeof logoutAndClearOperatorState === 'function') {
-        logoutAndClearOperatorState();
-      }
+      if (typeof finishSessionForDay === 'function') finishSessionForDay();
+      else if (typeof logoutAndClearOperatorState === 'function') logoutAndClearOperatorState();
     }, 300);
   };
   overlay.querySelector('#reminderCloseBtn').addEventListener('click', closeAndClear);
@@ -36588,6 +36614,33 @@ function maybeResetStaleSession() {
 // (or the same operator next morning) starts clean. Preserves the assignment
 // cache, the worklog cache, and the worklog sync queue — those are records
 // that survive a session boundary.
+// Terminal "done for the day" action: reset the operator's progress so the
+// saved per-username slot is CLEAN for next login (the mod asked for an
+// auto-reset on completion, not a resume of the finished session), then ALWAYS
+// sign out — even if the reset throws — so the flow can never get stuck.
+// preserveEquipment:false because the end-of-day reminder tells the mod to
+// return all equipment; next session they'll re-check it.
+function finishSessionForDay() {
+  try {
+    if (typeof resetOperatorSessionState === 'function') {
+      resetOperatorSessionState({ preserveEquipment: false });
+    }
+    state.sessionCompletedAt = null;   // fresh start next time, not "today completed"
+    if (typeof saveState === 'function') saveState();
+  } catch (e) {
+    console.warn('[Orbit] progress reset on finish failed (logging out anyway):', e);
+  }
+  // ALWAYS log out. logoutAndClearOperatorState resets in-memory state and
+  // shows the login screen; the (now reset) saved slot is what loads next time.
+  try {
+    if (typeof logoutAndClearOperatorState === 'function') logoutAndClearOperatorState();
+    else location.reload();
+  } catch (e) {
+    console.error('[Orbit] logout on finish failed — hard reload:', e);
+    try { location.reload(); } catch (_) {}
+  }
+}
+
 function logoutAndClearOperatorState() {
   // Session state preservation (Option A — same-device resume):
   //
@@ -39527,24 +39580,28 @@ function showNoSessionModal() {
 function handleMidnightTransition() {
   if (!state.modProfile || !state.modProfile.orbitLoginId) return;
   const today = getPSTDateString();
-  // Only reset if the session was completed yesterday (or earlier).
-  // Active in-progress work spans day boundaries — don't touch it.
-  if (!state.sessionCompletedAt) return;
   const sd = state.sessionDate || '';
-  if (sd >= today) return;  // sessionDate is today or future — not stale
+  // Progression is counted BY DAY (PST), not by last login. At 12:00 AM PST
+  // any session belonging to a PRIOR day is reset — whether or not it was
+  // completed. (Previously only completed sessions reset, so an in-progress
+  // session carried across midnight; the user asked for a pure day boundary.)
+  if (!sd || sd >= today) return;  // sessionDate is today/future — nothing stale
 
-  console.log('[Orbit] PST midnight transition — resetting completed yesterday\'s session');
+  console.log('[Orbit] PST midnight — new day, resetting session (sessionDate ' + sd + ' < ' + today + ', completed=' + !!state.sessionCompletedAt + ')');
   if (typeof resetOperatorSessionState === 'function') {
     resetOperatorSessionState({ preserveEquipment: true });
   }
   state.sessionCompletedAt = null;
+  // defaultState() seeds sessionDate from local time; align to the PST
+  // reference day so the day comparison basis stays consistent.
+  state.sessionDate = today;
   saveState();
-  // Close any open welcome modal (e.g., the "today completed" modal
-  // that was open before midnight is now stale).
+  // Close any open welcome modal (e.g., the "today completed" modal that was
+  // open before midnight is now stale).
   const stale = document.getElementById('loginWelcomeOverlay');
   if (stale) stale.click();  // overlay click triggers close
   // Re-trigger welcome to show next_session / no_session for the new day.
-  setTimeout(() => checkLoginWelcome(), 400);
+  setTimeout(() => { try { checkLoginWelcome(); } catch (_) {} }, 400);
 }
 
 function startMidnightWatcher() {
