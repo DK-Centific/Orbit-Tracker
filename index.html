@@ -15407,10 +15407,45 @@ function showApprovalWaitingPopup() {
     message: 'The admin has been notified to review your calibration recording.',
   });
 }
-function showApprovalApprovedPopup() {
+// Per-checkpoint acknowledgment of the "Approved" notification.
+//
+// approval_id is REUSED across resubmissions but resubmit_count increments,
+// so `id#count` uniquely identifies each distinct approved checkpoint. A plain
+// re-verify (TTL refresh), reload, or repeated poll of the SAME approval keeps
+// the same token → the mod is asked to confirm only once. A reject → resubmit
+// → approve cycle bumps resubmit_count → new token → it surfaces once more.
+function approvalAckToken(src) {
+  if (!src) return '';
+  const id = (src.approval_id != null ? src.approval_id : src.approvalId) || '';
+  const rc = (src.resubmit_count != null ? src.resubmit_count : src.resubmitCount) || 0;
+  return String(id) + '#' + String(rc);
+}
+// True once the mod has confirmed the Approved popup for this exact checkpoint.
+// Stored on the gate object (state.approvalGate[asgn|station]), which is
+// persisted via saveState — so it survives reloads and TTL re-verifies.
+function isApprovalAcked(k, token) {
+  if (!token) return false;
+  return String(getGate(k).ackedToken || '') === String(token);
+}
+// Transient (NOT persisted) guard so two overlapping polls that both observe
+// the same approval transition can't stack two identical popups before the
+// ack is written.
+const _apprPopupInFlight = {};
+
+function showApprovalApprovedPopup(k, token) {
+  const flightId = String(k || '') + '|' + String(token || '');
+  if (token) {
+    if (_apprPopupInFlight[flightId]) return;  // already showing for this checkpoint
+    if (isApprovalAcked(k, token)) return;     // already acknowledged earlier — don't nag
+    _apprPopupInFlight[flightId] = true;
+  }
   appAlert({
     title: 'Review complete — Approved', okLabel: 'Confirm',
     message: 'Your calibration recording was approved. The remaining scenarios are now unlocked.',
+  }).then(() => {
+    // Record acknowledgment for THIS checkpoint so it never reappears.
+    if (k && token) { try { setGate(k, { ackedToken: token }); } catch (_) {} }
+    if (token) delete _apprPopupInFlight[flightId];
   });
 }
 function showApprovalRejectedPopup(by, note) {
@@ -15621,8 +15656,12 @@ async function pollMyApprovals() {
             approvalId: mine.approval_id, decidedBy: mine.decided_by || '', note: mine.feedback_note || '',
           });
           if (!wasApproved) {
+            // Visual unlock always happens; the confirm popup only the first
+            // time per approved checkpoint (showApprovalApprovedPopup skips it
+            // if this token was already acknowledged).
+            const token = approvalAckToken(mine);
             animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
-            showApprovalApprovedPopup();
+            showApprovalApprovedPopup(k, token);
           }
         } else if (cloudStatus !== g.status) {
           // Pending / InReview / Rejected — mirror it and clear verifiedAt
@@ -15675,8 +15714,9 @@ function runClientAutoApprove() {
         submitted_at: g.submittedAt || '', resubmit_count: String(g.resubmitCount || 0),
       });
     }
+    const token = approvalAckToken(g);
     animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
-    showApprovalApprovedPopup();
+    showApprovalApprovedPopup(k, token);
   }
 }
 
