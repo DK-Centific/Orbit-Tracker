@@ -13101,7 +13101,7 @@ function renderWelcomeWorklogBannerHTML() {
     ? getActiveOperatorAssignment()
     : getOperatorAssignment();
   if (!asgn) return '';
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day — matches the login welcome + day-reset so the operator's "today" is consistent everywhere (a device set to a non-Pacific tz must not see tomorrow's session)
   if (asgn.date !== todayStr) return '';  // only show for today's session
   if (asgn.status === 'Cancelled') return '';
 
@@ -13212,7 +13212,7 @@ function renderWelcomeWorklogBannerHTML() {
 // Reflects the same state machine as the banner.
 function renderTodaysSessionActionHTML() {
   const asgn = getOperatorAssignment();
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day (see renderWelcomeWorklogBannerHTML)
   if (!asgn || asgn.date !== todayStr) {
     // Fallback: legacy "jump to first station" button (no assignment context)
     return `<button class="btn btn-secondary" onclick="document.querySelector('.station-item').click()">
@@ -35655,7 +35655,7 @@ function getOperatorAssignment() {
     return a.teamId != null && myTeamIds.has(String(a.teamId));
   });
   if (mine.length === 0) return null;
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day — session dates are scheduled in PST; using local time here surfaced the next day's session when the device tz was ahead of Pacific
   // Skip assignments the operator has ALREADY completed — those should not
   // be the "current" assignment for entry-bar purposes. Also skip
   // terminal-status rows (Cancelled / Unassigned): a cancelled session
@@ -35778,7 +35778,7 @@ function getOperatorTeams() {
 // Sorted chronologically (inherited from getOperatorAssignments()), so index 0
 // is the soonest current/upcoming session.
 function getOperatorCarouselAssignments() {
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day. CRITICAL: with local time, a device ahead of Pacific filtered OUT today's PST session (a.date < local-today) AND matched tomorrow's as "today" — the exact login-vs-MySession mismatch this fixes.
   return (typeof getOperatorAssignments === 'function' ? getOperatorAssignments() : [])
     .filter(a => !isTerminalStatus(a.status) && a.date >= todayStr);
 }
@@ -35850,7 +35850,7 @@ if (typeof window._mySessionCarouselIdx !== 'number') window._mySessionCarouselI
 // next upcoming session, then the most recent past session.
 function defaultCarouselIdx(assignments) {
   if (!assignments || assignments.length === 0) return 0;
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day (see getOperatorCarouselAssignments)
   // Today (earliest of multiple today's sessions wins)
   let i = assignments.findIndex(a => a.date === todayStr);
   if (i >= 0) return i;
@@ -35885,7 +35885,7 @@ function renderMySessionSection() {
   // that getActiveOperatorAssignment() reads share one index space.
   const assignments = getOperatorCarouselAssignments();
   const team = getOperatorTeam();
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day (matches login welcome + carousel)
 
   if (assignments.length === 0) {
     el.innerHTML = `
@@ -36115,7 +36115,7 @@ function renderMySessionSection() {
 function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, isCancelled, equipmentReady) {
   if (isCancelled) return '';
 
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day (matches login welcome + My Session)
   const isToday = asgn.date === todayStr;
   const isFuture = asgn.date > todayStr;
   const arrivedIdx = statusOrderIdx('arrived');
@@ -36421,7 +36421,7 @@ function openSessionCompleteModal(asgn) {
   const remaining = (typeof getOperatorAssignments === 'function')
     ? getOperatorAssignments().filter(a => a.id !== asgn.id && !isTerminalStatus(a.status))
     : [];
-  const todayStr = ymd(new Date());
+  const todayStr = getPSTDateString();  // PST team-reference day (matches login welcome + My Session)
   const upcomingToday = remaining.filter(a => a.date === todayStr);
   const hasNext = upcomingToday.length > 0 || remaining.some(a => a.date >= todayStr);
   const nextAsgn = upcomingToday[0] || remaining.find(a => a.date >= todayStr);
