@@ -15363,8 +15363,15 @@ function _gateModContext() {
       ((state.modProfile.firstName || '') + ' ' + (state.modProfile.lastName || '')).trim();
   }
   modName = modName || orbitId;
-  const team = (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
-  const teamId   = (team && (team.teamId || team.id || team.team_id)) || (asgn && (asgn.teamId || asgn.team_id)) || '';
+  // Resolve the team from the assignment the approval is FOR, not the
+  // operator's first team membership — otherwise a multi-team mod's approval
+  // rows get stamped with the wrong team_id/team_name, which then mis-groups
+  // them in the admin queue and skews teammate-sync (which keys on the
+  // session's team). Fall back to first membership only if the assignment has
+  // no resolvable team.
+  const team = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn)
+             : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
+  const teamId   = (asgn && (asgn.teamId || asgn.team_id)) || (team && (team.teamId || team.id || team.team_id)) || '';
   const teamName = (team && (team.teamName || team.name || team.team_name)) || (asgn && (asgn.teamName || asgn.team_name)) || '';
   const lakitu = (state.participantId && typeof isValidLakituUrl === 'function' && isValidLakituUrl(state.participantId))
     ? state.participantId : '';
@@ -36250,12 +36257,18 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
 function renderNavTeamChip() {
   const el = document.getElementById('navTeamChip');
   if (!el) return;
-  const team = getOperatorTeam();
+  // Reflect the team that owns the ACTIVE (currently-shown) assignment, exactly
+  // like the entry-bar team cell and the assigned tile. getOperatorTeam() alone
+  // returns the operator's FIRST team membership, which surfaced the wrong pair
+  // (e.g. the next day's team) for a multi-team mod. Falls back to first
+  // membership only when there's no active assignment to key off.
+  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
+  const team = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn) : getOperatorTeam();
   if (!team) {
     el.innerHTML = '';
     return;
   }
-  const mates = getOperatorTeammates();
+  const mates = getOperatorTeammates(team);
   const teamShort = team.name.replace(/Team\s*/i, '').slice(0, 3) || team.name.slice(0, 3);
   el.innerHTML = `
     <div class="nav-team-chip" title="${escapeHTML(team.name)}${mates.length > 0 ? ' · with ' + mates.map(m => m.name).join(', ') : ''}">
