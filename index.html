@@ -13261,9 +13261,15 @@ function bindWelcomeWorklogActions() {
 
 // Render the Team cell in the entry bar — shows team name + teammate(s) when assigned
 function entryTeamCellHTML() {
-  const team = (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
+  // Show the team that owns the ACTIVE (currently-shown) assignment — not the
+  // operator's first team membership. For a multi-team mod these differ, which
+  // is why the entry cell was showing the wrong pair.
+  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
+  const team = (typeof teamForAssignment === 'function')
+    ? teamForAssignment(asgn)
+    : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
   if (!team) return '<span style="color: var(--text3); font-style: italic; font-weight: 400;">Not assigned</span>';
-  const mates = (typeof getOperatorTeammates === 'function') ? getOperatorTeammates() : [];
+  const mates = (typeof getOperatorTeammates === 'function') ? getOperatorTeammates(team) : [];
   const mateNames = mates.map(m => m.name.split(' ')[0]).join(', ');
   return `
     <span class="entry-team-name">${escapeHTML(team.name)}</span>
@@ -35820,8 +35826,11 @@ function getOperatorTeammateFirstName(orbitId) {
   return raw;
 }
 
-function getOperatorTeammates() {
-  const team = getOperatorTeam();
+function getOperatorTeammates(team) {
+  // Resolve teammates for the GIVEN team when provided (so the pair shown
+  // matches the session's team for a multi-team mod). Falls back to the
+  // operator's first team membership when no team is passed.
+  team = team || getOperatorTeam();
   if (!team || !state.modProfile) return [];
   const myId = String(state.modProfile.orbitLoginId).toLowerCase();
   const backupIds = getTeamBackupIds(team);
@@ -35837,6 +35846,26 @@ function getOperatorTeammates() {
     name: getOperatorTeammateFirstName(id),
     isBackup: backupIdSet.has(String(id).toLowerCase()),
   }));
+}
+
+// Look up a team by id from the loaded roster.
+function getTeamById(teamId) {
+  if (teamId == null) return null;
+  return (adminState.teams || []).find(t => String(t.id) === String(teamId)) || null;
+}
+
+// The team that OWNS a given assignment — the correct source for the team
+// pair shown in the assigned tile and the entry-bar team cell. getOperatorTeam()
+// returns only the operator's FIRST team membership, which shows the wrong pair
+// for a multi-team mod whose active session belongs to a different team. Resolve
+// from the assignment's teamId first; fall back to first membership only when
+// the assignment has no teamId or that team isn't loaded.
+function teamForAssignment(asgn) {
+  if (asgn && asgn.teamId != null) {
+    const t = getTeamById(asgn.teamId);
+    if (t) return t;
+  }
+  return (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
 }
 
 // Track the currently visible carousel index across re-renders.
@@ -35930,8 +35959,12 @@ function renderMySessionSection() {
     : (isFuture ? 'Next session' : (isToday ? "Today's session" : 'Last session'));
 
   let teamHTML = '';
-  if (team) {
-    const mates = getOperatorTeammates();
+  // Resolve from the CAROUSEL-SELECTED assignment, not getOperatorTeam() (which
+  // returns only the operator's first team membership → wrong pair for a
+  // multi-team mod viewing another team's session).
+  const tileTeam = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn) : team;
+  if (tileTeam) {
+    const mates = getOperatorTeammates(tileTeam);
     teamHTML = `
       <div class="assigned-tile-team">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -35939,7 +35972,7 @@ function renderMySessionSection() {
           <circle cx="11" cy="6" r="2" stroke="currentColor" stroke-width="1.4"/>
           <path d="M2.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5M7.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
         </svg>
-        <span><strong>${escapeHTML(team.name)}</strong>${mates.length > 0 ? '<br>with ' + mates.map(m => escapeHTML(m.name) + (m.isBackup ? ' <span style="opacity:0.6">(BU)</span>' : '')).join(', ') : ''}</span>
+        <span><strong>${escapeHTML(tileTeam.name)}</strong>${mates.length > 0 ? '<br>with ' + mates.map(m => escapeHTML(m.name) + (m.isBackup ? ' <span style="opacity:0.6">(BU)</span>' : '')).join(', ') : ''}</span>
       </div>`;
   }
 
