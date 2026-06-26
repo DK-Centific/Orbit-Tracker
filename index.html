@@ -3170,13 +3170,23 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   padding: 14px;
 }
-/* Inside the drawer the entry bar should stack as a column, not the wide
-   desktop row, so it reads cleanly in the narrow drawer. */
+/* Inside the drawer the entry bar lays out as an even 2-column grid (Option B):
+   the four short fields fill a 2×2 (Username | Participant, Session Date | Team),
+   then On-site and the Lakitu paste field each span the full width at the
+   bottom — Lakitu last. CSS `order` does the reordering so the DESKTOP entry bar
+   (shared markup) is untouched: default(0) items keep DOM order (Username,
+   Participant, Session Date); Team / On-site / Lakitu are pulled to explicit
+   positions. min-width:0 lets every cell shrink to its grid track (the desktop
+   min-widths on the wide/arrived variants would otherwise blow out the 2 cols). */
 .ms-drawer-inner .entry-bar {
-  display: flex; flex-direction: column; gap: 12px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px;
   padding: 0; border: none; background: none; box-shadow: none;
 }
 .ms-drawer-inner .entry-divider { display: none; }
+.ms-drawer-inner .entry-field { min-width: 0; }
+.ms-drawer-inner .entry-field-wide    { order: 4; flex: none; }
+.ms-drawer-inner .entry-field-arrived { order: 5; grid-column: 1 / -1; }
+.ms-drawer-inner .entry-field-lakitu  { order: 6; grid-column: 1 / -1; }
 .ms-drawer-hint {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   margin-top: 12px; padding-top: 10px;
@@ -13370,7 +13380,7 @@ function entryBarHTML() {
         <div class="field-readonly">${escapeHTML(state.username) || '—'}</div>
       </div>
       <div class="entry-divider"></div>
-      <div class="entry-field">
+      <div class="entry-field entry-field-lakitu">
         <span class="entry-label-row">
           <label>Lakitu session</label>
           <!-- ⓘ info popover — explains what a Lakitu session is and
