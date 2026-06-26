@@ -1115,6 +1115,61 @@ a.icon-btn:focus-visible {
   flex-shrink: 0;
   margin-top: 1px;
 }
+/* Eye-popping CRITICAL reminder inside the calibration guide modal. Distinct
+   from the amber .cal-guide-banner above — Motion Detection OFF is a hard rule,
+   so it gets the red "critical" treatment + a soft red ring. Red tints use rgba
+   so they read in BOTH light and dark themes; title/sub use theme text tokens
+   for contrast on the tinted surface. */
+.cal-guide-motion {
+  position: relative;
+  display: flex; gap: 13px; align-items: center;
+  margin: 0 0 12px;
+  padding: 15px 16px;
+  border-radius: 12px;
+  background: rgba(239,68,68,0.13);
+  border: 1.5px solid var(--red);
+  box-shadow: 0 0 0 4px rgba(239,68,68,0.10);
+}
+.cal-guide-motion-icon {
+  flex-shrink: 0; width: 40px; height: 40px; border-radius: 11px;
+  background: rgba(239,68,68,0.18);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--red);
+}
+.cal-guide-motion-eyebrow {
+  font-family: var(--font-num);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--red); margin-bottom: 3px;
+}
+.cal-guide-motion-title {
+  font-size: 16px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2;
+  color: var(--text);
+}
+.cal-guide-motion-sub {
+  font-size: 12.5px; line-height: 1.4; margin-top: 3px; color: var(--text2);
+}
+/* Compact, persistent reminder pill next to the camera-station labels
+   (0a / 1 / 2 / 3). The label + sub may ellipsis/hide on a tight mobile
+   header, but this pill stays (flex-shrink:0) so the rule is always visible. */
+.acc-label-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.acc-label-row .acc-label { flex: 0 1 auto; }
+.acc-motion-badge {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: rgba(239,68,68,0.15);
+  border: 0.5px solid rgba(239,68,68,0.45);
+  font-family: var(--font-num);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--red); white-space: nowrap; line-height: 1.4;
+}
+.acc-motion-badge svg { flex-shrink: 0; }
+/* Desktop placement of the same Motion-Detection pill: directly under the
+   station <h2> in the full-content (non-accordion) view. Hidden at the mobile
+   breakpoint because the accordion header already carries the pill there. */
+.station-motion-row { margin-top: 9px; }
+@media (max-width: 760px) { .station-motion-row { display: none; } }
 /* Click-to-open link to the SharePoint Word doc (replaces the old inline
    DOs/DON'Ts grid). Styled as a prominent accent card. */
 .cal-guide-doclink {
@@ -14258,12 +14313,27 @@ function renderStation(key, opts) {
   // maybeAutoShowCalGuide() for the gating logic.
   if (typeof maybeAutoShowCalGuide === 'function') maybeAutoShowCalGuide(key);
 
+  // Desktop (full-content) placement of the Motion-Detection-OFF reminder:
+  // directly below the station <h2>, for the camera stations only
+  // (GATE_ALL_KEYS = 0a / 1 / 2 / 3). On mobile the accordion header carries
+  // this pill instead (and .station-motion-row is hidden under 760px).
+  const showStationMotion = (typeof GATE_ALL_KEYS !== 'undefined') && GATE_ALL_KEYS.indexOf(key) >= 0;
+  const stationMotionRow = showStationMotion ? `
+      <div class="station-motion-row">
+        <span class="acc-motion-badge" title="Motion Detection must be OFF on every camera, at all times">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="3.8" y1="3.8" x2="12.2" y2="12.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>Motion Detection OFF
+        </span>
+      </div>` : '';
   const titleHTML = opts.omitTitle ? '' : `
     <div class="section-title">
       <h2>
         <span class="station-tag">${tag}</span>
         ${station.label} <span style="color:var(--text3); font-weight:400">·</span> <span style="color:var(--text2); font-weight: 500;">${station.sub}</span>
       </h2>
+      ${stationMotionRow}
     </div>`;
 
   let html = `
@@ -14814,12 +14884,26 @@ function renderStationsAccordion() {
     const status = getStationStatus(st.key);
     const num = i === 0 ? '0a' : i === 1 ? '0b' : i === 2 ? '0c' : String(i - 2);
     const isOpen = openKey != null && String(st.key) === String(openKey);
+    // Motion-Detection-OFF reminder pill — only on the camera stations
+    // (0a calibration + 1/2/3 capture). GATE_ALL_KEYS is exactly that set;
+    // enroll/house (0b/0c) are not camera tasks, so they stay clean.
+    const showMotion = (typeof GATE_ALL_KEYS !== 'undefined') && GATE_ALL_KEYS.indexOf(st.key) >= 0;
+    const motionBadge = showMotion
+      ? `<span class="acc-motion-badge" title="Motion Detection must be OFF on every camera, at all times">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
+              <line x1="3.8" y1="3.8" x2="12.2" y2="12.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>Motion Detection OFF</span>`
+      : '';
     html += `
       <div class="acc-item ${isOpen ? 'open' : ''}" data-key="${st.key}">
         <button class="acc-head" type="button" data-key="${st.key}" aria-expanded="${isOpen ? 'true' : 'false'}">
           <span class="acc-num">${num}</span>
           <span class="acc-info">
-            <span class="acc-label">${escapeHTML(st.label)}</span>
+            <span class="acc-label-row">
+              <span class="acc-label">${escapeHTML(st.label)}</span>
+              ${motionBadge}
+            </span>
             <span class="acc-sub">${escapeHTML(st.sub)}</span>
           </span>
           <span class="status-pill ${status}" title="${prettyStatus(status)}">${pillLabel(status)}</span>
@@ -35194,6 +35278,20 @@ function buildCalGuideModal() {
         <span class="cal-guide-banner-icon">⚠️</span>
         <span><strong>Recording rejections delay the entire study.</strong> Open and follow this guide at every station before starting any scenario recording.</span>
       </div>
+      <div class="cal-guide-motion" role="note">
+        <div class="cal-guide-motion-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="1.8" fill="currentColor"/>
+            <path d="M7.5 7.5a6.5 6.5 0 000 9M16.5 16.5a6.5 6.5 0 000-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div style="min-width: 0;">
+          <div class="cal-guide-motion-eyebrow">Critical · every camera</div>
+          <div class="cal-guide-motion-title">Motion Detection must be OFF</div>
+          <div class="cal-guide-motion-sub">Turn it off on every camera and keep it off for the entire session.</div>
+        </div>
+      </div>
       ${docLinkHTML}
     </div>
     <div class="cal-guide-footer">
@@ -35431,17 +35529,29 @@ function resetCalGuideSeen(username) {
 // Trigger entry-point called from renderStation when a mod arrives at
 // Station 0a (Rig Calibration). Idempotent — re-renders of the same
 // station while it's already been shown for this user are no-ops.
+// Tracks the station the guide was last evaluated against, so we only react to
+// an actual station CHANGE — renderStation also runs on the 15s cloud refresh
+// and other re-renders for the SAME station, and we must not reopen the modal
+// under the user on every background tick.
+let _lastCalGuideStationKey = null;
 function maybeAutoShowCalGuide(stationKey) {
-  if (stationKey !== 'station0_cal') return;
-  // Only run on the moderator app — admin has a different navigation
-  // model and the guide trigger doesn't apply there. The mod app sets
-  // state.username at login; admin keeps it empty on the mod-side state.
+  // Mod app only — admin has a different navigation model.
   if (!state || !state.username) return;
-  if (calGuideHasBeenSeen(state.username)) return;
-  markCalGuideSeen(state.username);
-  // Defer one frame so the station's DOM is in place before the modal
-  // animates in over it. Two-frame deferral on the safe side — some
-  // browsers complete layout in one rAF but commit paint on the next.
+  // Once the mod confirms the acknowledgment button (state.calGuideAck set),
+  // the guide never auto-opens again this session.
+  if (typeof isCalGuideAcknowledged === 'function' && isCalGuideAcknowledged()) {
+    _lastCalGuideStationKey = stationKey;
+    return;
+  }
+  // Re-pop on every station CHANGE until acknowledged. Same-station re-renders
+  // (refresh ticks, accordion body rebuilds) are ignored.
+  if (stationKey === _lastCalGuideStationKey) return;
+  _lastCalGuideStationKey = stationKey;
+  // Don't stack a second copy if it's already open.
+  const existing = document.getElementById('calGuideOverlay');
+  if (existing && existing.classList.contains('open')) return;
+  // Defer two frames so the station's DOM is painted before the modal animates
+  // in over it.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       try { openCalGuideModal(); } catch (e) {
@@ -36728,6 +36838,10 @@ function finishSessionForDay() {
 }
 
 function logoutAndClearOperatorState() {
+  // Reset the auto-guide station tracker so the next login re-evaluates from
+  // scratch (otherwise an in-app logout→login onto the same station could skip
+  // the re-pop). state.calGuideAck resets with the new session independently.
+  _lastCalGuideStationKey = null;
   // Session state preservation (Option A — same-device resume):
   //
   // Previously this function deleted LS_KEY on every logout, which
