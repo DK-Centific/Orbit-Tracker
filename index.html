@@ -1168,8 +1168,54 @@ a.icon-btn:focus-visible {
 /* Desktop placement of the same Motion-Detection pill: directly under the
    station <h2> in the full-content (non-accordion) view. Hidden at the mobile
    breakpoint because the accordion header already carries the pill there. */
-.station-motion-row { margin-top: 9px; }
+.station-motion-row { margin-top: 9px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 760px) { .station-motion-row { display: none; } }
+/* Clickable "≥90s" recording-length pill — sits next to the motion badge on
+   the camera stations. Accent-colored + hover fill to signal it's tappable
+   (opens the length reminder). */
+.acc-length-badge {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent);
+  font-family: var(--font-num);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--accent-ink); white-space: nowrap; line-height: 1.4;
+  cursor: pointer; transition: background 0.16s ease, color 0.16s ease;
+}
+.acc-length-badge:hover { background: var(--accent); color: #001114; }
+.acc-length-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.acc-length-badge svg { flex-shrink: 0; }
+/* The 90-second reminder block — self-contained amber callout reused inside
+   the cal-guide modal AND the pop-up shown when the pill is tapped. */
+.len-reminder {
+  border: 1.5px solid var(--amber);
+  background: rgba(245,158,11,0.10);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: left;
+}
+.len-reminder-eyebrow {
+  font-family: var(--font-num);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--amber); margin-bottom: 4px;
+}
+.len-reminder-title {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25;
+  color: var(--text); margin-bottom: 9px;
+}
+.len-reminder-applies { font-size: 12.5px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.len-reminder-list { margin: 0 0 11px; padding-left: 18px; }
+.len-reminder-list li { font-size: 12.5px; color: var(--text2); line-height: 1.55; }
+.len-reminder-warn {
+  font-size: 12.5px; font-weight: 600; line-height: 1.4;
+  color: var(--red);
+  background: rgba(239,68,68,0.12);
+  border: 0.5px solid rgba(239,68,68,0.4);
+  border-radius: 9px; padding: 9px 11px;
+}
 /* Click-to-open link to the SharePoint Word doc (replaces the old inline
    DOs/DON'Ts grid). Styled as a prominent accent card. */
 .cal-guide-doclink {
@@ -4890,6 +4936,7 @@ input#ent_lakitu.lakitu-invalid {
 }
 /* When the message has multiple paragraphs (set via html: true with
    <p> tags), restore the standard paragraph spacing. */
+.app-confirm-message.is-html { white-space: normal; }
 .app-confirm-message p { margin: 0 0 10px 0; }
 .app-confirm-message p:last-child { margin-bottom: 0; }
 .app-confirm-message strong { color: var(--text); font-weight: 600; }
@@ -4926,6 +4973,9 @@ input#ent_lakitu.lakitu-invalid {
   }
   .app-confirm-title { font-size: 16px; }
   .app-confirm-message { font-size: 13.5px; margin-bottom: 18px; }
+  .app-confirm-message .len-reminder { padding: 12px 13px; }
+  .app-confirm-message .len-reminder-title { font-size: 14.5px; margin-bottom: 7px; }
+  .app-confirm-message .len-reminder-list { margin-bottom: 9px; }
 }
 
 .asgn-field { margin-bottom: 14px; }
@@ -14372,7 +14422,7 @@ function renderStation(key, opts) {
             <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
             <line x1="3.8" y1="3.8" x2="12.2" y2="12.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>Motion Detection OFF
-        </span>
+        </span>${LENGTH_BADGE_HTML}
       </div>` : '';
   const titleHTML = opts.omitTitle ? '' : `
     <div class="section-title">
@@ -14949,7 +14999,7 @@ function renderStationsAccordion() {
           <span class="acc-info">
             <span class="acc-label-row">
               <span class="acc-label">${escapeHTML(st.label)}</span>
-              ${motionBadge}
+              ${motionBadge}${showMotion ? LENGTH_BADGE_HTML : ''}
             </span>
             <span class="acc-sub">${escapeHTML(st.sub)}</span>
           </span>
@@ -32909,6 +32959,10 @@ function appConfirm(opts) {
     titleEl.textContent = title;
     if (isHtml) messageEl.innerHTML = message;
     else messageEl.textContent = message;
+    // pre-wrap is for plain-text messages (to preserve \n). For HTML messages
+    // it renders the markup's own indentation/newlines between block elements
+    // as blank space — so collapse whitespace normally when html:true.
+    messageEl.classList.toggle('is-html', isHtml);
     // Toggle message visibility — an empty message leaves a weird gap.
     messageEl.style.display = message ? '' : 'none';
 
@@ -35375,6 +35429,34 @@ const CAL_GUIDE_CHECKLIST = [
 
 // Builds the modal DOM once. Cached on window so subsequent opens are
 // just a class toggle.
+// The 90-second recording-length reminder (added 7/8). Defined once and used
+// both inside the calibration guide modal and in the pop-up shown when the
+// clickable "≥90s" pill is tapped.
+const LENGTH_REMINDER_HTML = `
+  <div class="len-reminder">
+    <div class="len-reminder-eyebrow">As of 7/8 · minimum recording length</div>
+    <div class="len-reminder-title">All recordings must be a minimum of 90 seconds long</div>
+    <div class="len-reminder-applies">This applies to:</div>
+    <ul class="len-reminder-list">
+      <li>All calibration videos</li>
+      <li>All scenario recordings</li>
+      <li>Moderator and vehicle scenarios</li>
+    </ul>
+    <div class="len-reminder-warn">⚠️ Recordings shorter than 60 seconds do not meet the project requirements and will be rejected by the client.</div>
+  </div>`;
+
+// Clickable "≥90s" pill placed next to the motion badge on the camera stations.
+// onclick uses stopPropagation because in the accordion it lives inside the
+// <button class="acc-head"> — without it the tap would also toggle the panel.
+const LENGTH_BADGE_HTML = `<span class="acc-length-badge" role="button" tabindex="0" title="Recording length requirement — tap for details" onclick="event.stopPropagation(); showLengthReminder();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); event.stopPropagation(); showLengthReminder();}"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>&#8805; 90s</span>`;
+
+// Pops the 90-second reminder as a focused alert (reuses appAlert → appConfirm,
+// which renders the HTML message when html:true). Global so the inline pill
+// onclick can reach it.
+function showLengthReminder() {
+  appAlert({ title: 'Recording length requirement', message: LENGTH_REMINDER_HTML, html: true, okLabel: 'Got it' });
+}
+
 function buildCalGuideModal() {
   if (document.getElementById('calGuideOverlay')) return;  // already built
 
@@ -35453,6 +35535,7 @@ function buildCalGuideModal() {
           <div class="cal-guide-motion-sub">Turn it off on every camera and keep it off for the entire session.</div>
         </div>
       </div>
+      ${LENGTH_REMINDER_HTML}
       ${docLinkHTML}
     </div>
     <div class="cal-guide-footer">
