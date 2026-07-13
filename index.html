@@ -6643,6 +6643,58 @@ button.perf-stat-chip.scheduled.active {
 }
 .perf-date-range-btn.active .perf-date-range-btn-sub { color: var(--text2); }
 
+/* Excel export button — sits at the toolbar's right edge. Uses the
+   search-input chrome (bordered pill) rather than the segmented-toggle
+   look so it reads as an action, not a filter state. */
+.perf-export-btn {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  padding: 8px 14px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.perf-export-btn:hover { background: var(--bg3); border-color: var(--accent); }
+.perf-export-btn svg { flex-shrink: 0; }
+.perf-export-btn:disabled { opacity: 0.5; cursor: default; }
+/* Custom range row — full-width strip below the toolbar, shown only when
+   the Custom pill is active. Holds the From/To native date pickers. */
+.perf-custom-range {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin: -6px 0 16px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg2);
+}
+.perf-custom-range-label {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text3);
+}
+.perf-custom-range label { font-size: 13px; color: var(--text2); }
+.perf-custom-range input[type="date"] {
+  font-family: inherit; font-size: 13px;
+  padding: 6px 10px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+.perf-custom-range input[type="date"]:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(0, 240, 255, 0.20));
+}
+.perf-custom-range-hint { font-size: 11.5px; color: var(--text3); }
+[data-theme="dark"]  .perf-custom-range input[type="date"] { color-scheme: dark; }
+[data-theme="light"] .perf-custom-range input[type="date"] { color-scheme: light; }
+
 /* Drill banner — small inline strip inside the expanded tile body that
    appears when a status filter is active. Gives admin an unambiguous
    "you're seeing a filtered subset" indicator + a one-click clear.
@@ -12293,7 +12345,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.3.071026';
+const APP_VERSION = '1.3.071326';
 // Four physical rigs, each carrying two named cameras. Camera NAMES
 // repeat across rigs (Starlit + Grouper on Rigs 1-2; Phantom + Sailfish
 // on Rigs 3-4), so camera IDs are rig-scoped: `${rig}_${name}` →
@@ -18055,6 +18107,17 @@ function perfDateInRange(a, range) {
   if (range === 'month') {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   }
+  if (range === 'custom') {
+    // Inclusive [start, end] on whole days. A missing bound is treated as
+    // open-ended (only-start = "from X onward", only-end = "up to Y"),
+    // and with neither bound set, custom behaves like 'all' so the view
+    // isn't blank before the admin picks any dates.
+    const cs = parseYMD(adminState.perfCustomStart);
+    const ce = parseYMD(adminState.perfCustomEnd);
+    if (cs) { cs.setHours(0, 0, 0, 0); if (d.getTime() < cs.getTime()) return false; }
+    if (ce) { ce.setHours(0, 0, 0, 0); if (d.getTime() > ce.getTime()) return false; }
+    return true;
+  }
   // Unknown range value → treat as 'all' rather than hiding everything,
   // so a typo in stored state can't soft-brick the page.
   return true;
@@ -18068,11 +18131,24 @@ function perfDateRangeOptions() {
   const monthName = now.toLocaleDateString(undefined, { month: 'short' });
   const wkStart = startOfWeek(now);
   const wkStartLabel = wkStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  // Custom pill sub-label reflects the picked range once set, so the
+  // toolbar shows what "Custom" currently resolves to at a glance.
+  const cs = adminState.perfCustomStart;
+  const ce = adminState.perfCustomEnd;
+  const fmtShort = ymd => {
+    const dt = parseYMD(ymd);
+    return dt ? dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+  };
+  let customSub = '';
+  if (cs && ce)      customSub = `${fmtShort(cs)}–${fmtShort(ce)}`;
+  else if (cs)       customSub = `from ${fmtShort(cs)}`;
+  else if (ce)       customSub = `until ${fmtShort(ce)}`;
   return [
     { key: 'today',  label: 'Today',     sub: now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) },
     { key: 'week',   label: 'This week', sub: `from ${wkStartLabel}` },
     { key: 'month',  label: 'This month',sub: monthName },
     { key: 'all',    label: 'All time',  sub: '' },
+    { key: 'custom', label: 'Custom',    sub: customSub },
   ];
 }
 
@@ -18419,7 +18495,25 @@ function renderPerformance(body) {
           </button>
         `).join('')}
       </div>
+      <button type="button" class="perf-export-btn" id="perfExportBtn"
+              title="Export the current results (respecting view, date range, search, and status filters) to Excel">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 2v7m0 0L5.3 6.3M8 9l2.7-2.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Export Excel
+      </button>
     </div>
+    ${dateRange === 'custom' ? `
+      <div class="perf-custom-range">
+        <span class="perf-custom-range-label">Custom range</span>
+        <label for="perfCustomStart">From</label>
+        <input type="date" id="perfCustomStart" value="${escapeHTML(adminState.perfCustomStart || '')}" aria-label="Custom range start date">
+        <label for="perfCustomEnd">To</label>
+        <input type="date" id="perfCustomEnd" value="${escapeHTML(adminState.perfCustomEnd || '')}" aria-label="Custom range end date">
+        <span class="perf-custom-range-hint">bookings dated in this range${(adminState.perfCustomStart || adminState.perfCustomEnd) ? '' : ' — pick dates to narrow'}</span>
+      </div>
+    ` : ''}
     <div id="perfTileGrid" class="perf-tile-grid">${renderPerfTilesHTML(view, search)}</div>
   `;
 
@@ -18485,12 +18579,163 @@ function renderPerformance(body) {
       }
     });
   }
+  // Custom date-range inputs — commit on 'change' (fires when the picker
+  // closes / value is set), so we're never re-rendering mid-selection.
+  // A full renderPerformance is fine here: date inputs don't hold a text
+  // cursor the way search does, so losing focus after commit is expected.
+  const cStart = body.querySelector('#perfCustomStart');
+  const cEnd   = body.querySelector('#perfCustomEnd');
+  if (cStart) {
+    cStart.addEventListener('change', e => {
+      adminState.perfCustomStart = e.target.value || '';
+      adminState.perfStatusFilter = {};  // same rationale as a pill switch
+      renderPerformance(body);
+    });
+  }
+  if (cEnd) {
+    cEnd.addEventListener('change', e => {
+      adminState.perfCustomEnd = e.target.value || '';
+      adminState.perfStatusFilter = {};
+      renderPerformance(body);
+    });
+  }
+  // Excel export — snapshots exactly what's currently on screen.
+  const exportBtn = body.querySelector('#perfExportBtn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => exportPerformanceXLSX());
+  }
   wirePerfTileGrid(document.getElementById('perfTileGrid'));
 }
 
 function renderPerfTilesHTML(view, search) {
   if (view === 'teams') return renderPerfTeamTilesHTML(search);
   return renderPerfModTilesHTML(search);
+}
+
+// Export the CURRENT Performance result to Excel. Mirrors exactly what
+// the tiles show: honors the active view (teams/mods), date range
+// (including Custom), status scope, and search — using the same helpers
+// and the same "drop zero-booking entities" rule the renderers use, so
+// the workbook can't drift from the on-screen numbers. Two sheets:
+//   • Summary  — one row per team/mod with Done/Live/Next/Total + a grand total
+//   • Bookings — one row per in-scope booking (entity, participant, date, times, status)
+function exportPerformanceXLSX() {
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded — try refreshing'); return; }
+  const view        = adminState.perfView || 'teams';
+  const dateRange   = adminState.perfDateRange || 'all';
+  const statusScope = adminState.perfStatusScope || 'all';
+  const search      = (adminState.perfSearch || '').trim().toLowerCase();
+  const inScope = a => perfDateInRange(a, dateRange) &&
+    (statusScope === 'all' || classifyBookingForPerf(a) === statusScope);
+
+  const statusLabel = s => s === 'completed' ? 'Done' : s === 'inprogress' ? 'Live' : s === 'scheduled' ? 'Next' : '';
+  const partName = a => {
+    const pd = a && a.participantData;
+    return pd ? [pd.firstName, pd.lastName].filter(Boolean).join(' ').trim() : '';
+  };
+  const teamNameOf = t => (t && (t.name || t.teamName || t.team_name)) || '(unnamed team)';
+  const modEmailOf = m => String(pickField(m, 'email', 'centificEmail', 'personalEmail') || '');
+
+  // ---- Collect the on-screen scope (mirror of the tile renderers) ----
+  const entries = [];  // { name, sub, bookings, done, live, next, total }
+  if (view === 'teams') {
+    (adminState.teams || []).forEach(t => {
+      const bookings = perfTeamBookings(t.id).filter(inScope);
+      if (bookings.length === 0) return;  // tiles drop zero-booking teams
+      const { primary, backup } = perfTeamMembers(t);
+      if (search) {
+        const nameHit = teamNameOf(t).toLowerCase().includes(search);
+        const memberHit = [...primary, ...backup].some(m =>
+          perfModName(m).toLowerCase().includes(search) || modEmailOf(m).toLowerCase().includes(search));
+        const partHit = bookings.some(a => perfBookingMatchesParticipant(a, search));
+        if (!nameHit && !memberHit && !partHit) return;
+      }
+      const memberNames = [...primary, ...backup].map(m => perfModName(m)).filter(Boolean).join(', ');
+      entries.push({ name: teamNameOf(t), sub: memberNames, bookings });
+    });
+  } else {
+    (adminState.moderators || []).forEach(m => {
+      const bookings = perfModBookings(perfModId(m)).filter(inScope);
+      if (bookings.length === 0) return;  // tiles drop zero-booking mods
+      if (search) {
+        const nameHit = perfModName(m).toLowerCase().includes(search) || modEmailOf(m).toLowerCase().includes(search);
+        const partHit = bookings.some(a => perfBookingMatchesParticipant(a, search));
+        if (!nameHit && !partHit) return;
+      }
+      entries.push({ name: perfModName(m) || '(unnamed)', sub: modEmailOf(m), bookings });
+    });
+  }
+
+  if (entries.length === 0) { toast('Nothing to export for the current filters'); return; }
+
+  entries.forEach(e => {
+    e.done  = e.bookings.filter(a => classifyBookingForPerf(a) === 'completed').length;
+    e.live  = e.bookings.filter(a => classifyBookingForPerf(a) === 'inprogress').length;
+    e.next  = e.bookings.filter(a => classifyBookingForPerf(a) === 'scheduled').length;
+    e.total = e.bookings.length;
+  });
+
+  const rangeLabel = (() => {
+    if (dateRange === 'today') return 'Today';
+    if (dateRange === 'week')  return 'This week';
+    if (dateRange === 'month') return 'This month';
+    if (dateRange === 'custom') return `Custom ${adminState.perfCustomStart || '(any)'} to ${adminState.perfCustomEnd || '(any)'}`;
+    return 'All time';
+  })();
+  const entityLabel = view === 'teams' ? 'Team' : 'Moderator';
+
+  const wb = XLSX.utils.book_new();
+
+  // ---- Summary sheet ----
+  const grand = entries.reduce((a, e) => ({ done: a.done + e.done, live: a.live + e.live, next: a.next + e.next, total: a.total + e.total }), { done: 0, live: 0, next: 0, total: 0 });
+  const summary = [
+    ['Project Orbit — Performance Export'],
+    [`Version ${APP_VERSION}`],
+    ['Generated', new Date().toLocaleString()],
+    ['View', view === 'teams' ? 'Teams' : 'Moderators'],
+    ['Date range', rangeLabel],
+    ['Status filter', statusScope === 'all' ? 'All' : statusLabel(statusScope)],
+    ['Search', adminState.perfSearch || '(none)'],
+    [],
+    [entityLabel, view === 'teams' ? 'Members' : 'Email', 'Done', 'Live', 'Next', 'Total'],
+    ...entries.map(e => [e.name, e.sub || '', e.done, e.live, e.next, e.total]),
+    [],
+    ['TOTAL', '', grand.done, grand.live, grand.next, grand.total],
+  ];
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+  wsSummary['!cols'] = [{ wch: 28 }, { wch: 42 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // ---- Bookings sheet ----
+  const bookingRows = [[entityLabel, 'Participant', 'Date', 'Start', 'End', 'Status']];
+  entries.forEach(e => {
+    const sorted = e.bookings.slice().sort((a, b) => {
+      const da = String(a.date || ''), db = String(b.date || '');
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.startMin || 0) - (b.startMin || 0);
+    });
+    sorted.forEach(a => {
+      bookingRows.push([
+        e.name,
+        partName(a) || '(no participant)',
+        a.date || '',
+        (a.startMin != null) ? fmtTimeOfDay(a.startMin) : '',
+        (a.endMin   != null) ? fmtTimeOfDay(a.endMin)   : '',
+        statusLabel(classifyBookingForPerf(a)),
+      ]);
+    });
+  });
+  const wsBookings = XLSX.utils.aoa_to_sheet(bookingRows);
+  wsBookings['!cols'] = [{ wch: 24 }, { wch: 26 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wsBookings, 'Bookings');
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
+  const rangeSlug = dateRange === 'custom'
+    ? `custom_${adminState.perfCustomStart || 'any'}_${adminState.perfCustomEnd || 'any'}`
+    : dateRange;
+  const fname = `Orbit_Performance_${view}_${rangeSlug}_${stamp}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast(`Exported ${fname}`);
 }
 
 function renderPerfTeamTilesHTML(search) {
