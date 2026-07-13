@@ -12293,7 +12293,7 @@ function sessionKeyFor(username) {
 //                 part is the default for every patch; bumping MAJOR
 //                 or MINOR is a deliberate "this is a feature release"
 //                 signal that only happens on request.
-const APP_VERSION = '1.3.061526';
+const APP_VERSION = '1.3.071026';
 // Four physical rigs, each carrying two named cameras. Camera NAMES
 // repeat across rigs (Starlit + Grouper on Rigs 1-2; Phantom + Sailfish
 // on Rigs 3-4), so camera IDs are rig-scoped: `${rig}_${name}` →
@@ -15516,7 +15516,18 @@ function _calStatus(k, num) {
   const sd = state.stations[k] && state.stations[k].scenarios[num];
   return sd ? (sd.status || 'Not Started') : 'Not Started';
 }
-function isCalibrationEngaged(k) { return GATE_CAL_NUMS.some(n => _calStatus(k, n) !== 'Not Started'); }
+function isCalibrationEngaged(k) {
+  // "Engaged" = the mod has started calibration in ANY way on CAL_EXT/CAL_GND —
+  // either set a status OR logged at least one take (iteration). This drives
+  // whether Station 0A surfaces its submit-for-review gate. It used to check
+  // status ONLY, so bumping the iteration counter (the natural "record a take"
+  // action) left the gate hidden until the mod also clicked "Calibrated".
+  return GATE_CAL_NUMS.some(n => {
+    const sd = state.stations[k] && state.stations[k].scenarios[n];
+    if (!sd) return false;
+    return (sd.status && sd.status !== 'Not Started') || (sd.iterations || 0) > 0;
+  });
+}
 function calibrationComplete(k) {
   return GATE_CAL_NUMS.every(n => {
     const sd = state.stations[k] && state.stations[k].scenarios[n];
@@ -21147,13 +21158,31 @@ async function loadParticipants(force = false) {
     // 'WA', case-insensitive, after trim. Rows with empty/missing State are
     // dropped per the spec ("filter out who are NOT equal to Washington").
     adminState._partTotalRaw = all.length;
-    adminState.participants = all.filter(p => {
-      const st = pickField(p, 'state', 'State', 'STATE');
+    // Program spec filters the roster to Washington participants. This filter
+    // is BRITTLE: it silently drops every row whose State column can't be
+    // located (unusual header name) or whose value isn't exactly Washington/WA.
+    // When that dropped EVERYONE, the assignment participant-picker rendered
+    // empty with no explanation — the "participants not populating" bug.
+    // Fail OPEN: if the WA filter would leave an empty roster while raw rows
+    // exist, keep the FULL list and flag it, so booking still works and the
+    // mismatch is visible (console + UI flag) instead of silently stranding
+    // the admin with an empty picker.
+    const waFiltered = all.filter(p => {
+      const st = pickField(p, 'state', 'State', 'STATE', 'us_state', 'usState',
+                           'stateProvince', 'state_province', 'State/Province', 'province', 'region');
       if (!st) return false;
       const s = String(st).trim().toLowerCase();
       return s === 'washington' || s === 'wa';
     });
-    console.log(`[Orbit] Participants loaded: ${all.length} from PA → ${adminState.participants.length} after Washington filter (${all.length - adminState.participants.length} non-WA dropped)`);
+    if (all.length > 0 && waFiltered.length === 0) {
+      adminState.participants = all;
+      adminState._partWaFilterFellOpen = true;
+      console.warn(`[Orbit] Washington filter matched 0 of ${all.length} participants — the State column is probably named differently or the roster isn't WA. Falling back to the FULL roster so booking works. Check the State column header/values in the Participants Excel table.`);
+    } else {
+      adminState.participants = waFiltered;
+      adminState._partWaFilterFellOpen = false;
+      console.log(`[Orbit] Participants loaded: ${all.length} from PA → ${adminState.participants.length} after Washington filter (${all.length - adminState.participants.length} non-WA dropped)`);
+    }
     // Now that participants are loaded, retroactively enrich any
     // assignments that were fetched before. Without this, the first-
     // load race condition (assignments arrive ~200ms before
@@ -21369,6 +21398,21 @@ function renderParticipants() {
               open the Participants Read flow in Power Automate → click the "List rows present in a table" action →
               ⋯ menu → <strong>Settings</strong> → turn on <strong>Pagination</strong> → set <strong>Threshold</strong>
               to <strong>5000</strong> → Save. Then click Refresh in the nav bar.
+            </div>
+          </div>
+        </div>
+      ` : ''}
+      ${adminState._partWaFilterFellOpen ? `
+        <div class="admin-banner admin-banner-warn">
+          <div class="admin-banner-icon">⚠</div>
+          <div class="admin-banner-body">
+            <div class="admin-banner-title">Washington filter matched 0 participants — showing the full roster</div>
+            <div class="admin-banner-detail">
+              The roster is normally filtered to Washington participants, but none of the
+              ${adminState._partTotalRaw || 0} rows matched — the <strong>State</strong> column is likely
+              named differently or its values aren't <strong>Washington</strong>/<strong>WA</strong>.
+              To keep booking working, every participant is shown. Fix the State column header/values in the
+              Participants Excel table (or tell me to drop the WA filter) to restore strict filtering.
             </div>
           </div>
         </div>
