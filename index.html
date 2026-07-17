@@ -12451,32 +12451,9 @@ const STATION_3_SCENARIOS = [
 ];
 
 const STATIONS = [
-  // 0b — Rig Enrollment runs FIRST in the flow, then 0a Calibration. Labels
-  // stay 0b / 0a (see STATION_TAG); the order here drives the flow sequence.
-  {
-    key: 'station0_enroll',
-    label: 'Station 0',
-    sub: 'Rig Enrollment',
-    type: 'cal',
-    statusOptions: ['Not Started', 'Calibrated'],
-    requiresCameras: false,
-    recordFlow: true, // 0b: replaces Calibrated/Skip with the Ready-to-record → Lakitu → Completed flow
-    scenarios: [
-      { num: '01', id: 'CAL_PHONE', name: 'Rig Surroundings — Phone Video', iter: 1 },
-    ],
-  },
-  {
-    key: 'station0_cal',
-    label: 'Station 0',
-    sub: 'Rig Calibration',
-    type: 'cal',
-    statusOptions: ['Not Started', 'Calibrated'],
-    requiresCameras: false,
-    scenarios: [
-      { num: '01', id: 'CAL_EXT', name: 'Extrinsic Calibration — Checkerboard in Air', iter: 2 },
-      { num: '02', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground', iter: 2 },
-    ],
-  },
+  // Stations 0a (Rig Calibration) and 0b (Rig Enrollment) were removed — the
+  // flow now opens on Station 1. Per-station calibration (CAL_EXT / CAL_GND /
+  // CAL_PHONE) lives inside Stations 1–3 and keeps its own approval gate.
   // Stations 1 & 2 use the full 22-scenario master list.
   ...[1, 2].map(n => ({
     key: `station${n}`,
@@ -12510,7 +12487,7 @@ const STATUS_CLASS = {
 
 // Station display tag, keyed (NOT index-based) so reordering STATIONS never
 // mislabels. 0b (enrollment) intentionally runs before 0a (calibration).
-const STATION_TAG = { station0_enroll: '0b', station0_cal: '0a', station1: '1', station2: '2', station3: '3' };
+const STATION_TAG = { station1: '1', station2: '2', station3: '3' };
 function stationTag(key) { return STATION_TAG[key] || String(key || ''); }
 
 // recordFlow can be set at the STATION level (0b) or on an individual SCENARIO
@@ -13150,17 +13127,14 @@ function renderSidebar() {
     const status = getStationStatus(st.key);
     const isActive = currentStationKey === st.key;
     const num = stationTag(st.key);
-    const zlock = (typeof isStationZeroALocked === 'function') && isStationZeroALocked(st.key);
     return `
-      <div class="station-item ${isActive ? 'active' : ''} ${zlock ? 'locked' : ''}" data-key="${st.key}">
+      <div class="station-item ${isActive ? 'active' : ''}" data-key="${st.key}">
         <div class="station-num">${num}</div>
         <div class="station-info">
           <div class="station-label">${st.label}</div>
           <div class="station-sub">${st.sub}</div>
         </div>
-        ${zlock
-          ? `<span class="status-pill" style="background: var(--bg4); color: var(--text3);" title="Locked until Station 0A is approved">🔒</span>`
-          : `<span class="status-pill ${status}" title="${prettyStatus(status)}">${pillLabel(status)}</span>`}
+        <span class="status-pill ${status}" title="${prettyStatus(status)}">${pillLabel(status)}</span>
       </div>
     `;
   }).join('');
@@ -13292,8 +13266,7 @@ function renderWelcome() {
     <div class="card">
       <div class="card-title">How it works</div>
       <div class="card-desc">
-        <strong>Station 0 (Rig Calibration & Enrollment):</strong> two short calibration tasks plus a phone video of rig surroundings. Each scenario must reach its required iterations (<strong>2</strong> for the checkerboard calibrations, <strong>1</strong> otherwise), then marked as <em>Calibrated</em>.<br><br>
-        <strong>Stations 1–3:</strong> confirm all ${CAMERAS.length} cameras across all ${RIGS.length} rigs (${RIGS.join(', ')}) are functional and metadata is defined in Lakitu. Once unlocked, work through each scenario — most require <strong>1 iteration</strong>; the checkerboard calibrations require <strong>2</strong>. Station 3 runs a reduced 10-scenario set (7–17 and 19 removed).
+        <strong>Stations 1–3:</strong> confirm all ${CAMERAS.length} cameras across all ${RIGS.length} rigs (${RIGS.join(', ')}) are functional and metadata is defined in Lakitu. Each station starts with its calibration scenarios — <strong>CAL_EXT</strong> and <strong>CAL_GND</strong> (checkerboard, <strong>2 iterations</strong> each) plus the <strong>CAL_PHONE</strong> rig-surroundings video. The remaining scenarios stay locked until that station's CAL_EXT + CAL_GND are submitted and admin-approved; most require <strong>1 iteration</strong>. Station 3 runs a reduced 10-scenario set (7–17 and 19 removed).
       </div>
     </div>
   `;
@@ -14493,10 +14466,10 @@ function renderStation(key, opts) {
   const idx = STATIONS.findIndex(s => s.key === key);
   const tag = 'Station ' + stationTag(station.key);
 
-  // First-visit auto-popup of the Calibration Recording Guide. Fires
-  // exactly once per moderator login when they land on Station 0a.
-  // No-op for every other station and for repeat visits. See
-  // maybeAutoShowCalGuide() for the gating logic.
+  // First-visit auto-popup of the Calibration Recording Guide. Fires once
+  // per moderator login on the first station they land on (now Station 1,
+  // which carries the calibration scenarios). Re-pops on station change
+  // until acknowledged. See maybeAutoShowCalGuide() for the gating logic.
   if (typeof maybeAutoShowCalGuide === 'function') maybeAutoShowCalGuide(key);
 
   // Desktop (full-content) placement of the Motion-Detection-OFF reminder:
@@ -15466,18 +15439,6 @@ function submitStation() {
     return;
   }
 
-  // Approval gate — Station 0a's calibration must be approved (or
-  // auto-approved) before the moderator can advance past it. Blocks the
-  // submit and surfaces the waiting/submit popup. Other stations: no-op.
-  if (currentStationKey === 'station0_cal' && gate0aBlocksAdvance()) return;
-  // 0A prerequisite — Stations 1–3 can't be submitted until 0A is approved
-  // (defense-in-depth; navigation is already blocked, but a stale render or
-  // programmatic call shouldn't slip through).
-  if (typeof isStationZeroALocked === 'function' && isStationZeroALocked(currentStationKey)) {
-    if (typeof showToast === 'function') showToast('Station 0A must be approved first.', 'warning', 3000);
-    return;
-  }
-
   const idx = STATIONS.findIndex(s => s.key === currentStationKey);
   const isLast = idx === STATIONS.length - 1;
 
@@ -15515,10 +15476,6 @@ window.submitStation = submitStation;
 
 function goToStation(delta) {
   const idx = STATIONS.findIndex(s => s.key === currentStationKey);
-  // Approval gate: block advancing forward off Station 0a until its
-  // calibration is approved/auto-approved (mirrors the submitStation gate
-  // so the nav arrows can't bypass it).
-  if (delta > 0 && STATIONS[idx] && STATIONS[idx].key === 'station0_cal' && gate0aBlocksAdvance()) return;
   const next = Math.max(0, Math.min(STATIONS.length - 1, idx + delta));
   currentStationKey = STATIONS[next].key;
   renderApp();
@@ -15546,12 +15503,12 @@ window.goToStation = goToStation;
    ===================================================================== */
 const GATE_CAL_NUMS     = ['01', '02'];                       // CAL_EXT, CAL_GND (keyed by `num`)
 const GATE_CAPTURE_KEYS = ['station1', 'station2', 'station3'];
-const GATE_ALL_KEYS     = ['station0_cal', 'station1', 'station2', 'station3'];
+const GATE_ALL_KEYS     = ['station1', 'station2', 'station3'];
 
 function isGatedCaptureStation(k) { return GATE_CAPTURE_KEYS.indexOf(k) >= 0; }
-function isGatedStation(k)        { return k === 'station0_cal' || isGatedCaptureStation(k); }
+function isGatedStation(k)        { return isGatedCaptureStation(k); }
 function gateStationLabel(k) {
-  return ({ station0_cal: 'Station0a', station1: 'Station1', station2: 'Station2', station3: 'Station3' })[k] || k;
+  return ({ station1: 'Station1', station2: 'Station2', station3: 'Station3' })[k] || k;
 }
 function _gateAsgnId() {
   const a = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
@@ -15610,16 +15567,14 @@ function gateApproved(k) {
   if (g.status === 'AutoApproved' && g.autoLocalAt && (now - g.autoLocalAt) < APPROVAL_AUTO_GRACE_MS) return true;
   return false;
 }
-// 0A prerequisite: Stations 1–3 stay fully locked until Station 0A's
-// calibration is approved (or auto-approved).
-function isZeroAApproved() { return gateApproved('station0_cal'); }
-function isStationZeroALocked(k) { return isGatedCaptureStation(k) && !isZeroAApproved(); }
-// Nav guard — returns false (and warns) when entry is blocked by the 0A gate.
+// 0A cross-station lock REMOVED. Stations 0a/0b no longer exist, so Stations
+// 1–3 are enterable immediately. These stay defined (returning the unlocked
+// value) so any remaining callers no-op harmlessly; each capture station keeps
+// its OWN per-station calibration gate (see isGateActive / LEVEL 2 below).
+function isZeroAApproved() { return true; }
+function isStationZeroALocked(k) { return false; }
+// Nav guard — 0A prerequisite is gone, so entry is never blocked here now.
 function guardEnterStation(k) {
-  if (isStationZeroALocked(k)) {
-    if (typeof showToast === 'function') showToast('Station 0A must be approved before Stations 1\u20133 unlock.', 'warning', 3200);
-    return false;
-  }
   return true;
 }
 // Active = should lock other scenarios / show the slide-down.
@@ -15802,35 +15757,16 @@ function _lockAllScenarios(c, k) {
 function decorateApprovalGate(c, station) {
   if (!c || !station) return;
   const k = station.key;
-  // Gate applies to Station 0A (station0_cal) and capture Stations 1/2/3.
-  // 0b/0c (enroll/house) are never gated. 0A shows the same slide-down as
-  // 1/2/3; the only difference is 0A has no LEVEL-1 prerequisite of its
-  // own and no non-cal scenarios to lock.
+  // Gate applies to capture Stations 1/2/3. Each locks its non-calibration
+  // scenarios until that station's CAL_EXT + CAL_GND are approved.
   if (!isGatedStation(k)) return;
   // Clear any prior gate layers before deciding what to re-add.
   c.querySelectorAll('.appr-slidedown-row').forEach(e => e.remove());
   c.querySelectorAll('.appr-slidedown').forEach(e => e.remove());
 
-  // LEVEL 1 — 0A prerequisite. Until Station 0A is approved, the whole
-  // capture station is locked (all scenarios incl. calibration) with an
-  // explanatory banner. Takes precedence over the per-station cal gate.
-  if (isStationZeroALocked(k)) {
-    _lockAllScenarios(c, k);
-    const wrapL = c.querySelector('.scenario-table-wrap');
-    if (wrapL) {
-      const b = document.createElement('div');
-      b.className = 'appr-slidedown';
-      b.innerHTML = '<div class="appr-slidedown-inner">' +
-        '<div class="appr-slidedown-title">\uD83D\uDD12 Locked until Station 0A is approved</div>' +
-        '<div class="appr-slidedown-sub">Complete Station 0A and get its calibration approved before Stations 1\u20133 unlock.</div>' +
-        '</div>';
-      wrapL.insertAdjacentElement('beforebegin', b);
-    }
-    _apprSlideShown[_gateKey(k)] = false;
-    return;
-  }
-
-  // LEVEL 2 — per-station calibration gate (only once 0A is approved).
+  // Per-station calibration gate. Non-calibration scenarios (person/vehicle)
+  // stay locked until THIS station's CAL_EXT + CAL_GND are submitted and
+  // admin-approved. CAL_PHONE (02b) is exempt (GATE_INDEPENDENT_NUMS).
   if (!isGateActive(k)) { _apprSlideShown[_gateKey(k)] = false; return; }
 
   // Lock every non-calibration scenario row/card in this station.
@@ -15850,13 +15786,9 @@ function decorateApprovalGate(c, station) {
 
   // Build the slide-down content for the current gate status.
   const g = getGate(k);
-  // Station 0A's approval unlocks Stations 1–3; capture stations' approval
-  // unlocks the rest of that station's own scenarios. Word the copy to match.
-  const isZeroA = (k === 'station0_cal');
-  const unlockSub = isZeroA ? 'Stations 1\u20133 stay locked until this is approved.'
-                            : 'The other scenarios stay locked until an admin approves.';
-  const pendingSub = isZeroA ? 'Waiting for an admin decision. Stations 1\u20133 stay locked until it\u2019s approved.'
-                             : 'Waiting for an admin decision. Other scenarios stay locked until it\u2019s approved.';
+  // A capture station's approval unlocks the rest of that station's scenarios.
+  const unlockSub = 'The other scenarios stay locked until an admin approves.';
+  const pendingSub = 'Waiting for an admin decision. Other scenarios stay locked until it\u2019s approved.';
   let inner = '', stateClass = '';
   if (g.status === 'Pending' || g.status === 'InReview') {
     stateClass = 'pending';
@@ -16022,17 +15954,6 @@ function runClientAutoApprove() {
     animateApprovalSlideAway(() => { if (typeof renderApp === 'function') renderApp(); });
     showApprovalApprovedPopup(k, token);
   }
-}
-
-// Station 0a submit/advance gate. Returns true if progression is BLOCKED
-// (caller should stop), false if approved and the caller may proceed.
-function gate0aBlocksAdvance() {
-  const g = getGate('station0_cal');
-  if (g.status === 'Approved' || g.status === 'AutoApproved') return false;
-  if (g.status === 'Pending' || g.status === 'InReview') { showApprovalWaitingPopup('station0_cal'); return true; }
-  // not submitted yet, or rejected → (re)submit + wait
-  submitApprovalFromStation('station0_cal', g.status === 'Rejected');
-  return true;
 }
 
 /* =====================================================================
@@ -18045,9 +17966,6 @@ function classifyBookingForPerf(a) {
 //   else                     → 'Booked'     (blue)
 // The station number comes from PERF_STATUS_STATION_SHORT below.
 const PERF_STATUS_STATION_SHORT = {
-  station_0a_done: 'St 0a',
-  station_0b_done: 'St 0b',
-  station_0c_done: 'St 0c',
   station_1_done:  'St 1',
   station_2_done:  'St 2',
   station_3_done:  'St 3',
@@ -18241,14 +18159,23 @@ function perfModBookings(modOrbitId) {
   const lc = String(modOrbitId || '').toLowerCase();
   return (adminState.assignments || []).filter(a => {
     if (!a || !classifyBookingForPerf(a)) return false;
-    // Match via modSnapshots if present (most accurate — captures
-    // historical team membership at booking time).
-    if (Array.isArray(a.modSnapshots) && a.modSnapshots.length > 0) {
-      return a.modSnapshots.some(s =>
-        String(s.orbitLoginId || s.orbitId || '').toLowerCase() === lc
-      );
+    // A booking counts for a mod if EITHER:
+    //   (1) they were captured on it at booking time (modSnapshots) — keeps
+    //       credit for a mod who has since left the team, OR
+    //   (2) they are a CURRENT member (primary OR backup) of the booking's
+    //       team.
+    // The UNION (not modSnapshots-exclusive) is what lets a paired teammate
+    // share the team's session status: when Mod A completes a Team-1 session,
+    // Mod B — Team 1's other member — also reflects it, even though only the
+    // acting mod's row was captured in modSnapshots. Session status itself is
+    // per-ASSIGNMENT (classifyBookingForPerf reads the booking and aggregates
+    // every teammate's SessionState rows), so both members resolve to the
+    // same Done/Live/Next. This only ADDS attributions — no mod loses credit.
+    if (Array.isArray(a.modSnapshots) && a.modSnapshots.some(s =>
+        String(s.orbitLoginId || s.orbitId || '').toLowerCase() === lc)) {
+      return true;
     }
-    // Fall back to current team's roster if no snapshot.
+    // Current team roster (primary + backup).
     const team = (adminState.teams || []).find(t => String(t.id) === String(a.teamId));
     if (!team) return false;
     const ids = [...(team.primaryIds || []), ...(team.backupIds || [])];
@@ -34678,9 +34605,6 @@ const WORKLOG_STATUS_ORDER = [
 
 // Maps a station's internal key to its Worklog status code
 const STATION_KEY_TO_STATUS = {
-  station0_cal:    'station_0a_done',
-  station0_enroll: 'station_0b_done',
-  station0_house:  'station_0c_done',
   station1:        'station_1_done',
   station2:        'station_2_done',
   station3:        'station_3_done',
@@ -39588,9 +39512,6 @@ function showOrUpdateTeammateLiveBanner(result) {
     if (sca.Station3)        return 'Station 3';
     if (sca.Station2)        return 'Station 2';
     if (sca.Station1)        return 'Station 1';
-    if (sca.station0_house)  return 'Station 0c (House)';
-    if (sca.Station0b)       return 'Station 0b';
-    if (sca.Station0a)       return 'Station 0a';
     if (cloud.arrivedAt)     return 'arrived';
     return 'preparing';
   })();
