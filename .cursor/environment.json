@@ -1,6 +1,12 @@
 {
   "name": "Orbit Tracker",
-  "start": "python3 -m http.server 8000 --bind 0.0.0.0",
+  "terminals": [
+    {
+      "name": "static-server",
+      "command": "python3 -m http.server 8000 --bind 0.0.0.0",
+      "description": "Serves the Project Orbit static site (index.html) at http://localhost:8000/. Open this URL in the browser to use the app."
+    }
+  ],
   "ports": [
     {
       "name": "web",
