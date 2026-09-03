@@ -12168,23 +12168,6 @@ button.perf-stat-chip.scheduled.active {
   </div>
   <div class="menu-body">
 
-    <div class="menu-section-label">Calendar</div>
-    <div class="menu-row" id="calendarRow">
-      <div class="label">
-        <span class="ic" style="color:var(--accent-ink)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect x="2" y="3" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M2 6.5h12M5 1.5v3M11 1.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </span>
-        <div>
-          <div class="text">My Calendar</div>
-          <div class="desc">View schedule and report availability</div>
-        </div>
-      </div>
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </div>
-
     <!-- Quick links section — for external tools the moderator needs during
          a session. Lakitu is Amazon's session console; opens in a new tab
          so the moderator never loses their place in this app. Add more
@@ -12258,20 +12241,6 @@ button.perf-stat-chip.scheduled.active {
     </a>
 
     <div class="menu-section-label">Session</div>
-    <div class="menu-row" id="exportRow">
-      <div class="label">
-        <span class="ic">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 2v8M5 7l3 3 3-3M3 12v1.5h10V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-        <div>
-          <div class="text">Export to Excel</div>
-          <div class="desc">Download session as .xlsx</div>
-        </div>
-      </div>
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </div>
     <div class="menu-row" id="resetRow">
       <div class="label">
         <span class="ic" style="color:var(--red)">
@@ -41013,7 +40982,9 @@ function init() {
   // on desktop (where it'll be a no-op since the overlay only
   // activates for touch devices in landscape).
   applyOrientationLock();
-  document.getElementById('exportRow').addEventListener('click', () => { closeMenu(); exportExcel(); });
+  // Export-to-Excel menu row was removed; guard in case it's absent.
+  const exportRow = document.getElementById('exportRow');
+  if (exportRow) exportRow.addEventListener('click', () => { closeMenu(); exportExcel(); });
   // Lakitu quick link — the <a> tag handles the actual navigation
   // (target=_blank opens a new tab). We just need to close the drawer
   // so when the moderator returns to this tab, they see a clean app
