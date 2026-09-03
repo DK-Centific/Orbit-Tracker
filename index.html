@@ -510,8 +510,10 @@ a.icon-btn:focus-visible {
 .welcome-title {
   /* Matches the .brand-sub type treatment: same sans font-family, medium
      weight, tracked-out uppercase, accent-ink colour. Only the (larger)
-     title font-size is retained so it still reads as the page heading. */
-  font-family: var(--font);
+     title font-size is retained so it still reads as the page heading.
+     font-family uses !important to beat the helios-skin `h1 { ... !important }`
+     display-heading rule that would otherwise force the serif stack. */
+  font-family: var(--font) !important;
   font-size: clamp(26px, 3.4vw, 38px);
   font-weight: 500; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--accent-ink);
