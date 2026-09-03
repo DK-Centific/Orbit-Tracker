@@ -9030,30 +9030,6 @@ button.perf-stat-chip.scheduled.active {
   to { transform: rotate(360deg); }
 }
 
-/* Save / push-progress button — mirrors the refresh button's interaction
-   feedback. While a push is in flight the icon gently pulses; on a
-   successful push it flashes the accent colour briefly. The .offline
-   modifier tints it amber so the operator can see at a glance that data
-   is sitting in the local queue waiting for a connection. */
-#navSaveBtn { transition: color 0.18s ease, transform 0.18s ease; }
-#navSaveBtn:hover { color: var(--accent-ink); }
-#navSaveBtn:active { transform: scale(0.92); }
-#navSaveBtn.saving { color: var(--accent-ink); }
-#navSaveBtn.saving svg { animation: nav-save-pulse 0.9s ease-in-out infinite; }
-#navSaveBtn.saved svg { animation: nav-save-pop 0.5s ease; }
-#navSaveBtn.saved { color: var(--accent-ink); }
-#navSaveBtn.offline { color: #f0a020; }
-@keyframes nav-save-pulse {
-  0%, 100% { transform: translateY(0); opacity: 1; }
-  50%      { transform: translateY(-2px); opacity: 0.55; }
-}
-@keyframes nav-save-pop {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(1.25); }
-  100% { transform: scale(1); }
-}
-
-
 /* =========================================================
    SCENARIO STATUS BUTTONS — replaces the dropdown
    ========================================================= */
@@ -12018,25 +11994,6 @@ button.perf-stat-chip.scheduled.active {
       <button class="icon-btn" id="navRefreshBtn" aria-label="Refresh schedule" title="Refresh next-session queue">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M2.5 6a5.5 5.5 0 0 1 9.5-2.5L13.5 5M13.5 10A5.5 5.5 0 0 1 4 12.5L2.5 11M2.5 2.5V5h2.5M13.5 13.5V11h-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-      <!-- Save / push progress — manual push of the operator's current
-           progress to the cloud (Power Automate). Progress is ALWAYS saved
-           locally on every interaction and auto-synced in the background;
-           this button is for the offline case (or whenever the operator
-           wants the reassurance of an explicit push) so they can flush
-           locally-saved progress the moment a connection is back. Sits
-           right after Refresh — the two "sync with the cloud" actions live
-           together. Icon: a cloud with an up-arrow (upload to cloud). -->
-      <button class="icon-btn" id="navSaveBtn" aria-label="Save / push progress to cloud"
-              title="Save progress to cloud (push now)">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <!-- Cloud outline -->
-          <path d="M4.4 12.5a2.9 2.9 0 0 1-.4-5.77 3.4 3.4 0 0 1 6.56-1.18A2.75 2.75 0 0 1 12.2 12.5"
-                stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-          <!-- Up-arrow (push) -->
-          <path d="M8 13.6V7.4M8 7.4L6 9.4M8 7.4l2 2"
-                stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
       <button class="icon-btn" id="menuBtn" aria-label="Open menu">
@@ -40931,7 +40888,7 @@ function setupNavRails() {
   const configs = [
     { rail:'opRail', actionsBox:'opRailActions', bottomBox:'opRailBottom',
       themeBtn:'navThemeBtnOp',
-      actions:['navCalGuideBtn','navLakituBtn','navRefreshBtn','navSaveBtn'],
+      actions:['navCalGuideBtn','navLakituBtn','navRefreshBtn'],
       bottom:['menuBtn'] },
     { rail:'adminRail', actionsBox:'adminRailActions', bottomBox:'adminRailBottom',
       themeBtn:'navThemeBtnAdmin',
@@ -41144,106 +41101,6 @@ function init() {
         toast('Schedule refreshed');
       } finally {
         setTimeout(() => navRefreshBtn.classList.remove('refreshing'), 600);
-      }
-    });
-  }
-
-  // Save / push-progress button. Progress is ALWAYS saved locally on every
-  // interaction and auto-synced in the background; this is the explicit
-  // "push now" affordance — the key use case being the operator who lost
-  // connection mid-session, kept logging locally, and wants to flush
-  // everything the moment they're back online. It pushes BOTH the
-  // SessionState snapshot (scenario progress) AND any queued offline
-  // worklog events, then reports exactly what happened.
-  const navSaveBtn = document.getElementById('navSaveBtn');
-  if (navSaveBtn) {
-    navSaveBtn.addEventListener('click', async () => {
-      // Re-entrancy guard — ignore taps while a push is already running.
-      if (navSaveBtn.classList.contains('saving')) return;
-
-      // Always commit the very latest local state first so whatever we
-      // push (and whatever survives a reload) is current.
-      try { if (typeof saveState === 'function') saveState(); } catch (_) {}
-
-      // Count any offline worklog events still waiting to go up — used for
-      // accurate messaging ("pushed N queued updates").
-      let queuedBefore = 0;
-      try { queuedBefore = (typeof loadSyncQueue === 'function') ? loadSyncQueue().length : 0; } catch (_) {}
-
-      const online = (typeof navigator !== 'undefined' && 'onLine' in navigator)
-        ? navigator.onLine : true;
-
-      navSaveBtn.classList.remove('saved', 'offline');
-      navSaveBtn.classList.add('saving');
-
-      // OFFLINE: don't fire network calls that will just time out. The data
-      // is already safe in localStorage + the worklog queue; reassure the
-      // operator and tint the button amber so the pending state is visible.
-      if (!online) {
-        navSaveBtn.classList.remove('saving');
-        navSaveBtn.classList.add('offline');
-        const msg = queuedBefore > 0
-          ? `Saved locally — ${queuedBefore} update${queuedBefore === 1 ? '' : 's'} will push when you\u2019re back online`
-          : 'Saved locally — will push when you\u2019re back online';
-        toast(msg);
-        return;
-      }
-
-      try {
-        // 1) Push the SessionState snapshot (scenario progress / notes).
-        let ssResult = { ok: false, reason: 'notconfigured' };
-        if (typeof flushSessionStateSync === 'function') {
-          ssResult = await flushSessionStateSync() || { ok: false, reason: 'error' };
-        }
-        // 2) Flush any queued offline worklog events.
-        if (typeof flushSyncQueue === 'function') {
-          await flushSyncQueue();
-        }
-        let queuedAfter = 0;
-        try { queuedAfter = (typeof loadSyncQueue === 'function') ? loadSyncQueue().length : 0; } catch (_) {}
-
-        // Decide the message from what actually happened.
-        let msg;
-        if (queuedAfter > 0) {
-          // Some worklog events couldn't be delivered — likely a flaky
-          // connection. They stay queued and retry automatically.
-          navSaveBtn.classList.add('offline');
-          msg = `Couldn\u2019t reach the server — ${queuedAfter} update${queuedAfter === 1 ? '' : 's'} still queued, will retry`;
-        } else if (ssResult.ok && ssResult.reason === 'written') {
-          navSaveBtn.classList.add('saved');
-          msg = queuedBefore > 0
-            ? `Progress pushed to cloud · ${queuedBefore} queued update${queuedBefore === 1 ? '' : 's'} sent`
-            : 'Progress pushed to cloud';
-        } else if (ssResult.ok && ssResult.reason === 'nochange') {
-          navSaveBtn.classList.add('saved');
-          msg = queuedBefore > 0
-            ? `Up to date · ${queuedBefore} queued update${queuedBefore === 1 ? '' : 's'} sent`
-            : 'Progress already up to date';
-        } else if (ssResult.reason === 'noassignment') {
-          // No active session/assignment to push (e.g. before "I've
-          // arrived"). Local state is still saved.
-          navSaveBtn.classList.add('saved');
-          msg = 'Saved locally — no active session to push yet';
-        } else if (ssResult.reason === 'notconfigured') {
-          navSaveBtn.classList.add('saved');
-          msg = 'Saved locally';
-        } else if (ssResult.reason === 'inflight') {
-          navSaveBtn.classList.add('saved');
-          msg = 'Sync already in progress — your progress is saved';
-        } else {
-          navSaveBtn.classList.add('offline');
-          msg = 'Saved locally — couldn\u2019t reach the server, will retry';
-        }
-        toast(msg);
-      } catch (e) {
-        console.warn('[Twilight] Manual save error:', e && e.message);
-        navSaveBtn.classList.add('offline');
-        toast('Saved locally — couldn\u2019t reach the server, will retry');
-      } finally {
-        navSaveBtn.classList.remove('saving');
-        // Clear the transient success/offline tint after a moment so the
-        // button returns to its neutral resting state.
-        setTimeout(() => navSaveBtn.classList.remove('saved', 'offline'), 2200);
       }
     });
   }
