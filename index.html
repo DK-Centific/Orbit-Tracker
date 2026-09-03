@@ -12139,6 +12139,13 @@ button.perf-stat-chip.scheduled.active {
       <!-- menuBtn relocates here on desktop -->
     </div>
   </div>
+
+  <!-- MOBILE HELIOS BOTTOM NAV BAR (operator)
+       On narrow screens the rail hides and setupNavRails() relocates the
+       same nav action buttons (cal-guide, lakitu, refresh, menu, theme) into
+       this horizontal, rounded-top neumorphic bar fixed at the bottom of the
+       screen. Moving the SAME nodes preserves their ids + bound handlers. -->
+  <div class="helios-bottombar" id="opBottomBar"></div>
 </div>
 
 
@@ -12207,6 +12214,9 @@ button.perf-stat-chip.scheduled.active {
       <!-- adminMenuBtn relocates here on desktop -->
     </div>
   </div>
+
+  <!-- MOBILE HELIOS BOTTOM NAV BAR (admin) — mirrors the operator bottom bar. -->
+  <div class="helios-bottombar" id="adminBottomBar"></div>
 </div>
 
 <!-- MENU DRAWER -->
@@ -40915,54 +40925,50 @@ async function doLogin() {
   }
 }
 
-// Relocate the top-nav action buttons into the right-side Helios rail on
-// desktop, and re-dock them into the top nav on mobile. We MOVE the existing
-// nodes (never clone), so every id and its already-bound click handler are
-// preserved — refresh, save, lakitu, cal-guide, menu all keep working. The
-// rail's brand mark + theme button are static in the markup; here we just
-// wire the theme toggle and manage placement responsively.
+// Dock the nav action buttons into the right-side Helios rail on desktop, or
+// the Helios BOTTOM bar on mobile. We MOVE the existing nodes (never clone),
+// so every id and its already-bound click handler is preserved — refresh,
+// lakitu, cal-guide, menu, and the theme toggle all keep working regardless
+// of where they're docked. Each item names its DESKTOP box (a rail group);
+// on mobile every item goes into the app's single bottom bar in list order.
 function setupNavRails() {
   const configs = [
-    { rail:'opRail', actionsBox:'opRailActions', bottomBox:'opRailBottom',
-      themeBtn:'navThemeBtnOp',
-      actions:['navCalGuideBtn','navLakituBtn','navRefreshBtn'],
-      bottom:['menuBtn'] },
-    { rail:'adminRail', actionsBox:'adminRailActions', bottomBox:'adminRailBottom',
-      themeBtn:'navThemeBtnAdmin',
-      actions:['adminNavRefreshBtn'],
-      bottom:['adminMenuBtn'] },
+    { rail:'opRail', bottomBar:'opBottomBar', themeBtn:'navThemeBtnOp',
+      items:[
+        { id:'navCalGuideBtn', desktop:'opRailActions' },
+        { id:'navLakituBtn',   desktop:'opRailActions' },
+        { id:'navRefreshBtn',  desktop:'opRailActions' },
+        { id:'navThemeBtnOp',  desktop:'opRailBottom'  },
+        { id:'menuBtn',        desktop:'opRailBottom'  },
+      ] },
+    { rail:'adminRail', bottomBar:'adminBottomBar', themeBtn:'navThemeBtnAdmin',
+      items:[
+        { id:'adminNavRefreshBtn', desktop:'adminRailActions' },
+        { id:'navThemeBtnAdmin',   desktop:'adminRailBottom'  },
+        { id:'adminMenuBtn',       desktop:'adminRailBottom'  },
+      ] },
   ];
+
+  // Wire each rail/bar theme toggle to the shared handler exactly once.
   configs.forEach(cfg => {
-    // Wire the rail's theme toggle to the same handler as the menu row.
     const tb = document.getElementById(cfg.themeBtn);
     if (tb && !tb._wired) { tb._wired = true; tb.addEventListener('click', toggleTheme); }
-    // Capture each relocatable button's ORIGINAL position once, so we can
-    // restore it exactly when we re-dock to the top nav on mobile.
-    cfg._items = [];
-    const record = (id, boxId) => {
-      const el = document.getElementById(id);
-      const box = document.getElementById(boxId);
-      if (!el || !box) return;
-      cfg._items.push({ el, box, home: el.parentNode, next: el.nextSibling });
-    };
-    cfg.actions.forEach(id => record(id, cfg.actionsBox));
-    cfg.bottom.forEach(id => record(id, cfg.bottomBox));
   });
 
   const apply = () => {
     const desktop = window.innerWidth > 760;
     configs.forEach(cfg => {
       const rail = document.getElementById(cfg.rail);
+      const bar  = document.getElementById(cfg.bottomBar);
       if (rail) rail.style.display = desktop ? '' : 'none';
-      (cfg._items || []).forEach(it => {
-        if (desktop) {
-          if (it.el.parentNode !== it.box) it.box.appendChild(it.el);
-        } else if (it.el.parentNode === it.box) {
-          // Restore to the original nav slot (before its recorded sibling
-          // when that sibling is back home, else at the end of nav-right).
-          if (it.next && it.next.parentNode === it.home) it.home.insertBefore(it.el, it.next);
-          else it.home.appendChild(it.el);
-        }
+      if (bar)  bar.style.display  = desktop ? 'none' : '';
+      cfg.items.forEach(it => {
+        const el = document.getElementById(it.id);
+        if (!el) return;
+        // appendChild is a no-op when already in the target box; otherwise it
+        // moves the node (order within a box follows list order across calls).
+        const box = document.getElementById(desktop ? it.desktop : cfg.bottomBar);
+        if (box && el.parentNode !== box) box.appendChild(el);
       });
     });
   };
@@ -41401,11 +41407,42 @@ h1, h2, h3,
   #app, #adminApp { padding-right:88px; }
 }
 
-/* Mobile: the action buttons re-dock into the top nav (setupNavRails),
-   so the rail itself is hidden to preserve the existing mobile chrome
-   (top nav + off-canvas sidebar + accordion stepper). */
+/* ---- Mobile Helios BOTTOM nav bar --------------------------------------
+   On mobile the vertical rail hides and setupNavRails() relocates the same
+   action buttons into this horizontal, rounded-top, neumorphic bar fixed to
+   the bottom of the screen (matching the Helios reference). Hidden on
+   desktop; shown as an evenly-spaced row of circular icon buttons on
+   narrow screens. */
+.helios-bottombar { display:none; }
+
 @media (max-width:760px) {
   .helios-rail { display:none !important; }
+
+  .helios-bottombar {
+    position:fixed; left:0; right:0; bottom:0;
+    z-index:180;
+    display:flex; align-items:center; justify-content:space-around;
+    gap:8px;
+    padding:12px 18px calc(12px + env(safe-area-inset-bottom));
+    background:var(--bg);
+    border-top-left-radius:28px; border-top-right-radius:28px;
+    box-shadow:0 -7px 22px var(--neu-dark), 0 -1px 0 var(--neu-light);
+  }
+  /* Circular icon buttons inside the bar (override the nav's square shape). */
+  .helios-bottombar .icon-btn {
+    width:46px; height:46px; border-radius:50% !important;
+    background:var(--bg) !important;
+    box-shadow:4px 4px 9px var(--neu-dark), -4px -4px 9px var(--neu-light) !important;
+    flex:0 0 auto;
+  }
+  .helios-bottombar .icon-btn:active {
+    box-shadow:inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--neu-light) !important;
+  }
+  .helios-bottombar .rail-theme-btn { color:var(--accent-ink); }
+  .helios-bottombar .nav-lakitu-icon { width:24px; height:24px; }
+
+  /* Reserve space so the fixed bottom bar never covers page content. */
+  #app .content, #adminApp .content, #adminContent { padding-bottom:100px; }
 }
 </style>
 
@@ -41513,7 +41550,9 @@ h1, h2, h3,
 .panic-tier.tier-report { border-left-color:#C9A227; } .panic-tier.tier-report .panic-tier-label { color:#a5851c; }
 .panic-tier.tier-escalate { border-left-color:#D9534F; background:rgba(217,83,79,0.08); } .panic-tier.tier-escalate .panic-tier-label { color:#D9534F; }
 .panic-emg-intro { text-transform:uppercase; letter-spacing:0.15em; font-size:12px; color:var(--text3, #94948C); margin:0 0 6px; }
-@media (max-width:760px) { .panic-fab { right:16px; bottom:16px; } .panic-btn { width:54px; height:54px; } .panic-modal-title { font-size:21px; } }
+/* Float the panic FAB above the fixed Helios bottom nav bar on mobile so
+   the two never overlap (bar is ~72px tall). */
+@media (max-width:760px) { .panic-fab { right:16px; bottom:92px; } .panic-btn { width:54px; height:54px; } .panic-modal-title { font-size:21px; } }
 </style>
 
 <script>
