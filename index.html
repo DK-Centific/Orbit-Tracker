@@ -3300,6 +3300,25 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .lakitu-ro-empty { color: var(--text3); font-size: 13px; }
 .lakitu-ro-invalid { color: rgb(239,68,68); font-size: 13px; }
 
+/* Admin-assigned Lakitu project link shown in the entry bar in place of
+   the manual paste input. Matches the entry field's compact type scale
+   and lets long project URLs wrap instead of overflowing the cell. */
+.entry-lakitu-assigned {
+  display: inline-block;
+  max-width: 100%;
+  padding: 6px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.entry-lakitu-assigned-hint {
+  color: var(--text3);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 /* Lakitu URL format validation — red border + inline error on the
    editable field when the pasted value isn't a valid session URL. */
 input#ent_lakitu.lakitu-invalid {
@@ -13607,6 +13626,21 @@ function entryBarHTML() {
   // started yet (e.g. opened the app over breakfast).
   const arrivedStr = state.arrivedAt ? renderArrivedPillHTML(state.arrivedAt) : '';
 
+  // Admin-assigned Lakitu PROJECT link. When the moderator's active team
+  // has a project assigned (via the team modal), surface it as a clickable
+  // link instead of the manual paste input. We also mirror it into
+  // state.participantId so validation, the worklog payload, and exports
+  // treat it as the session URL — but only when the mod hasn't already
+  // pasted a valid session URL of their own (graceful fallback).
+  const assignedLakitu = (typeof getAssignedLakituUrl === 'function') ? getAssignedLakituUrl() : '';
+  if (assignedLakitu) {
+    const curPid = (state.participantId || '').trim();
+    if ((!curPid || !isValidLakituUrl(curPid)) && state.participantId !== assignedLakitu) {
+      state.participantId = assignedLakitu;
+      if (typeof saveState === 'function') saveState();
+    }
+  }
+
   return `
     <div class="entry-bar">
       <div class="entry-field">
@@ -13652,10 +13686,15 @@ function entryBarHTML() {
             </div>
           </span>
         </span>
+        ${assignedLakitu ? `
+        <a id="ent_lakitu" class="lakitu-ro-link entry-lakitu-assigned" href="${escapeHTML(assignedLakitu)}" target="_blank" rel="noopener noreferrer" title="Admin-assigned Lakitu project — click to open">${escapeHTML(assignedLakitu)}</a>
+        <div class="entry-lakitu-assigned-hint">Assigned by admin — click to open in Lakitu.</div>
+        ` : `
         <input id="ent_lakitu" type="text" placeholder="Paste session URL from Lakitu" value="${escapeHTML(state.participantId)}" autocapitalize="off" autocorrect="off" spellcheck="false" class="${lakituUrlState() === 'invalid' ? 'lakitu-invalid' : ''}" aria-invalid="${lakituUrlState() === 'invalid' ? 'true' : 'false'}" aria-describedby="lakitu_err">
         <div class="lakitu-err" id="lakitu_err" role="alert" style="display:${lakituUrlState() === 'invalid' ? 'block' : 'none'}">
           Must be a Lakitu session URL — e.g. <code>https://lakitu.ring.amazon.dev/p/…?session=…</code>
         </div>
+        `}
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field">
@@ -13750,7 +13789,7 @@ function lakituReadonlyHTML() {
   let shown;
   if (!v) {
     shown = `<span class="lakitu-ro-empty">Not set — tap your name above to add the Lakitu session</span>`;
-  } else if (!isValidLakituUrl(v)) {
+  } else if (!isValidLakituUrl(v) && !isLakituProjectUrl(v)) {
     shown = `<span class="lakitu-ro-invalid">⚠ Invalid format — tap your name above to fix the Lakitu session URL</span>`;
   } else {
     shown = `<a class="lakitu-ro-link" href="${escapeHTML(v)}" target="_blank" rel="noopener noreferrer">${escapeHTML(v)}</a>`;
@@ -15451,12 +15490,62 @@ function isValidLakituUrl(v) {
   return LAKITU_URL_RE.test(s);
 }
 
+// ---- Admin-assigned Lakitu PROJECT links -------------------------------
+// SINGLE SOURCE OF TRUTH for the project dropdown shown in the team modal
+// (under the team-name field). Each option maps a human label to the
+// Lakitu PROJECT URL an admin wants the team's moderators to open. Edit
+// this list to change the options everywhere. NOTE: several labels
+// intentionally map to the SAME url — only item 4 differs.
+const LAKITU_PROJECTS = [
+  { key: 'centific-1', label: 'US - BEV+ LeapFrog - Centific 1', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-2', label: 'US - BEV+ LeapFrog - Centific 2', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-3', label: 'US - BEV+ LeapFrog - Centific 3', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-4', label: 'US - BEV+ LeapFrog - Centific 4', url: 'https://lakitu.ring.amazon.dev/project/ad65fa51-d211-4144-9f55-c078b862cce9' },
+  { key: 'centific-5', label: 'US - BEV+ LeapFrog - Centific 5', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-6', label: 'US - BEV+ LeapFrog - Centific 6', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-7', label: 'US - BEV+ LeapFrog - Centific 7', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+];
+
+// Lakitu PROJECT URLs (what admins assign) look different from the SESSION
+// URLs a moderator would otherwise paste (/p/<uuid>?session=<uuid>). Project
+// links are /project/<uuid>. Accept those as a valid pre-filled value so the
+// moderator gets a working clickable link without pasting anything.
+const LAKITU_PROJECT_URL_RE = /^https:\/\/lakitu\.ring\.amazon\.dev\/project\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?&#].*)?$/i;
+
+function isLakituProjectUrl(v) {
+  const s = (v == null ? '' : String(v)).trim();
+  return LAKITU_PROJECT_URL_RE.test(s);
+}
+
+// Look up a project entry (label + url) by its stored key. Returns null
+// when the key is empty/unknown so callers can fall back gracefully.
+function getLakituProjectByKey(key) {
+  if (!key) return null;
+  return LAKITU_PROJECTS.find(p => p.key === key) || null;
+}
+
+// The admin-assigned Lakitu PROJECT url for the moderator's ACTIVE team,
+// or '' when nothing has been assigned. Resolves the team the same way the
+// entry-bar team cell does (team that owns the active assignment, else the
+// operator's first team membership) so the link matches the session shown.
+function getAssignedLakituUrl() {
+  let team = null;
+  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
+  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  const url = team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
+  return isLakituProjectUrl(url) ? url : '';
+}
+
 // '' | 'empty' | 'invalid' | 'valid' — drives the entry-bar field error
 // state and the actions-bar pill messaging.
 function lakituUrlState() {
   const s = (state && state.participantId) ? String(state.participantId).trim() : '';
   if (!s) return 'empty';
-  return isValidLakituUrl(s) ? 'valid' : 'invalid';
+  // A strict Lakitu SESSION url (mod-pasted) OR an admin-assigned Lakitu
+  // PROJECT link both count as "valid" — the latter is pre-filled for the
+  // moderator so they don't have to paste anything.
+  return (isValidLakituUrl(s) || isLakituProjectUrl(s)) ? 'valid' : 'invalid';
 }
 
 function isLakituUrlProvided() {
@@ -22307,6 +22396,8 @@ function buildTeamLogRows(team, status) {
       teamName:         team.name || '',
       role:             role,
       status:           baseStatus,
+      lakituProjectKey: team.lakituProjectKey || '',
+      lakituProjectUrl: team.lakituProjectUrl || '',
       createdTimestamp: team.createdAt || now,
       updatedTimestamp: now,
     };
@@ -22325,6 +22416,8 @@ function buildTeamLogRows(team, status) {
       teamName: team.name || '',
       role: 'primary',
       status: baseStatus,
+      lakituProjectKey: team.lakituProjectKey || '',
+      lakituProjectUrl: team.lakituProjectUrl || '',
       createdTimestamp: team.createdAt || now,
       updatedTimestamp: now,
     });
@@ -22417,6 +22510,10 @@ async function fetchTeamsFromPA() {
           id: tid,
           name: r.teamName || ('Team ' + tid),
           status: r.status || 'active',
+          // Admin-assigned Lakitu project — taken from the newest row
+          // (first seen, given the newest-first sort) so edits win.
+          lakituProjectKey: r.lakituProjectKey || '',
+          lakituProjectUrl: r.lakituProjectUrl || '',
           createdAt: r.createdTimestamp || '',
           updatedAt: r.updatedTimestamp || '',
           primaryIds: [],
@@ -28709,6 +28806,9 @@ function openTeamModal(teamId) {
     name: team ? team.name : defaultTeamName(),
     primaryIds: team ? [...(team.primaryIds || [])] : [],
     backupIds: team ? [...getTeamBackupIds(team)] : [],
+    // Admin-assigned Lakitu project (see LAKITU_PROJECTS). Stored as the
+    // project KEY on the modal; saveTeam resolves it to the label + url.
+    lakituProjectKey: team ? (team.lakituProjectKey || '') : '',
     _availWeekAnchor: ymdLocal(monday),
   };
   renderTeamModal();
@@ -28906,6 +29006,14 @@ function renderTeamModal() {
         <input id="teamNameInput" type="text" value="${escapeHTML(m.name)}" placeholder="e.g. Team 01, Alpha Squad">
         <div class="asgn-field-hint">Use a number, codename, or anything memorable.</div>
       </div>
+      <div class="asgn-field">
+        <label class="asgn-field-label">Lakitu project <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <select id="teamLakituProject" class="teams-sort" aria-label="Lakitu project">
+          <option value="" ${!m.lakituProjectKey ? 'selected' : ''}>No project assigned</option>
+          ${LAKITU_PROJECTS.map(p => `<option value="${escapeHTML(p.key)}" ${m.lakituProjectKey === p.key ? 'selected' : ''}>${escapeHTML(p.label)}</option>`).join('')}
+        </select>
+        <div class="asgn-field-hint">Assign the Lakitu project link this team's moderators should open — it appears as a clickable link in their Lakitu session field.</div>
+      </div>
       <div class="team-avail-toolbar">
         <div class="team-avail-toolbar-left">
           <span class="team-avail-toolbar-label">Availability preview</span>
@@ -28964,6 +29072,12 @@ function renderTeamModal() {
   document.getElementById('teamNameInput').addEventListener('input', e => {
     adminState.modal.name = e.target.value;
   });
+  const lakituProjSel = document.getElementById('teamLakituProject');
+  if (lakituProjSel) {
+    lakituProjSel.addEventListener('change', e => {
+      adminState.modal.lakituProjectKey = e.target.value || '';
+    });
+  }
 
   // Availability week navigation. Prev/Next shift the anchor by 7 days;
   // "This week" snaps back to today's Monday. All three trigger a full
@@ -29032,6 +29146,12 @@ function saveTeam() {
     });
     return;
   }
+  // Resolve the admin-assigned Lakitu project (if any) to a stored key +
+  // mapped url. Empty key clears any prior assignment (falls back to the
+  // moderator's manual paste flow).
+  const lakituProjectKey = m.lakituProjectKey || '';
+  const lakituProject = getLakituProjectByKey(lakituProjectKey);
+  const lakituProjectUrl = lakituProject ? lakituProject.url : '';
   if (m.kind === 'createTeam') {
     // The team is local-only until either (a) an assignment uses it and
     // saves it via the assignment row, or (b) we have a TeamLog write URL
@@ -29047,6 +29167,8 @@ function saveTeam() {
       name: name,
       primaryIds: m.primaryIds,
       backupIds: m.backupIds,
+      lakituProjectKey: lakituProjectKey,
+      lakituProjectUrl: lakituProjectUrl,
       createdAt: new Date().toISOString(),
     };
     if (!TEAMLOG_PA_WRITE_URL) {
@@ -29070,6 +29192,8 @@ function saveTeam() {
       t.name = name;
       t.primaryIds = m.primaryIds;
       t.backupIds = m.backupIds;
+      t.lakituProjectKey = lakituProjectKey;
+      t.lakituProjectUrl = lakituProjectUrl;
       // Drop the legacy single-id field so memory stays clean. Old reads
       // via getTeamBackupIds() still work because they prefer the array.
       delete t.backupId;
