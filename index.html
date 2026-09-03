@@ -3206,6 +3206,36 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .acc-body, .acc-chevron { transition: none; }
 }
+/* Mobile station stepper — fixed up/down control on the right edge that
+   jumps between stations while a station is expanded (Twilight mobile UX).
+   Only rendered in accordion mode (<=760px) and only when a station is open;
+   the accordion reserves a right gutter (.has-stepper) so it never overlaps
+   scenario rows. */
+.acc-stepper {
+  position: fixed; right: 10px; top: 50%; transform: translateY(-50%);
+  z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 7px 6px; border-radius: 999px;
+  background: var(--card-bg); border: 0.5px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.30);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.acc-step-btn {
+  width: 44px; height: 44px; border-radius: 50%; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: var(--bg4); color: var(--text); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.acc-step-btn:not(:disabled):active { background: var(--accent-soft); color: var(--accent-ink); transform: scale(0.94); }
+.acc-step-btn:disabled { opacity: 0.3; cursor: default; }
+.acc-step-label { font-family: var(--font-num); font-size: 11px; color: var(--text3); line-height: 1; }
+@media (max-width: 760px) {
+  .station-accordion { gap: 12px; }
+  .station-accordion.has-stepper { padding-right: 56px; }
+  .acc-head { padding: 16px 14px; }
+  .acc-item { scroll-margin-top: 72px; }
+}
 
 /* === MOBILE "MY SESSION" DRAWER (v1.2.061226) =========================
    Chip-toggled slide-down holding the full entry bar on mobile. Same
@@ -14210,7 +14240,13 @@ function scenarioStatusButtonsHTML(station, sd, scenarioNum, scenarioId) {
   const current = sd.status || 'Not Started';
   // "Not Started" is the default — don't show a button to set it to that.
   // Operators advance INTO statuses; they don't reset.
-  const choices = station.statusOptions.filter(opt => opt !== 'Not Started');
+  // Twilight product change: the "Partial" (Partially Recorded) and
+  // "Recorded" (All Recorded) buttons are hidden from the scenario status
+  // row. Those statuses stay valid in the data model + completion logic, but
+  // moderators can no longer SET them from the UI (they mark "Uploaded" or
+  // "Skip"). To restore, remove entries from HIDDEN_STATUS_BUTTONS.
+  const HIDDEN_STATUS_BUTTONS = ['Partially Recorded', 'All Recorded'];
+  const choices = station.statusOptions.filter(opt => opt !== 'Not Started' && HIDDEN_STATUS_BUTTONS.indexOf(opt) < 0);
   const partialMissingNote = isScenarioPartialMissingNote(sd);
   const skipMissingNote = isScenarioSkipMissingNote(sd);
   const skipped = sd.status === SKIPPED_STATUS;
@@ -15100,7 +15136,9 @@ function renderStationsAccordion() {
   const openKey = _accordionCollapsed ? null : currentStationKey;
 
   // My Session drawer sits above the accordion (mobile-only context).
-  let html = mySessionDrawerHTML() + '<div class="station-accordion">';
+  // When a station is open we reserve a right gutter (.has-stepper) for the
+  // fixed up/down station stepper so it never overlaps scenario rows.
+  let html = mySessionDrawerHTML() + `<div class="station-accordion${openKey != null ? ' has-stepper' : ''}">`;
   STATIONS.forEach((st, i) => {
     const status = getStationStatus(st.key);
     const num = stationTag(st.key);
@@ -15136,6 +15174,27 @@ function renderStationsAccordion() {
       </div>`;
   });
   html += '</div>';
+
+  // Right-side up/down station stepper (mobile, expanded view). Lets the
+  // moderator jump to the previous/next station without scrolling back up to
+  // tap another header. Only shown while a station is expanded; the label
+  // shows position (e.g. "2/4").
+  if (openKey != null) {
+    const sIdx = STATIONS.findIndex(s => String(s.key) === String(openKey));
+    const hasPrev = sIdx > 0;
+    const hasNext = sIdx >= 0 && sIdx < STATIONS.length - 1;
+    html += `
+      <div class="acc-stepper" role="group" aria-label="Switch station">
+        <button class="acc-step-btn" type="button" data-dir="prev" ${hasPrev ? '' : 'disabled'} aria-label="Previous station" title="Previous station">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 10L8 6L12 10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="acc-step-label">${sIdx + 1}/${STATIONS.length}</span>
+        <button class="acc-step-btn" type="button" data-dir="next" ${hasNext ? '' : 'disabled'} aria-label="Next station" title="Next station">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>`;
+  }
+
   c.innerHTML = html;
 
   // Fill the open station's body with its full content (no section-title;
@@ -15154,6 +15213,34 @@ function renderStationsAccordion() {
   c.querySelectorAll('.acc-head').forEach(head => {
     head.addEventListener('click', () => onAccordionHeadTap(head.dataset.key));
   });
+
+  // Up/down station stepper taps — jump to the prev/next station.
+  c.querySelectorAll('.acc-step-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const dir = btn.dataset.dir === 'prev' ? -1 : 1;
+      const sIdx = STATIONS.findIndex(s => String(s.key) === String(currentStationKey));
+      if (sIdx < 0) return;
+      const target = STATIONS[sIdx + dir];
+      if (target) goToAccordionStation(target.key);
+    });
+  });
+}
+
+// Jump the mobile accordion to another station (used by the right-side
+// up/down stepper). Opens the target station and scrolls its header into
+// view. guardEnterStation is a no-op today but kept for parity with header taps.
+function goToAccordionStation(key) {
+  if (typeof guardEnterStation === 'function' && !guardEnterStation(key)) return;
+  _accordionCollapsed = false;
+  currentStationKey = key;
+  renderStationsAccordion();
+  if (typeof renderSidebar === 'function') renderSidebar();
+  const c = document.getElementById('content');
+  const target = c && c.querySelector(`.acc-item[data-key="${key}"]`);
+  if (target && typeof target.scrollIntoView === 'function') {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 // Collapse a given .acc-item with the slide animation, then clear its
