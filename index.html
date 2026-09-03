@@ -10,6 +10,8 @@
 <meta name="apple-mobile-web-app-title" content="Twilight">
 <title>Centific Data Collection — Project Twilight</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* =========================================================
@@ -3675,8 +3677,16 @@ input#ent_lakitu.lakitu-invalid {
   /* Hero used to have its own max-width: 1180px + margin: 0 auto.
      That's now handled at the shell level (.admin-content-shell),
      so the hero just needs to flow naturally inside it. The shell
-     provides the gutters and the centering. */
-  padding: clamp(16px, 2.4vw, 28px) 0 clamp(14px, 2vw, 22px);
+     provides the gutters and the centering.
+
+     LEFT-CLIP FIX: Helios skin turns .admin-hero into a neumorphic
+     card with border-radius. Horizontal padding was previously 0, so
+     titles/subtitles sat flush against the rounded left edge and the
+     page's overflow-x:clip + negative letter-spacing clipped glyphs
+     on the left. Keep overflow visible and pad all sides. */
+  padding: clamp(16px, 2.4vw, 28px) clamp(20px, 3vw, 36px) clamp(14px, 2vw, 22px);
+  overflow: visible;
+  box-sizing: border-box;
 }
 .admin-hero-eyebrow {
   font-size: clamp(11px, 1vw, 12.5px);
@@ -3685,6 +3695,10 @@ input#ent_lakitu.lakitu-invalid {
   text-transform: uppercase;
   color: var(--accent-ink);
   margin-bottom: clamp(6px, 0.7vw, 10px);
+  /* letter-spacing expands to the right; slight start pad keeps first
+     character fully inside the card. */
+  padding-inline-start: 0.12em;
+  overflow: visible;
 }
 .admin-hero-title {
   /* Was clamp(28px, 4vw, 42px) — extended upper bound for ultra-wide
@@ -3696,6 +3710,10 @@ input#ent_lakitu.lakitu-invalid {
   letter-spacing: -0.035em;
   line-height: 1.07;
   margin-bottom: clamp(8px, 0.8vw, 14px);
+  /* Negative tracking can overhang the left content edge; pad so
+     overflow-x:clip on <html> never eats the first glyph. */
+  padding-inline-start: 0.06em;
+  overflow: visible;
 }
 .admin-hero-sub {
   /* Sub-line gets a slight bump at wider viewports too — keeps the
@@ -3709,6 +3727,8 @@ input#ent_lakitu.lakitu-invalid {
   line-height: 1.5;
   max-width: 64ch;
   margin-bottom: 0;
+  padding-inline-start: 0.04em;
+  overflow: visible;
 }
 
 /* Top tabs (Overview / Moderator Hub / Performance) */
@@ -10680,7 +10700,7 @@ button.perf-stat-chip.scheduled.active {
 }
 
 @media (max-width: 760px) {
-  .admin-hero { padding: 16px 0 14px; }
+  .admin-hero { padding: 16px 18px 14px; overflow: visible; }
   .ptab { min-width: 980px; }
 }
 
@@ -16784,6 +16804,7 @@ function toggleTheme() {
   state.theme = next;
   saveState();
   document.getElementById('themeDesc').textContent = next === 'dark' ? 'Currently dark' : 'Currently light';
+  if (typeof syncActivitiesMapTheme === 'function') syncActivitiesMapTheme();
 }
 
 function toast(text) {
@@ -21205,9 +21226,14 @@ function renderModerators() {
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 6h12M5 1.5v3M11 1.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
           By Assignment
         </button>
-        <button class="modview-btn ${view === 'availability' ? 'active' : ''}" data-mview="availability" title="Availability submissions">
+        <!-- Availability tab hidden from UI (logic retained for restore). -->
+        <button class="modview-btn modview-btn--hidden" hidden aria-hidden="true" tabindex="-1" data-mview="availability" title="Availability submissions" style="display:none !important;">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M5 1.5v3M11 1.5v3M5 9.5l1.4 1.4L9.5 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Availability
+        </button>
+        <button class="modview-btn ${view === 'activities' ? 'active' : ''}" data-mview="activities" title="Live activities map">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 1.5C5.5 1.5 3.5 3.6 3.5 6.2c0 3.4 3.4 6.8 4.2 7.5.2.2.5.2.7 0 .8-.7 4.1-4.1 4.1-7.5C12.5 3.6 10.5 1.5 8 1.5z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="6.2" r="1.6" stroke="currentColor" stroke-width="1.4"/></svg>
+          Activities
         </button>
       </div>
     </div>
@@ -21219,15 +21245,181 @@ function renderModerators() {
       renderModerators();
     });
   });
+  // Availability tab button is hidden in the UI. Prior sessions that still
+  // have modView === 'availability' fall back to All so admins aren't stuck
+  // on a view with no visible tab. renderModAvailabilityView remains below
+  // for easy restore (un-hide the Availability button).
+  if (view === 'availability') {
+    adminState.modView = 'list';
+    view = 'list';
+  }
+  if (view !== 'activities' && typeof destroyActivitiesMap === 'function') {
+    destroyActivitiesMap();
+  }
   if (view === 'list')             renderModListView();
   else if (view === 'team')        renderModTeamView();
   else if (view === 'assignment')  renderModAssignmentView();
-  else if (view === 'availability') renderModAvailabilityView();
+  else if (view === 'activities')  renderModActivitiesView();
 }
 
 function renderModAvailabilityView() {
   // Thin wrapper — the hub renders into #modviewBody when present.
+  // Tab button is hidden in the UI; this function is kept so Availability
+  // can be restored by un-hiding the modview button above.
   if (typeof renderAvailabilityHub === 'function') renderAvailabilityHub();
+}
+
+/* ----------- Activities (live map) ----------- */
+// Redmond HQ — 14980 NE 31st St Ste 100, Redmond, WA 98052
+const ACTIVITIES_MAP_CENTER = { lng: -122.1370, lat: 47.6446 };
+const ACTIVITIES_MAP_ZOOM = 15;
+const ACTIVITIES_OMT_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+let _activitiesMap = null;
+let _activitiesMapThemeObs = null;
+
+function destroyActivitiesMap() {
+  if (_activitiesMap) {
+    try { _activitiesMap.remove(); } catch (_) {}
+    _activitiesMap = null;
+  }
+  if (_activitiesMapThemeObs) {
+    try { _activitiesMapThemeObs.disconnect(); } catch (_) {}
+    _activitiesMapThemeObs = null;
+  }
+}
+
+function activitiesThemeColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const pick = (name, fallback) => (cs.getPropertyValue(name) || fallback).trim();
+  return {
+    bg: pick('--bg', '#F7F7F2'),
+    bg2: pick('--bg2', '#FFFFFF'),
+    well: pick('--well-bg', '#F0F0E8'),
+    text: pick('--text', '#3C3C3B'),
+    text2: pick('--text2', 'rgba(60,60,59,0.62)'),
+    text3: pick('--text3', '#94948C'),
+    brand: pick('--brand', '#C68A00'),
+    accent: pick('--accent', '#C68A00'),
+    border: pick('--border', 'rgba(60,60,59,0.08)'),
+    isDark: document.documentElement.getAttribute('data-theme') === 'dark',
+  };
+}
+
+function applyActivitiesMapTheme(map) {
+  if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+  const c = activitiesThemeColors();
+  const land = c.isDark ? '#1A1C1E' : c.bg;
+  const water = c.isDark ? '#15191E' : '#D9E4EC';
+  const park = c.isDark ? '#1E2420' : '#E4EAD9';
+  const road = c.isDark ? '#2A2E32' : '#FFFFFF';
+  const roadCasing = c.isDark ? '#0E1012' : '#D5D5CB';
+  const building = c.isDark ? '#22262A' : '#E8E8DE';
+  const label = c.text;
+  const labelHalo = c.isDark ? 'rgba(14,15,17,0.85)' : 'rgba(247,247,242,0.9)';
+
+  try { map.setPaintProperty('background', 'background-color', land); } catch (_) {}
+  // OpenMapTiles / OpenFreeMap layer ids vary slightly — best-effort recolor.
+  const layers = map.getStyle().layers || [];
+  layers.forEach(layer => {
+    const id = layer.id;
+    const type = layer.type;
+    try {
+      if (type === 'background') {
+        map.setPaintProperty(id, 'background-color', land);
+      } else if (/water|ocean|river|lake/i.test(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', water);
+      } else if (/park|grass|wood|forest|landcover|landuse/i.test(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', park);
+      } else if (/building/i.test(id) && type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', building);
+        try { map.setPaintProperty(id, 'fill-opacity', c.isDark ? 0.7 : 0.85); } catch (_) {}
+      } else if (/road|street|path|highway|bridge|tunnel/i.test(id)) {
+        if (type === 'line') {
+          if (/casing|case|outline/i.test(id)) map.setPaintProperty(id, 'line-color', roadCasing);
+          else map.setPaintProperty(id, 'line-color', road);
+        }
+      } else if (type === 'symbol') {
+        try { map.setPaintProperty(id, 'text-color', label); } catch (_) {}
+        try { map.setPaintProperty(id, 'text-halo-color', labelHalo); } catch (_) {}
+      }
+    } catch (_) { /* layer may not support property */ }
+  });
+
+  // Marker + well chrome follow brand tokens via CSS classes on the container.
+  const wrap = document.getElementById('activitiesMapWell');
+  if (wrap) wrap.setAttribute('data-map-theme', c.isDark ? 'dark' : 'light');
+}
+
+function syncActivitiesMapTheme() {
+  if (_activitiesMap) applyActivitiesMapTheme(_activitiesMap);
+}
+
+function ensureActivitiesMapThemeObserver() {
+  if (_activitiesMapThemeObs) return;
+  _activitiesMapThemeObs = new MutationObserver(() => syncActivitiesMapTheme());
+  _activitiesMapThemeObs.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+}
+
+function initActivitiesMap() {
+  const el = document.getElementById('activitiesMap');
+  if (!el || typeof maplibregl === 'undefined') {
+    const fallback = document.getElementById('activitiesMapFallback');
+    if (fallback) fallback.hidden = false;
+    return;
+  }
+  destroyActivitiesMap();
+  _activitiesMap = new maplibregl.Map({
+    container: el,
+    style: ACTIVITIES_OMT_STYLE,
+    center: [ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat],
+    zoom: ACTIVITIES_MAP_ZOOM,
+    attributionControl: true,
+  });
+  _activitiesMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+  const markerEl = document.createElement('div');
+  markerEl.className = 'activities-map-marker';
+  markerEl.title = '14980 NE 31st St Ste 100, Redmond, WA 98052';
+  new maplibregl.Marker({ element: markerEl })
+    .setLngLat([ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat])
+    .addTo(_activitiesMap);
+  _activitiesMap.on('load', () => {
+    applyActivitiesMapTheme(_activitiesMap);
+    try { _activitiesMap.resize(); } catch (_) {}
+  });
+  _activitiesMap.on('styledata', () => applyActivitiesMapTheme(_activitiesMap));
+  ensureActivitiesMapThemeObserver();
+  // Layout settle — map in a newly-inserted inset well needs a resize.
+  requestAnimationFrame(() => {
+    try { if (_activitiesMap) _activitiesMap.resize(); } catch (_) {}
+  });
+  setTimeout(() => { try { if (_activitiesMap) _activitiesMap.resize(); } catch (_) {} }, 180);
+}
+
+function renderModActivitiesView() {
+  const wrap = document.getElementById('modviewBody');
+  if (!wrap) return;
+  destroyActivitiesMap();
+  wrap.innerHTML = `
+    <div class="activities-viz-outer" id="activitiesVizContainer">
+      <div class="activities-viz-well" id="activitiesMapWell">
+        <div class="activities-map-slot">
+          <div id="activitiesMap" class="activities-map" role="img" aria-label="Live map of Redmond office"></div>
+          <div id="activitiesMapFallback" class="activities-map-fallback" hidden>
+            Map could not load. Check your network connection and refresh.
+          </div>
+        </div>
+        <div class="activities-map-caption">
+          <div class="activities-map-eyebrow">Live map · OpenMapTiles</div>
+          <div class="activities-map-title">Redmond HQ</div>
+          <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
+        </div>
+      </div>
+    </div>`;
+  // Defer so the inset well has layout before MapLibre measures it.
+  requestAnimationFrame(() => initActivitiesMap());
 }
 
 function renderModListView() {
@@ -41200,6 +41392,124 @@ function init() {
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
+
+<style id="activities-map-style">
+/* Activities map — Helios-style neumorphic outer + inset well (vizWell frame) */
+.modview-btn--hidden { display: none !important; }
+
+.activities-viz-outer {
+  width: 100%;
+  margin-top: 8px;
+  padding: clamp(16px, 2.5vw, 28px);
+  border-radius: 40px;
+  background: var(--bg);
+  box-shadow: 8px 8px 16px var(--neu-dark, rgba(0,0,0,0.18)),
+              -8px -8px 16px var(--neu-light, rgba(255,255,255,0.7));
+  box-sizing: border-box;
+}
+.activities-viz-well {
+  position: relative;
+  width: 100%;
+  min-height: 450px;
+  height: min(62vh, 620px);
+  border-radius: 32px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--well-bg, var(--bg3));
+  box-shadow: inset 8px 8px 16px var(--neu-dark, rgba(0,0,0,0.16)),
+              inset -8px -8px 16px var(--neu-light, rgba(255,255,255,0.65));
+}
+.activities-map-slot {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  position: relative;
+  /* Occupies the Helios vizWell "orb" region — live map instead of sun animation */
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  z-index: 10;
+}
+.activities-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.activities-map .maplibregl-canvas {
+  outline: none;
+}
+.activities-map-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text2);
+  background: var(--well-bg, var(--bg3));
+  z-index: 2;
+}
+.activities-map-caption {
+  position: relative;
+  z-index: 11;
+  text-align: center;
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg, transparent, var(--well-bg, var(--bg3)) 28%);
+  pointer-events: none;
+}
+.activities-map-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.activities-map-title {
+  font-family: var(--font-serif, var(--font));
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+.activities-map-addr {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text2);
+  letter-spacing: -0.005em;
+}
+.activities-map-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--brand, var(--accent));
+  box-shadow: 0 0 0 4px var(--brand-soft, rgba(198,138,0,0.22)),
+              0 6px 16px rgba(0,0,0,0.28);
+  border: 2px solid var(--bg, #fff);
+}
+/* MapLibre chrome — blend with Helios tokens */
+.activities-viz-well .maplibregl-ctrl-group {
+  background: var(--bg) !important;
+  border: none !important;
+  box-shadow: 4px 4px 10px var(--neu-dark, rgba(0,0,0,0.18)),
+              -4px -4px 10px var(--neu-light, rgba(255,255,255,0.65)) !important;
+}
+.activities-viz-well .maplibregl-ctrl-group button {
+  background-color: var(--bg) !important;
+  border-color: var(--border) !important;
+}
+.activities-viz-well .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--bg) 88%, transparent) !important;
+  color: var(--text3) !important;
+}
+@media (max-width: 760px) {
+  .activities-viz-outer { padding: 14px; border-radius: 28px; }
+  .activities-viz-well { min-height: 360px; height: 52vh; border-radius: 22px; }
+}
+</style>
 <style id="helios-skin">
 /* ============================================================
    HELIOS design language applied to Twilight
@@ -41284,6 +41594,13 @@ h1, h2, h3,
   background:var(--bg) !important; border:none !important;
   border-radius:var(--rl);
   box-shadow:7px 7px 16px var(--neu-dark), -7px -7px 16px var(--neu-light);
+}
+/* Keep admin hero text fully visible — neumorphic card must not clip
+   left-edge glyphs (negative letter-spacing + rounded corners). */
+.admin-hero {
+  overflow: visible !important;
+  padding-left: clamp(20px, 3vw, 36px) !important;
+  padding-right: clamp(20px, 3vw, 36px) !important;
 }
 
 /* ---- Inset wells (inputs, notes, tracks) ---- */
