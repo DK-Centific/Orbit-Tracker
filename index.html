@@ -12401,83 +12401,136 @@ const EQUIPMENT_LIST = [
   { id: 'lux_meter',      name: 'Lux meter',                 qty: '1',  desc: 'A device that measures the light value, used to enter the value in the Lakitu app for the metadata section.' },
 ];
 
-// Master scenario list for Stations 1–3. Order matches the spec
-// handed down by the study: calibration scenarios first (Air, then
-// Ground), then capture scenarios 1–20 in numeric id order. The
-// display `num` is purely the row position in the table; `id` is the
-// logical scenario identifier and is what surfaces in Excel exports,
-// Lakitu, and any cross-system reporting.
+// Night-time collection scenario lists (Twilight SOP §10 "Scenarios").
+// TWO physical locations → FOUR Lakitu "stations": each capture scenario is
+// recorded twice, once Lights ON and once Lights OFF.
+//   Station 1 = Front Yard · Lights ON  (calibration + rig-surroundings + captures)
+//   Station 2 = Front Yard · Lights OFF (captures only — SAME location as 1, NO re-calibration)
+//   Station 3 = Backyard  · Lights ON  (calibration + rig-surroundings + captures)
+//   Station 4 = Backyard  · Lights OFF (captures only — SAME location as 3, NO re-calibration)
 //
-// IMPORTANT: scenario state in localStorage is keyed by `num` (not
-// `id`). If this list's ordering changes again, in-progress sessions
-// will see their data shift positions. Brand-new sessions are
-// unaffected. See `loadState()` / `s.stations[k].scenarios[sc.num]`.
-const STATIONS_12_SCENARIOS = [
-  { num: '01', id: 'CAL_EXT', name: 'Extrinsic Calibration — Checkerboard in Air', iter: 2 },
-  { num: '02', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground', iter: 2 },
+// `id` is the SOP scenario number (surfaces in Lakitu/exports); `name` is the
+// UI label. Calibration (CAL_EXT/CAL_GND) is captured once per rig → iter 2 and
+// only on the Lights-ON stations. Scenario 20 (background) and the rig-
+// surroundings phone video are Lights-ON only.
+//
+// IMPORTANT: scenario state in localStorage is keyed by `num` (row position),
+// not `id`. Changing a list's ordering shifts in-progress sessions' data;
+// brand-new sessions are unaffected. See `loadState()` / `s.stations[k].scenarios[sc.num]`.
+
+// Front Yard — Lights ON (Station 1)
+const FY_ON_SCENARIOS = [
+  { num: '01',  id: 'CAL_EXT',   name: 'Extrinsic Calibration — Checkerboard in Air', iter: 2 },
+  { num: '02',  id: 'CAL_GND',   name: 'Ground Calibration — Checkerboard on Ground', iter: 2 },
   { num: '02b', id: 'CAL_PHONE', name: 'Rig Surroundings — Phone Video', iter: 1, recordFlow: true },
-  { num: '03', id: '1',       name: 'Person moves towards the camera', iter: 1 },
-  { num: '04', id: '2',       name: 'Person moves away from the camera', iter: 1 },
-  { num: '05', id: '3',       name: 'Person moves across camera FOVs', iter: 1 },
-  { num: '06', id: '4',       name: 'Multiple people move across camera FOVs', iter: 1 },
-  { num: '07', id: '5',       name: 'Person delivers package', iter: 1 },
-  { num: '08', id: '6',       name: 'Person picks up package', iter: 1 },
-  { num: '09', id: '7',       name: 'Person drives vehicle away from driveway', iter: 1 },
-  { num: '10', id: '8',       name: 'Person parks vehicle on driveway', iter: 1 },
-  { num: '11', id: '9',       name: 'Person opens vehicle trunk or door', iter: 1 },
-  { num: '12', id: '10',      name: 'Person walking while vehicle moving', iter: 1 },
-  { num: '13', id: '11',      name: 'Multiple people and vehicles in multiple FOVs', iter: 1 },
-  { num: '14', id: '12',      name: 'Vehicle driven on the street', iter: 1 },
-  { num: '15', id: '13',      name: 'Vehicle parks in front of house and starts moving', iter: 1 },
-  { num: '16', id: '14',      name: 'Vehicle slows and parks in front of house', iter: 1 },
-  { num: '17', id: '15',      name: 'Multiple vehicles move simultaneously', iter: 1 },
-  { num: '18', id: '16',      name: 'Vehicle light flashes at night', iter: 1 },
-  { num: '19', id: '17',      name: 'Person occluded by vehicle', iter: 1 },
-  { num: '20', id: '18',      name: 'Person occluded by short bush or wall', iter: 1 },
-  { num: '21', id: '19',      name: 'Vehicle occluded by short bush or wall', iter: 1 },
-  { num: '22', id: '20',      name: 'Background with stationary objects (no moving objects)', iter: 1 },
+  { num: '03',  id: '3',  name: 'Person moves across camera FOVs', iter: 1 },
+  { num: '04',  id: '4',  name: 'Multiple people move across camera FOVs', iter: 1 },
+  { num: '05',  id: '5',  name: 'Person delivers package', iter: 1 },
+  { num: '06',  id: '6',  name: 'Person picks up package', iter: 1 },
+  { num: '07',  id: '7',  name: 'Person drives vehicle away from driveway', iter: 1 },
+  { num: '08',  id: '8',  name: 'Person parks vehicle on driveway', iter: 1 },
+  { num: '09',  id: '9',  name: 'Person opens vehicle trunk or door', iter: 1 },
+  { num: '10',  id: '10', name: 'Person walking while vehicle moving', iter: 1 },
+  { num: '11',  id: '11', name: 'Multiple people and vehicles in multiple FOVs', iter: 1 },
+  { num: '12',  id: '13', name: 'Vehicle parks in front of house and starts moving', iter: 1 },
+  { num: '13',  id: '14', name: 'Vehicle slows and parks in front of house', iter: 1 },
+  { num: '14',  id: '15', name: 'Multiple vehicles move simultaneously', iter: 1 },
+  { num: '15',  id: '16', name: 'Vehicle light flashes at night', iter: 1 },
+  { num: '16',  id: '17', name: 'Person occluded by vehicle', iter: 1 },
+  { num: '17',  id: '20', name: 'Background with stationary objects (no moving objects)', iter: 1 },
 ];
 
-// Station 3 runs a reduced 10-scenario set: capture scenarios 7–17 and 19 removed.
-const STATION_3_SCENARIOS = [
-  { num: '01', id: 'CAL_EXT', name: 'Extrinsic Calibration — Checkerboard in Air', iter: 2 },
-  { num: '02', id: 'CAL_GND', name: 'Ground Calibration — Checkerboard on Ground', iter: 2 },
+// Front Yard — Lights OFF (Station 2): same captures as Station 1, but NO
+// calibration, NO rig-surroundings video, and NO Scenario 20 (Lights-ON only).
+const FY_OFF_SCENARIOS = [
+  { num: '01', id: '3',  name: 'Person moves across camera FOVs', iter: 1 },
+  { num: '02', id: '4',  name: 'Multiple people move across camera FOVs', iter: 1 },
+  { num: '03', id: '5',  name: 'Person delivers package', iter: 1 },
+  { num: '04', id: '6',  name: 'Person picks up package', iter: 1 },
+  { num: '05', id: '7',  name: 'Person drives vehicle away from driveway', iter: 1 },
+  { num: '06', id: '8',  name: 'Person parks vehicle on driveway', iter: 1 },
+  { num: '07', id: '9',  name: 'Person opens vehicle trunk or door', iter: 1 },
+  { num: '08', id: '10', name: 'Person walking while vehicle moving', iter: 1 },
+  { num: '09', id: '11', name: 'Multiple people and vehicles in multiple FOVs', iter: 1 },
+  { num: '10', id: '13', name: 'Vehicle parks in front of house and starts moving', iter: 1 },
+  { num: '11', id: '14', name: 'Vehicle slows and parks in front of house', iter: 1 },
+  { num: '12', id: '15', name: 'Multiple vehicles move simultaneously', iter: 1 },
+  { num: '13', id: '16', name: 'Vehicle light flashes at night', iter: 1 },
+  { num: '14', id: '17', name: 'Person occluded by vehicle', iter: 1 },
+];
+
+// Backyard — Lights ON (Station 3): no vehicle scenarios in the back yard.
+const BY_ON_SCENARIOS = [
+  { num: '01',  id: 'CAL_EXT',   name: 'Extrinsic Calibration — Checkerboard in Air', iter: 2 },
+  { num: '02',  id: 'CAL_GND',   name: 'Ground Calibration — Checkerboard on Ground', iter: 2 },
   { num: '02b', id: 'CAL_PHONE', name: 'Rig Surroundings — Phone Video', iter: 1, recordFlow: true },
-  { num: '03', id: '1',       name: 'Person moves towards the camera', iter: 1 },
-  { num: '04', id: '2',       name: 'Person moves away from the camera', iter: 1 },
-  { num: '05', id: '3',       name: 'Person moves across camera FOVs', iter: 1 },
-  { num: '06', id: '4',       name: 'Multiple people move across camera FOVs', iter: 1 },
-  { num: '07', id: '5',       name: 'Person delivers package', iter: 1 },
-  { num: '08', id: '6',       name: 'Person picks up package', iter: 1 },
-  { num: '09', id: '18',      name: 'Person occluded by short bush or wall', iter: 1 },
-  { num: '10', id: '20',      name: 'Background with stationary objects (no moving objects)', iter: 1 },
+  { num: '03',  id: '1',  name: 'Person moves towards the camera', iter: 1 },
+  { num: '04',  id: '2',  name: 'Person moves away from the camera', iter: 1 },
+  { num: '05',  id: '3',  name: 'Person moves across camera FOVs', iter: 1 },
+  { num: '06',  id: '4',  name: 'Multiple people move across camera FOVs', iter: 1 },
+  { num: '07',  id: '20', name: 'Background with stationary objects (no moving objects)', iter: 1 },
+];
+
+// Backyard — Lights OFF (Station 4): captures only, no calibration/Scenario 20.
+const BY_OFF_SCENARIOS = [
+  { num: '01', id: '1', name: 'Person moves towards the camera', iter: 1 },
+  { num: '02', id: '2', name: 'Person moves away from the camera', iter: 1 },
+  { num: '03', id: '3', name: 'Person moves across camera FOVs', iter: 1 },
+  { num: '04', id: '4', name: 'Multiple people move across camera FOVs', iter: 1 },
 ];
 
 const STATIONS = [
-  // Stations 0a (Rig Calibration) and 0b (Rig Enrollment) were removed — the
-  // flow now opens on Station 1. Per-station calibration (CAL_EXT / CAL_GND /
-  // CAL_PHONE) lives inside Stations 1–3 and keeps its own approval gate.
-  // Stations 1 & 2 use the full 22-scenario master list.
-  ...[1, 2].map(n => ({
-    key: `station${n}`,
-    label: `Station ${n}`,
-    sub: `${RIGS.join(' + ')} · 22 scenarios`,
-    type: 'capture',
-    statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
-    requiresCameras: true,
-    scenarios: STATIONS_12_SCENARIOS,
-  })),
-  // Station 3 uses the reduced 10-scenario set.
   {
-    key: 'station3',
-    label: 'Station 3',
-    sub: `${RIGS.join(' + ')} · 10 scenarios`,
+    key: 'station1', label: 'Station 1', sub: 'Front Yard · Lights ON · 18 scenarios',
+    location: 'Front Yard', lights: 'on',
     type: 'capture',
     statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
     requiresCameras: true,
-    scenarios: STATION_3_SCENARIOS,
+    scenarios: FY_ON_SCENARIOS,
+  },
+  {
+    key: 'station2', label: 'Station 2', sub: 'Front Yard · Lights OFF · 14 scenarios',
+    location: 'Front Yard', lights: 'off',
+    type: 'capture',
+    statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
+    requiresCameras: true,
+    scenarios: FY_OFF_SCENARIOS,
+  },
+  {
+    key: 'station3', label: 'Station 3', sub: 'Backyard · Lights ON · 8 scenarios',
+    location: 'Backyard', lights: 'on',
+    type: 'capture',
+    statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
+    requiresCameras: true,
+    scenarios: BY_ON_SCENARIOS,
+  },
+  {
+    key: 'station4', label: 'Station 4', sub: 'Backyard · Lights OFF · 4 scenarios',
+    location: 'Backyard', lights: 'off',
+    type: 'capture',
+    statusOptions: ['Not Started', 'Partially Recorded', 'All Recorded', 'Uploaded'],
+    requiresCameras: true,
+    scenarios: BY_OFF_SCENARIOS,
   },
 ];
+
+// --- Camera checkpoints hidden (Twilight SOP change) ---------------------
+// The per-station camera-confirmation card is hidden for now (moderator asked
+// to revisit later). Flip this to false to restore the 8-camera confirmation
+// card AND the "confirm all cameras to unlock scenarios" gate. Kept as a flag
+// (rather than deleting the code) so it can be brought back easily.
+const HIDE_CAMERA_CHECKPOINTS = true;
+
+// True when a capture station's camera confirmations should be treated as
+// satisfied. When the checkpoints are hidden we never render the card, so we
+// must NOT block station/session completeness or scenario unlock on cameras.
+function stationCamerasSatisfied(stationData) {
+  if (HIDE_CAMERA_CHECKPOINTS) return true;
+  const cams = (stationData && stationData.cameras) || {};
+  return (typeof CAMERAS !== 'undefined' && Array.isArray(CAMERAS))
+    ? CAMERAS.every(c => !!cams[c])
+    : true;
+}
 
 const STATUS_CLASS = {
   'Not Started':        's-notstarted',
@@ -12490,7 +12543,7 @@ const STATUS_CLASS = {
 
 // Station display tag, keyed (NOT index-based) so reordering STATIONS never
 // mislabels. 0b (enrollment) intentionally runs before 0a (calibration).
-const STATION_TAG = { station1: '1', station2: '2', station3: '3' };
+const STATION_TAG = { station1: '1', station2: '2', station3: '3', station4: '4' };
 function stationTag(key) { return STATION_TAG[key] || String(key || ''); }
 
 // recordFlow can be set at the STATION level (0b) or on an individual SCENARIO
@@ -12912,12 +12965,10 @@ function getStationStatus(stationKey) {
   if (!data) return 'notstarted';
 
   // For capture stations, require cameras confirmed before complete
-  if (station.requiresCameras) {
-    const allCams = CAMERAS.every(c => data.cameras[c]);
-    if (!allCams) {
-      // any scenario activity at all? No — cameras come first conceptually
-      return 'notstarted';
-    }
+  // (skipped entirely while camera checkpoints are hidden — see
+  // HIDE_CAMERA_CHECKPOINTS / stationCamerasSatisfied).
+  if (station.requiresCameras && !stationCamerasSatisfied(data)) {
+    return 'notstarted';
   }
 
   const scenarios = Object.values(data.scenarios);
@@ -14504,7 +14555,7 @@ function renderStation(key, opts) {
   `;
 
   // Camera confirmation card (only for capture stations)
-  if (station.requiresCameras) {
+  if (station.requiresCameras && !HIDE_CAMERA_CHECKPOINTS) {
     const allChecked = CAMERAS.every(c => data.cameras[c]);
     const rigStatus = RIGS.map(rig => ({
       rig,
@@ -14605,7 +14656,7 @@ function renderStation(key, opts) {
   }
 
   // Scenario table
-  const isLocked = station.requiresCameras && !CAMERAS.every(c => data.cameras[c]);
+  const isLocked = station.requiresCameras && !stationCamerasSatisfied(data);
   html += `
     <div class="scenario-table-wrap ${isLocked ? 'locked' : ''}">
       <table class="scenario-table">
@@ -15505,13 +15556,18 @@ window.goToStation = goToStation;
    no-ops on the cloud write but the lock/slide-down/popups still run).
    ===================================================================== */
 const GATE_CAL_NUMS     = ['01', '02'];                       // CAL_EXT, CAL_GND (keyed by `num`)
-const GATE_CAPTURE_KEYS = ['station1', 'station2', 'station3'];
-const GATE_ALL_KEYS     = ['station1', 'station2', 'station3'];
+// Only the Lights-ON stations (Front Yard = station1, Backyard = station3)
+// contain calibration scenarios, so only they carry the calibration approval
+// gate. The Lights-OFF stations (station2 / station4) share their paired
+// station's calibration and require NO re-calibration (Twilight SOP §10), so
+// they are intentionally NOT gated — their scenarios are available immediately.
+const GATE_CAPTURE_KEYS = ['station1', 'station3'];
+const GATE_ALL_KEYS     = ['station1', 'station3'];
 
 function isGatedCaptureStation(k) { return GATE_CAPTURE_KEYS.indexOf(k) >= 0; }
 function isGatedStation(k)        { return isGatedCaptureStation(k); }
 function gateStationLabel(k) {
-  return ({ station1: 'Station1', station2: 'Station2', station3: 'Station3' })[k] || k;
+  return ({ station1: 'Station1', station2: 'Station2', station3: 'Station3', station4: 'Station4' })[k] || k;
 }
 function _gateAsgnId() {
   const a = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
@@ -16028,7 +16084,7 @@ function exportExcel() {
     rows.push([]);
 
     // Cameras — grouped by rig
-    if (st.requiresCameras) {
+    if (st.requiresCameras && !HIDE_CAMERA_CHECKPOINTS) {
       rows.push(['Camera Confirmation']);
       RIGS.forEach(rig => {
         rows.push([`${rig}`]);
@@ -17972,6 +18028,7 @@ const PERF_STATUS_STATION_SHORT = {
   station_1_done:  'St 1',
   station_2_done:  'St 2',
   station_3_done:  'St 3',
+  station_4_done:  'St 4',
 };
 function perfLiveStatusDisplay(a) {
   if (!a) return { key: 'booked', label: 'Booked' };
@@ -26441,7 +26498,8 @@ function renderTeamGridHTML(days) {
   // numeric ordering preserved so the latest status of a moderator who
   // has completed Station 0a (but not 0b/0c) reads correctly.
   const statusPriority = {
-    'session_done':    8,
+    'session_done':    9,
+    'station_4_done':  8,
     'station_3_done':  7,
     'station_2_done':  6,
     'station_1_done':  5,
@@ -31113,6 +31171,7 @@ function openViewAssignmentModal(asgnId) {
                       station_1_done:  'Station 1 ✓',
                       station_2_done:  'Station 2 ✓',
                       station_3_done:  'Station 3 ✓',
+                      station_4_done:  'Station 4 ✓',
                       session_done:    'Session complete',
                     };
                     const lbl = stationLabelMap[r.status] || r.status;
@@ -34596,13 +34655,14 @@ const WORKLOG_STATUS_LABELS = {
   station_1_done:          'In session',
   station_2_done:          'In session',
   station_3_done:          'In session',
+  station_4_done:          'In session',
   session_done:            'Completed',
 };
 
 // Ordering for "what is the latest status" calculations
 const WORKLOG_STATUS_ORDER = [
   'arrived', 'station_0a_done', 'station_0b_done', 'station_0c_done',
-  'station_1_done', 'station_2_done', 'station_3_done',
+  'station_1_done', 'station_2_done', 'station_3_done', 'station_4_done',
   'session_done',
 ];
 
@@ -34611,6 +34671,7 @@ const STATION_KEY_TO_STATUS = {
   station1:        'station_1_done',
   station2:        'station_2_done',
   station3:        'station_3_done',
+  station4:        'station_4_done',
 };
 
 // Wrap-up checklist items shown after Station 3 Submit. Edit freely.
@@ -34899,6 +34960,7 @@ function deriveLatestStatusFromSessionState(asgnId) {
   // Priority walk. First match wins.
   const checks = [
     { has: sessionCompletedAt,                        status: 'session_done',    at: sessionCompletedAt },
+    { has: stationCompletedAt['Station4'],            status: 'station_4_done',  at: stationCompletedAt['Station4'] },
     { has: stationCompletedAt['Station3'],            status: 'station_3_done',  at: stationCompletedAt['Station3'] },
     { has: stationCompletedAt['Station2'],            status: 'station_2_done',  at: stationCompletedAt['Station2'] },
     { has: stationCompletedAt['Station1'],            status: 'station_1_done',  at: stationCompletedAt['Station1'] },
@@ -39512,6 +39574,7 @@ function showOrUpdateTeammateLiveBanner(result) {
     const sca = cloud.stationCompletedAt || {};
     // Priority order matches the deriver in admin-side
     // deriveLatestStatusFromSessionState — most-progressed first.
+    if (sca.Station4)        return 'Station 4';
     if (sca.Station3)        return 'Station 3';
     if (sca.Station2)        return 'Station 2';
     if (sca.Station1)        return 'Station 1';
@@ -39773,10 +39836,7 @@ function showTeammateSyncModal(result) {
       const allScenariosDone = scenarioObjs.length > 0 && completeInStation === scenarioObjs.length;
       let camerasOk = true;
       if (st.requiresCameras) {
-        const cams = stationData.cameras || {};
-        camerasOk = (typeof CAMERAS !== 'undefined' && Array.isArray(CAMERAS))
-          ? CAMERAS.every(c => !!cams[c])
-          : true;  // if CAMERAS list isn't available for some reason, don't block the station
+        camerasOk = stationCamerasSatisfied(stationData);
       }
       if (allScenariosDone && camerasOk) stationsDoneCount++;
     }
