@@ -3323,14 +3323,15 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   padding: 14px;
 }
-/* Inside the drawer the entry bar lays out as an even 2-column grid (Option B):
-   the four short fields fill a 2×2 (Username | Participant, Session Date | Team),
-   then On-site and the Lakitu paste field each span the full width at the
-   bottom — Lakitu last. CSS `order` does the reordering so the DESKTOP entry bar
-   (shared markup) is untouched: default(0) items keep DOM order (Username,
-   Participant, Session Date); Team / On-site / Lakitu are pulled to explicit
-   positions. min-width:0 lets every cell shrink to its grid track (the desktop
-   min-widths on the wide/arrived variants would otherwise blow out the 2 cols). */
+/* Inside the drawer the entry bar lays out as an even 2-column grid: the
+   short fields fill the first row (Username | Session Date) with Team next,
+   then On-site and the admin-assigned Lakitu session each span the full
+   width at the bottom — Lakitu last. CSS `order` does the reordering so the
+   DESKTOP entry bar (shared markup) is untouched: default(0) items keep DOM
+   order (Username, Session Date); Team / On-site / Lakitu are pulled to
+   explicit positions. min-width:0 lets every cell shrink to its grid track
+   (the desktop min-widths on the wide/arrived variants would otherwise blow
+   out the 2 cols). */
 .ms-drawer-inner .entry-bar {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px;
   padding: 0; border: none; background: none; box-shadow: none;
@@ -3355,23 +3356,45 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .lakitu-ro-empty { color: var(--text3); font-size: 13px; }
 .lakitu-ro-invalid { color: rgb(239,68,68); font-size: 13px; }
 
-/* Admin-assigned Lakitu project link shown in the entry bar in place of
-   the manual paste input. Matches the entry field's compact type scale
-   and lets long project URLs wrap instead of overflowing the cell. */
-.entry-lakitu-assigned {
-  display: inline-block;
+/* Admin-assigned Lakitu session, shown in the entry bar in place of the
+   old manual paste input. Rendered as a neumorphic link-button that opens
+   the assigned session in a new tab. */
+.entry-lakitu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
   max-width: 100%;
-  padding: 6px 0 2px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--text); text-decoration: none;
+  background: var(--bg);
+  box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
+  transition: transform 0.15s ease, box-shadow 0.18s ease;
+  cursor: pointer;
 }
-.entry-lakitu-assigned-hint {
+.entry-lakitu-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  color: var(--text);
+}
+.entry-lakitu-btn:active {
+  box-shadow: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+}
+.entry-lakitu-btn .entry-lakitu-btn-logo { flex: 0 0 auto; }
+.entry-lakitu-btn .entry-lakitu-btn-ext { flex: 0 0 auto; opacity: 0.55; }
+.entry-lakitu-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Empty state — no session has been assigned by an admin yet. */
+.entry-lakitu-none {
+  display: inline-flex; align-items: center;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 500;
   color: var(--text3);
-  font-size: 11px;
-  margin-top: 2px;
+  background: var(--bg);
+  box-shadow: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+  cursor: default;
 }
 
 /* Lakitu URL format validation — red border + inline error on the
@@ -13714,31 +13737,19 @@ function entryBarHTML() {
           </span>
         </span>
         ${assignedLakitu ? `
-        <a id="ent_lakitu" class="lakitu-ro-link entry-lakitu-assigned" href="${escapeHTML(assignedLakitu)}" target="_blank" rel="noopener noreferrer" title="Admin-assigned Lakitu project — click to open">${escapeHTML(assignedLakitu)}</a>
-        <div class="entry-lakitu-assigned-hint">Assigned by admin — click to open in Lakitu.</div>
+        <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakitu)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakitu)}">
+          <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7.25" fill="#000"/>
+            <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+          </svg>
+          <span>Open Lakitu session</span>
+          <svg class="entry-lakitu-btn-ext" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
         ` : `
-        <input id="ent_lakitu" type="text" placeholder="Paste session URL from Lakitu" value="${escapeHTML(state.participantId)}" autocapitalize="off" autocorrect="off" spellcheck="false" class="${lakituUrlState() === 'invalid' ? 'lakitu-invalid' : ''}" aria-invalid="${lakituUrlState() === 'invalid' ? 'true' : 'false'}" aria-describedby="lakitu_err">
-        <div class="lakitu-err" id="lakitu_err" role="alert" style="display:${lakituUrlState() === 'invalid' ? 'block' : 'none'}">
-          Must be a Lakitu session URL — e.g. <code>https://lakitu.ring.amazon.dev/p/…?session=…</code>
-        </div>
+        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Session Assigned</div>
         `}
-      </div>
-      <div class="entry-divider"></div>
-      <div class="entry-field">
-        <label>Participant Name</label>
-        <!-- Editable input. Prefilled from the booked participant on
-             the active assignment when one exists; empty otherwise.
-             The mod can edit the value (e.g., to add a middle name,
-             match an alias the participant uses, etc.) and the typed
-             edit is preserved within the same booking.
-
-             The prefill / clear logic lives in syncBookedParticipantName
-             which runs at the top of entryBarHTML. Change-detection key
-             is state._lastSeenActiveAsgnId — when the active assignment
-             ID changes (carousel swipe, fresh booking, admin removal),
-             the field gets a fresh prefill from the new context. Within
-             the same active assignment, user edits are NOT clobbered. -->
-        <input id="ent_pname" type="text" placeholder="" value="${escapeHTML(state.participantName || '')}" autocomplete="off">
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field entry-field-wide">
@@ -13815,9 +13826,9 @@ function lakituReadonlyHTML() {
   const v = (state && state.participantId) ? String(state.participantId).trim() : '';
   let shown;
   if (!v) {
-    shown = `<span class="lakitu-ro-empty">Not set — tap your name above to add the Lakitu session</span>`;
+    shown = `<span class="lakitu-ro-empty">No session assigned</span>`;
   } else if (!isValidLakituUrl(v) && !isLakituProjectUrl(v)) {
-    shown = `<span class="lakitu-ro-invalid">⚠ Invalid format — tap your name above to fix the Lakitu session URL</span>`;
+    shown = `<span class="lakitu-ro-invalid">⚠ Invalid Lakitu session URL</span>`;
   } else {
     shown = `<a class="lakitu-ro-link" href="${escapeHTML(v)}" target="_blank" rel="noopener noreferrer">${escapeHTML(v)}</a>`;
   }
@@ -13903,8 +13914,12 @@ function bindEntryFields() {
   // Lakitu session input — mod-typed value persists to state.participantId
   // (same field as before, kept for downstream compatibility — see
   // entryBarHTML comment for the full rationale).
+  // ent_lakitu is now admin-assigned: it renders as a link button (when a
+  // project is assigned) or a "No Session Assigned" placeholder. Only wire
+  // the typed-input handlers when it's actually an <input> (defensive — the
+  // manual paste flow was removed, so in practice this no longer binds).
   const lak = document.getElementById('ent_lakitu');
-  if (lak && !lak.dataset.boundEntry) {
+  if (lak && lak.tagName === 'INPUT' && !lak.dataset.boundEntry) {
     lak.dataset.boundEntry = '1';
     lak.addEventListener('input', e => {
       state.participantId = e.target.value;
@@ -14022,15 +14037,9 @@ function bindEntryFields() {
     });
   }
 
-  // Participant Name input — mod-typed value persists to state.participantName.
-  // The prefill/clear lifecycle is handled by syncBookedParticipantName,
-  // which runs at the top of entryBarHTML on each render and uses
-  // state._lastSeenActiveAsgnId to detect when the active assignment
-  // changes (carousel swipe, fresh booking, admin removal). This
-  // handler just captures live edits while the mod is on the same
-  // active assignment.
-  const pn = document.getElementById('ent_pname');
-  if (pn && !pn.dataset.boundEntry) { pn.dataset.boundEntry = '1'; pn.addEventListener('input', e => { state.participantName = e.target.value; saveState(); }); }
+  // Participant Name input was removed from the entry area. state.participantName
+  // is still maintained from the booking by syncBookedParticipantName() (for
+  // exports / team matching), but there is no editable field to bind here.
 
   // Arrived button — sets arrivedAt = now and kicks off the reminder
   // loop. Re-renders the entry bar in place to show the elapsed pill.
