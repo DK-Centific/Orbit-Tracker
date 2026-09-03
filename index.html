@@ -13372,7 +13372,6 @@ function renderWelcome() {
     ${_syncBtnHTML}
     ${isStationAccordionMode() ? '' : entryBarHTML()}
     ${renderWelcomeWorklogBannerHTML()}
-    ${equipmentCardHTML()}
     <div class="card">
       <div class="card-title">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="color:var(--accent-ink)">
@@ -13404,7 +13403,6 @@ function renderWelcome() {
     </div>
   `;
   bindEntryFields();
-  bindEquipmentRows();
   bindWelcomeWorklogActions();
   // Wire the manual "Sync from teammate" button if it rendered.
   const _wsb = document.getElementById('welcomeSyncTeammateBtn');
