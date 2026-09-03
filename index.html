@@ -13398,7 +13398,13 @@ function renderWelcome() {
     <div class="card">
       <div class="card-title">How it works</div>
       <div class="card-desc">
-        <strong>Stations 1–3:</strong> confirm all ${CAMERAS.length} cameras across all ${RIGS.length} rigs (${RIGS.join(', ')}) are functional and metadata is defined in Lakitu. Each station starts with its calibration scenarios — <strong>CAL_EXT</strong> and <strong>CAL_GND</strong> (checkerboard, <strong>2 iterations</strong> each) plus the <strong>CAL_PHONE</strong> rig-surroundings video. The remaining scenarios stay locked until that station's CAL_EXT + CAL_GND are submitted and admin-approved; most require <strong>1 iteration</strong>. Station 3 runs a reduced 10-scenario set (7–17 and 19 removed).
+        Night-time collection runs after sunset across <strong>2 locations</strong> — Front Yard and Backyard — each recorded twice: once <strong>Lights ON</strong> and once <strong>Lights OFF</strong> (Stations 1–4 here).
+        <br><br>
+        <strong>Set up</strong> both rigs (${RIGS.length} tripods, ${CAMERAS.length} cameras) plus one floodlight/spotlight per rig mounted <em>higher</em> than the upper cameras so it never shadows the scene. Turn <strong>audio OFF</strong> on every device and confirm each camera's field of view in Ring Live View.
+        <br><br>
+        <strong>Calibrate</strong> once per location with the lights on — Checkerboard in Air (<strong>CAL_EXT</strong>) and on Ground (<strong>CAL_GND</strong>) for each rig, plus the <strong>CAL_PHONE</strong> rig-surroundings video. That single calibration covers both the lights-on and lights-off recordings.
+        <br><br>
+        <strong>Record</strong> the Lights ON scenarios (verify the light is on before each), then unplug the lights, disable motion detection, and confirm <strong>IR mode</strong> (black &amp; white) on every camera before recording the Lights OFF scenarios — no re-calibration needed. Take a lux reading for each lighting condition, keep every scenario within <strong>15 m</strong>, walk slowly, and drive ≈2 mph.
       </div>
     </div>
   `;
