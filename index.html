@@ -2989,6 +2989,56 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .menu-row .label .text { color: var(--text); letter-spacing: -0.01em; }
 .menu-row .label .desc { font-size: 12px; color: var(--text3); letter-spacing: 0.005em; margin-top: 1px; }
 
+/* --- Menu options: panic-menu look + staggered pop-in ---------------------
+   Mirrors the PANIC popup (.panic-menu / .panic-opt): every option is a
+   rounded neu pill, and when the menu opens the options + section labels
+   animate in with a staggered scale + opacity transition (same easing as
+   the panic menu). This is purely presentational — the same .menu-row
+   markup, ids and click handlers are used, so all actions keep working.
+   The touch swipe-to-close still drives the PANEL transform; these styles
+   only affect the OPTIONS inside it. */
+.menu-body { display: flex; flex-direction: column; gap: 10px; }
+.menu-row, a.menu-row, a.menu-row-link {
+  border: none;
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+  transition: transform 0.16s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.menu-row:hover, a.menu-row:hover, a.menu-row-link:hover {
+  background: var(--bg);
+  transform: translateX(-3px);
+  box-shadow: 6px 6px 14px var(--neu-dark), -6px -6px 14px var(--neu-light);
+}
+.menu-row:active, a.menu-row:active, a.menu-row-link:active {
+  box-shadow: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+}
+@keyframes menuOptPop {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+/* Options start hidden and animate in only while the menu is open. Using
+   fill-mode:backwards keeps them hidden during their stagger delay, then
+   hands control back to the base rule (so :hover transforms still work). */
+.menu-drawer.open .menu-body > * {
+  animation: menuOptPop 0.34s cubic-bezier(0.23, 1, 0.32, 1) backwards;
+}
+.menu-drawer.open .menu-body > *:nth-child(1)  { animation-delay: 0.03s; }
+.menu-drawer.open .menu-body > *:nth-child(2)  { animation-delay: 0.06s; }
+.menu-drawer.open .menu-body > *:nth-child(3)  { animation-delay: 0.09s; }
+.menu-drawer.open .menu-body > *:nth-child(4)  { animation-delay: 0.12s; }
+.menu-drawer.open .menu-body > *:nth-child(5)  { animation-delay: 0.15s; }
+.menu-drawer.open .menu-body > *:nth-child(6)  { animation-delay: 0.18s; }
+.menu-drawer.open .menu-body > *:nth-child(7)  { animation-delay: 0.21s; }
+.menu-drawer.open .menu-body > *:nth-child(8)  { animation-delay: 0.24s; }
+.menu-drawer.open .menu-body > *:nth-child(9)  { animation-delay: 0.27s; }
+.menu-drawer.open .menu-body > *:nth-child(10) { animation-delay: 0.30s; }
+.menu-drawer.open .menu-body > *:nth-child(n+11) { animation-delay: 0.33s; }
+/* Section labels get a little breathing room above them as pills replace
+   the flat rows. */
+.menu-body .menu-section-label { margin-top: 6px; }
+.menu-body .menu-section-label:first-child { margin-top: 0; }
+
 .theme-toggle {
   width: 44px; height: 26px;
   background: var(--bg4);
