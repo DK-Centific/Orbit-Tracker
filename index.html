@@ -508,8 +508,13 @@ a.icon-btn:focus-visible {
   margin-bottom: 14px;
 }
 .welcome-title {
+  /* Matches the .brand-sub type treatment: same sans font-family, medium
+     weight, tracked-out uppercase, accent-ink colour. Only the (larger)
+     title font-size is retained so it still reads as the page heading. */
+  font-family: var(--font);
   font-size: clamp(26px, 3.4vw, 38px);
-  font-weight: 600; letter-spacing: -0.035em;
+  font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent-ink);
   line-height: 1.08;
   margin-bottom: 12px;
 }
@@ -41222,9 +41227,11 @@ body::before {
 [data-theme="dark"] body::before { mix-blend-mode:soft-light; }
 #app, #adminApp, #loginScreen { position:relative; z-index:1; }
 
-/* Crimson Pro display headings */
+/* Crimson Pro display headings
+   (.welcome-title intentionally excluded — it mirrors the .brand-sub type
+   treatment instead of the serif display style; see the .welcome-title rule.) */
 h1, h2, h3,
-.login-title, .welcome-title, .admin-hero-title, .mod-cal-title,
+.login-title, .admin-hero-title, .mod-cal-title,
 .perf-panel-title, .cal-drill-modal-title, .mod-group-title, .progress-reminder-title {
   font-family:var(--font-serif) !important; font-weight:600; letter-spacing:-0.02em;
 }
