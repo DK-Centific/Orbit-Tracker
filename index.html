@@ -41547,8 +41547,15 @@ h1, h2, h3,
 </div>
 
 <style id="panic-style">
-.panic-fab { position:fixed; right:22px; bottom:22px; z-index:5000; display:flex; flex-direction:column; align-items:flex-end; gap:12px; }
+/* The fab is a fixed, full-height column whose (invisible, collapsed) menu
+   still occupies layout space at z-index:5000 — that empty region used to
+   sit on top of the right rail's bottom buttons (theme/menu) and swallow
+   their clicks. Making the CONTAINER click-through and re-enabling pointer
+   events only on the actual interactive children (button + open menu) lets
+   clicks fall through the empty area to the rail beneath. */
+.panic-fab { position:fixed; right:22px; bottom:22px; z-index:5000; display:flex; flex-direction:column; align-items:flex-end; gap:12px; pointer-events:none; }
 .panic-btn {
+  pointer-events:auto;
   width:60px; height:60px; border-radius:50%; border:none; cursor:pointer;
   display:flex; align-items:center; justify-content:center; color:#fff;
   background:radial-gradient(circle at 35% 30%, #F2938A, #D9534F);
