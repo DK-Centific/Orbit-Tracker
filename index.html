@@ -41089,5 +41089,141 @@ function init() {
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
+<style id="helios-skin">
+/* ============================================================
+   HELIOS design language applied to Twilight
+   Neumorphic (soft-UI) surfaces, Helios cream/charcoal palettes,
+   Crimson Pro display headings, ambient leaf texture. The Centific
+   logo is retained and tinted with the Helios accent. Loaded last so
+   it overrides the base theme on equal specificity.
+   (No sun-orb visualization — per request.)
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200;300;400;600&display=swap');
+
+:root {
+  --font-serif: 'Crimson Pro', 'Times New Roman', Georgia, serif;
+  --r: 16px;
+  --rl: 26px;
+}
+
+/* Helios DARK — charcoal + gold */
+[data-theme="dark"] {
+  --bg:#1A1C1E; --bg2:#202325; --bg3:#17191b; --bg4:#25282B;
+  --well-bg:#151719;
+  --text:#E2E2E2; --text2:rgba(226,226,226,0.60); --text3:#8A8F94;
+  --border:rgba(255,255,255,0.045); --border-strong:rgba(255,255,255,0.09);
+  --card-bg:#1A1C1E; --input-bg:#151719;
+  --nav-bg:rgba(26,28,30,0.72); --sidebar-bg:#1A1C1E;
+  --sidebar-glass-bg:rgba(26,28,30,0.80); --menu-glass-bg:rgba(26,28,30,0.84);
+  --accent:#C5A059; --accent-dim:#d4b979; --accent-ink:#1A1C1E; --accent-soft:rgba(197,160,89,0.16);
+  --pill-fg:#1A1C1E;
+  --brand:#C5A059; --brand-soft:rgba(197,160,89,0.14); --brand-line:rgba(197,160,89,0.40);
+  --neu-light:#25282B; --neu-dark:#0E0F11;
+  --leaf-invert:1; --leaf-opacity:0.05; --leaf-blend:overlay;
+}
+
+/* Helios LIGHT — cream + amber */
+[data-theme="light"] {
+  --bg:#F7F7F2; --bg2:#FFFFFF; --bg3:#FCFCF7; --bg4:#EDEDE4;
+  --well-bg:#F0F0E8;
+  --text:#3C3C3B; --text2:rgba(60,60,59,0.62); --text3:#94948C;
+  --border:rgba(60,60,59,0.06); --border-strong:rgba(60,60,59,0.12);
+  --card-bg:#F7F7F2; --input-bg:#F0F0E8;
+  --nav-bg:rgba(247,247,242,0.70); --sidebar-bg:#F7F7F2;
+  --sidebar-glass-bg:rgba(247,247,242,0.82); --menu-glass-bg:rgba(247,247,242,0.86);
+  --accent:#E07A2B; --accent-dim:#c96a20; --accent-ink:#FFFFFF; --accent-soft:rgba(224,122,43,0.12);
+  --pill-fg:#FFFFFF;
+  --brand:#E07A2B; --brand-soft:rgba(224,122,43,0.10); --brand-line:rgba(224,122,43,0.34);
+  --neu-light:#FFFFFF; --neu-dark:#DEDECF;
+  --leaf-invert:0; --leaf-opacity:0.03; --leaf-blend:multiply;
+}
+
+body { background:var(--bg); color:var(--text); font-family:var(--font); }
+
+/* Ambient leaf texture (Helios), behind all content */
+body::before {
+  content:''; position:fixed; inset:-10%; z-index:0; pointer-events:none;
+  background:url('https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=2000&auto=format&fit=crop') center/cover;
+  opacity:var(--leaf-opacity,0.03); mix-blend-mode:var(--leaf-blend,multiply);
+  filter:grayscale(var(--leaf-invert,0)) invert(var(--leaf-invert,0)) contrast(1.5);
+  transform:rotate(15deg);
+}
+#app, #adminApp, #loginScreen { position:relative; z-index:1; }
+
+/* Crimson Pro display headings */
+h1, h2, h3,
+.login-title, .welcome-title, .admin-hero-title, .mod-cal-title,
+.perf-panel-title, .cal-drill-modal-title, .mod-group-title, .progress-reminder-title {
+  font-family:var(--font-serif) !important; font-weight:300; letter-spacing:0.01em;
+}
+
+/* ---- Neumorphic raised surfaces ---- */
+.card, .login-card, .welcome-card, .admin-hero, .kpi-card, .perf-panel,
+.acc-item, .scenario-table-wrap, .sidebar-progress, .mod-cal-card, .appr-card {
+  background:var(--bg) !important; border:none !important;
+  border-radius:var(--rl);
+  box-shadow:7px 7px 16px var(--neu-dark), -7px -7px 16px var(--neu-light);
+}
+
+/* ---- Inset wells (inputs, notes, tracks) ---- */
+.entry-field input, .scenario-notes, textarea, select,
+.progress-track, .sidebar-progress-track, .scenario-table-wrap.locked {
+  background:var(--well-bg) !important; border:none !important;
+  box-shadow:inset 4px 4px 8px var(--neu-dark), inset -4px -4px 8px var(--neu-light);
+}
+.entry-field input:focus, .scenario-notes:focus, textarea:focus {
+  outline:none;
+  box-shadow:inset 4px 4px 8px var(--neu-dark), inset -4px -4px 8px var(--neu-light),
+             0 0 0 2px var(--accent-soft);
+}
+
+/* ---- Raised buttons ---- */
+.btn, .icon-btn, .acc-step-btn, .cal-ref-btn, .nav-calguide-btn, .nav-lakitu-btn {
+  background:var(--bg) !important; border:none !important;
+  box-shadow:5px 5px 10px var(--neu-dark), -5px -5px 10px var(--neu-light);
+}
+.btn:hover, .icon-btn:hover { transform:translateY(-1px); }
+.btn:active, .icon-btn:active, .acc-step-btn:not(:disabled):active {
+  box-shadow:inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--neu-light);
+}
+.btn-primary, #loginBtn {
+  background:var(--accent) !important; color:var(--accent-ink) !important;
+  box-shadow:5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+}
+
+/* ---- Pills / chips ---- */
+.status-pill, .progress-pill, .user-chip, .nav-team-chip, .sidebar-title,
+.camera-summary-chip, .len-reminder-eyebrow {
+  background:var(--bg) !important; border:none !important;
+  box-shadow:4px 4px 9px var(--neu-dark), -4px -4px 9px var(--neu-light);
+}
+
+/* ---- Sidebar + station list ---- */
+.sidebar { background:var(--sidebar-bg); border:none !important; }
+.station-item {
+  background:var(--bg); border:none !important; border-radius:var(--r);
+  box-shadow:5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+}
+.station-item.active {
+  box-shadow:inset 4px 4px 8px var(--neu-dark), inset -4px -4px 8px var(--neu-light);
+  color:var(--accent);
+}
+
+/* ---- Mobile accordion tiles + stepper (Helios neu) ---- */
+.acc-item { box-shadow:6px 6px 14px var(--neu-dark), -6px -6px 14px var(--neu-light); }
+.acc-stepper { background:var(--bg) !important; border:none !important;
+  box-shadow:8px 8px 18px var(--neu-dark), -8px -8px 18px var(--neu-light); }
+.acc-step-btn { background:var(--well-bg) !important;
+  box-shadow:inset 3px 3px 6px var(--neu-dark), inset -3px -3px 6px var(--neu-light); }
+
+/* ---- Modals / drawers ---- */
+.modal-card, .cal-guide-modal, .cal-drill-modal, .wrapup-modal, .sheet, .drawer {
+  background:var(--bg) !important; border:none !important; border-radius:var(--rl);
+  box-shadow:18px 18px 44px var(--neu-dark), -18px -18px 44px var(--neu-light);
+}
+
+/* Retained Centific logo — now tinted with the Helios accent via --brand */
+.brand-mark, .login-mark { color:var(--brand); }
+</style>
 </body>
 </html>
