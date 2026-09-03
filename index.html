@@ -4225,6 +4225,13 @@ input#ent_lakitu.lakitu-invalid {
   .asgn-shell { grid-template-columns: 1fr; }
 }
 
+/* Teams-only variant — used by the Moderator Hub "By Team" tab, which
+   reuses the teams panel without the calendar. A single, width-capped
+   column keeps the panel from stretching uncomfortably wide across the
+   full hub body while matching the Assignment tab's look. */
+.asgn-shell.asgn-shell-teams-only { grid-template-columns: minmax(0, 640px); }
+.asgn-shell.asgn-shell-teams-only .teams-panel { position: static; max-height: none; }
+
 /* Teams panel */
 .teams-panel {
   background: var(--card-bg);
@@ -21110,76 +21117,44 @@ function renderModListView() {
 
 function renderModTeamView() {
   const wrap = document.getElementById('modviewBody');
-  if (adminState.teams.length === 0) {
-    wrap.innerHTML = `
-      <div class="admin-state">
-        <div class="admin-state-msg">No teams created yet.</div>
-        <div class="admin-state-hint">Go to <strong>Assignment</strong> to create teams, then return here.</div>
-      </div>`;
-    return;
+  if (!wrap) return;
+  // Ensure team/assignment data is loaded before rendering the panel
+  // (the Moderator Hub can be entered without opening the Assignment tab).
+  if (!adminState._asgnLoaded) {
+    const stored = loadAssignmentData();
+    adminState.teams = stored.teams;
+    adminState.assignments = stored.assignments;
+    adminState._asgnLoaded = true;
   }
+  // Reuse the SAME teams-panel component + handlers as the Assignment tab
+  // so the "By Team" view gets the full team-management surface (create,
+  // edit, delete, search, sort, roster). The panel's modal flows use the
+  // shared asgn-modal infrastructure, so we render the modal shell here
+  // too — otherwise openTeamModal()/showAsgnModal() would have no target.
+  wrap.innerHTML = `
+    <div class="asgn-shell asgn-shell-teams-only">
+      ${renderTeamsPanelHTML()}
+    </div>
+    <div class="asgn-modal-overlay" id="asgnModalOverlay"></div>
+    <div class="asgn-modal" id="asgnModal" role="dialog" aria-modal="true">
+      <div id="asgnModalContent"></div>
+    </div>
+  `;
+  bindTeamsPanelEvents();
+}
 
-  // Build list of mods on each team and a separate "Unassigned" bucket
-  const teamGroups = adminState.teams.map(t => {
-    const mods = [
-      ...(t.primaryIds || []).map(id => ({ id, role: 'primary' })),
-      ...getTeamBackupIds(t).map(id => ({ id, role: 'backup' })),
-    ];
-    return { team: t, mods };
-  });
-  const assignedIds = new Set();
-  teamGroups.forEach(g => g.mods.forEach(m => assignedIds.add(String(m.id).toLowerCase())));
-
-  const unassigned = (adminState.moderators || []).filter(m => {
-    const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-    return !assignedIds.has(String(id || '').toLowerCase());
-  });
-
-  let html = '';
-  teamGroups.forEach(g => {
-    html += `
-      <div class="mod-group">
-        <div class="mod-group-head">
-          <h3 class="mod-group-title">${escapeHTML(g.team.name)}</h3>
-          <span class="mod-group-count">${g.mods.length} ${g.mods.length === 1 ? 'moderator' : 'moderators'}</span>
-        </div>
-        <div class="mod-grid">
-          ${g.mods.map(({id, role}) => {
-            const m = getModeratorByOrbitId(id);
-            if (!m) return '';
-            const idx = adminState.moderators.indexOf(m);
-            return modCardHTML(m, idx, role);
-          }).join('')}
-        </div>
-      </div>`;
-  });
-  if (unassigned.length > 0) {
-    html += `
-      <div class="mod-group mod-group-unassigned">
-        <div class="mod-group-head">
-          <h3 class="mod-group-title">Unassigned</h3>
-          <span class="mod-group-count">${unassigned.length}</span>
-        </div>
-        <div class="mod-grid">
-          ${unassigned.map(m => modCardHTML(m, adminState.moderators.indexOf(m))).join('')}
-        </div>
-      </div>`;
+// Re-render the correct surface after a team is created / edited / deleted.
+// The teams-panel handlers (saveTeam / finalizeTeamDeletion) historically
+// called renderAssignment() directly, which is correct on the Assignment
+// tab but would clobber the Moderator Hub's #subtabBody with the calendar
+// view when the same panel is used inside the "By Team" tab. Route to the
+// active surface instead.
+function refreshAfterTeamMutation() {
+  if (adminState.tab === 'moderators' && adminState.modView === 'team') {
+    renderModerators();
+  } else if (typeof renderAssignment === 'function') {
+    renderAssignment();
   }
-  wrap.innerHTML = html;
-  wrap.querySelectorAll('.mod-card-head').forEach(head => {
-    head.addEventListener('click', () => {
-      const card = head.closest('.mod-card');
-      const idx = parseInt(card.dataset.idx, 10);
-      if (adminState.expandedMods[idx]) {
-        delete adminState.expandedMods[idx];
-        card.classList.remove('expanded');
-      } else {
-        adminState.expandedMods[idx] = true;
-        card.classList.add('expanded');
-      }
-      head.setAttribute('aria-expanded', !!adminState.expandedMods[idx]);
-    });
-  });
 }
 
 function renderModAssignmentView() {
@@ -29118,7 +29093,7 @@ function saveTeam() {
   // _pending flag and calls saveAssignmentData() so both commit together.
   saveAssignmentData();
   closeAsgnModal();
-  renderAssignment();
+  refreshAfterTeamMutation();
 }
 
 function deleteTeam(teamId) {
@@ -29218,7 +29193,7 @@ function finalizeTeamDeletion(teamId, teamObj) {
   adminState.teams = adminState.teams.filter(t => t.id !== teamId);
   if (adminState._selectedTeam === teamId) adminState._selectedTeam = null;
   saveAssignmentData();
-  renderAssignment();
+  refreshAfterTeamMutation();
   if (typeof toast === 'function') {
     toast(TEAMLOG_PA_WRITE_URL ? `${teamName} deleted` : `${teamName} hidden from this browser`);
   }
