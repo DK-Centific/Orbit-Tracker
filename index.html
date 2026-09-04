@@ -3684,7 +3684,7 @@ input#ent_lakitu.lakitu-invalid {
      titles/subtitles sat flush against the rounded left edge and the
      page's overflow-x:clip + negative letter-spacing clipped glyphs
      on the left. Keep overflow visible and pad all sides. */
-  padding: clamp(16px, 2.4vw, 28px) clamp(20px, 3vw, 36px) clamp(14px, 2vw, 22px);
+  padding: clamp(18px, 2.4vw, 28px) clamp(28px, 4vw, 48px) clamp(16px, 2vw, 24px);
   overflow: visible;
   box-sizing: border-box;
 }
@@ -10700,7 +10700,7 @@ button.perf-stat-chip.scheduled.active {
 }
 
 @media (max-width: 760px) {
-  .admin-hero { padding: 16px 18px 14px; overflow: visible; }
+  .admin-hero { padding: 16px 24px 14px; overflow: visible; }
   .ptab { min-width: 980px; }
 }
 
@@ -21210,7 +21210,7 @@ function renderModerators() {
   }
 
   // View switcher + body
-  const view = adminState.modView || 'list';
+  let view = adminState.modView || 'list';
   body.innerHTML = `
     <div class="modview-toolbar">
       <div class="modview-toggle">
@@ -21241,15 +21241,17 @@ function renderModerators() {
   `;
   body.querySelectorAll('.modview-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.hasAttribute('hidden') || btn.classList.contains('modview-btn--hidden')) return;
       adminState.modView = btn.dataset.mview;
       renderModerators();
     });
   });
-  // Availability tab button is hidden in the UI. Prior sessions that still
-  // have modView === 'availability' fall back to All so admins aren't stuck
-  // on a view with no visible tab. renderModAvailabilityView remains below
-  // for easy restore (un-hide the Availability button).
-  if (view === 'availability') {
+  // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
+  // hidden attr). Un-hide the button + set this true to restore the tab.
+  // Prior sessions that still have modView === 'availability' fall back to
+  // All so admins aren't stuck on a view with no visible tab.
+  const SHOW_MOD_AVAILABILITY_TAB = false;
+  if (!SHOW_MOD_AVAILABILITY_TAB && view === 'availability') {
     adminState.modView = 'list';
     view = 'list';
   }
@@ -21273,9 +21275,19 @@ function renderModAvailabilityView() {
 // Redmond HQ — 14980 NE 31st St Ste 100, Redmond, WA 98052
 const ACTIVITIES_MAP_CENTER = { lng: -122.1370, lat: 47.6446 };
 const ACTIVITIES_MAP_ZOOM = 15;
-const ACTIVITIES_OMT_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const ACTIVITIES_MAP_ADDRESS = '14980 NE 31st St Ste 100, Redmond, WA 98052';
+const ACTIVITIES_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/positron';
+const ACTIVITIES_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
+// Liberty kept as a light-theme alternate if positron is unavailable.
+const ACTIVITIES_STYLE_LIGHT_ALT = 'https://tiles.openfreemap.org/styles/liberty';
 let _activitiesMap = null;
 let _activitiesMapThemeObs = null;
+let _activitiesMapStyleKey = null;
+
+function activitiesMapStyleUrl() {
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  return theme === 'light' ? ACTIVITIES_STYLE_LIGHT : ACTIVITIES_STYLE_DARK;
+}
 
 function destroyActivitiesMap() {
   if (_activitiesMap) {
@@ -21286,6 +21298,7 @@ function destroyActivitiesMap() {
     try { _activitiesMapThemeObs.disconnect(); } catch (_) {}
     _activitiesMapThemeObs = null;
   }
+  _activitiesMapStyleKey = null;
 }
 
 function activitiesThemeColors() {
@@ -21351,7 +21364,44 @@ function applyActivitiesMapTheme(map) {
 }
 
 function syncActivitiesMapTheme() {
-  if (_activitiesMap) applyActivitiesMapTheme(_activitiesMap);
+  if (!_activitiesMap) return;
+  const next = activitiesMapStyleUrl();
+  if (_activitiesMapStyleKey === next) {
+    applyActivitiesMapTheme(_activitiesMap);
+    return;
+  }
+  _activitiesMapStyleKey = next;
+  try {
+    _activitiesMap.setStyle(next);
+    _activitiesMap.once('load', () => {
+      try { placeActivitiesMapMarker(_activitiesMap); } catch (_) {}
+      applyActivitiesMapTheme(_activitiesMap);
+      try { _activitiesMap.resize(); } catch (_) {}
+    });
+  } catch (err) {
+    console.warn('[Twilight] Activities map style swap failed', err);
+    applyActivitiesMapTheme(_activitiesMap);
+  }
+  const well = document.getElementById('activitiesMapWell');
+  if (well) {
+    well.setAttribute('data-map-theme',
+      document.documentElement.getAttribute('data-theme') || 'dark');
+  }
+}
+
+function placeActivitiesMapMarker(map) {
+  if (!map || typeof maplibregl === 'undefined') return;
+  document.querySelectorAll('.activities-map-marker').forEach(el => {
+    try { if (el.__marker) el.__marker.remove(); } catch (_) {}
+  });
+  const markerEl = document.createElement('div');
+  markerEl.className = 'activities-map-marker';
+  markerEl.title = ACTIVITIES_MAP_ADDRESS;
+  const marker = new maplibregl.Marker({ element: markerEl })
+    .setLngLat([ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat])
+    .setPopup(new maplibregl.Popup({ offset: 18 }).setText(ACTIVITIES_MAP_ADDRESS))
+    .addTo(map);
+  markerEl.__marker = marker;
 }
 
 function ensureActivitiesMapThemeObserver() {
@@ -21380,21 +21430,18 @@ function initActivitiesMap() {
   }
   initActivitiesMap._retries = 0;
   destroyActivitiesMap();
+  const styleUrl = activitiesMapStyleUrl();
+  _activitiesMapStyleKey = styleUrl;
   _activitiesMap = new maplibregl.Map({
     container: el,
-    style: ACTIVITIES_OMT_STYLE,
+    style: styleUrl,
     center: [ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat],
     zoom: ACTIVITIES_MAP_ZOOM,
     attributionControl: true,
   });
   _activitiesMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
-  const markerEl = document.createElement('div');
-  markerEl.className = 'activities-map-marker';
-  markerEl.title = '14980 NE 31st St Ste 100, Redmond, WA 98052';
-  new maplibregl.Marker({ element: markerEl })
-    .setLngLat([ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat])
-    .addTo(_activitiesMap);
   _activitiesMap.on('load', () => {
+    placeActivitiesMapMarker(_activitiesMap);
     applyActivitiesMapTheme(_activitiesMap);
     try { _activitiesMap.resize(); } catch (_) {}
     const fallback = document.getElementById('activitiesMapFallback');
@@ -21426,7 +21473,7 @@ function renderModActivitiesView() {
           </div>
         </div>
         <div class="activities-map-caption">
-          <div class="activities-map-eyebrow">Live map · OpenMapTiles</div>
+          <div class="activities-map-eyebrow">Live map · OpenFreeMap</div>
           <div class="activities-map-title">Redmond HQ</div>
           <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
         </div>
@@ -41617,8 +41664,8 @@ h1, h2, h3,
    left-edge glyphs (negative letter-spacing + rounded corners). */
 .admin-hero {
   overflow: visible !important;
-  padding-left: clamp(20px, 3vw, 36px) !important;
-  padding-right: clamp(20px, 3vw, 36px) !important;
+  padding-left: clamp(28px, 4vw, 48px) !important;
+  padding-right: clamp(28px, 4vw, 48px) !important;
 }
 
 /* ---- Inset wells (inputs, notes, tracks) ---- */
