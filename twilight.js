@@ -24468,6 +24468,51 @@ function sendSessionStateBeacon(reason) {
   }
 }
 
+function postSessionStateLifecycleUpdate(reason) {
+  if (!SESSIONSTATE_PA_WRITE_URL) return Promise.resolve(false);
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return Promise.resolve(false);
+  const asgn = getSessionStateWriteContext();
+  if (!asgn || !asgn.id) return Promise.resolve(false);
+  try {
+    if (state.lastGeo) {
+      state.lastGeo.syncReason = reason || 'lifecycle';
+      saveState();
+    }
+    // Build the complete body before logout resets in-memory state. `keepalive`
+    // lets this request finish while the app transitions to the login screen.
+    const payload = {
+      sessionStateId: `ss_${state.modProfile.orbitLoginId}_${asgn.id}_${Date.now()}`,
+      assignmentId:   String(asgn.id),
+      teamId:         String(asgn.teamId || ''),
+      orbitLoginId:   String(state.modProfile.orbitLoginId),
+      stateJson:      JSON.stringify(extractSyncableState(state)),
+      lastActive:     new Date().toISOString(),
+      appVersion:     APP_VERSION,
+    };
+    const body = JSON.stringify(payload);
+    return fetch(SESSIONSTATE_PA_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return true;
+    }).catch(() => {
+      // Beacon remains the unload-safe fallback if the normal request cannot
+      // start (brief offline transition, browser shutdown, etc.).
+      try {
+        const blob = new Blob([body], { type: 'application/json' });
+        return navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
+      } catch (_) {
+        return false;
+      }
+    });
+  } catch (_) {
+    return Promise.resolve(false);
+  }
+}
+
 // Page-unload handler · uploads the latest captured location when the tab
 // closes. Browser unload cannot wait for a new GPS fix, so this sends the
 // most recent open/interval location using sendBeacon.
@@ -27355,10 +27400,12 @@ function finishSessionForDay() {
 
 function logoutAndClearOperatorState() {
   // Send the latest captured location before clearing the in-memory profile.
-  // sendBeacon survives the immediate screen transition and works even when
-  // the moderator has no active assignment.
+  // The request body is snapshotted synchronously, then finishes in the
+  // background while the login screen appears.
   try {
-    if (typeof sendSessionStateBeacon === 'function') sendSessionStateBeacon('logout');
+    if (typeof postSessionStateLifecycleUpdate === 'function') {
+      postSessionStateLifecycleUpdate('logout');
+    }
   } catch (_) {}
   // Reset the auto-guide station tracker so the next login re-evaluates from
   // scratch (otherwise an in-app logout→login onto the same station could skip
