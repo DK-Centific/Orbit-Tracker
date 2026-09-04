@@ -31426,6 +31426,14 @@ async function postPasswordAuth(payload) {
       err.isInvalidCredentials = true;
       throw err;
     }
+    // PA returns 502 NoResponse when the flow ends without hitting a
+    // Response action — usually Excel "Get a row" failing on an unknown
+    // Orbit Login ID with no run-after branch.
+    if (/^HTTP 50\d/.test(msg)) {
+      const err = new Error('auth_flow_no_response');
+      err.isAuthFlowNoResponse = true;
+      throw err;
+    }
     throw e;
   }
 }
@@ -31547,6 +31555,8 @@ async function submitForcedPasswordChange() {
       setPwChangeError('Orbit Login ID or password is incorrect.');
     } else if (e && e.isAuthConfigMissing) {
       setPwChangeError('Login flow is not configured yet.');
+    } else if (e && e.isAuthFlowNoResponse) {
+      setPwChangeError('The login flow did not return a response. Ask an admin to check it.');
     } else {
       setPwChangeError("Couldn't reach the password service. Check your connection and try again.");
       console.error('setPassword failed:', e);
@@ -31739,6 +31749,8 @@ async function doLogin() {
       setLoginError('Orbit Login ID or password is incorrect.');
     } else if (e && e.isAuthConfigMissing) {
       setLoginError('Login flow is not configured yet. Ask an admin to finish the Orbit moderator login Power Automate setup (ADMIN_PA_MODERATOR_LOGIN_URL).');
+    } else if (e && e.isAuthFlowNoResponse) {
+      setLoginError("Check your Orbit Login ID spelling. If it's correct, the login flow needs an admin fix (no response returned).");
     } else {
       setLoginError("Couldn't reach the password service. Check your connection and try again.");
       console.error('Login auth failed:', e);

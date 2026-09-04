@@ -235,3 +235,21 @@ You should have:
 - 6 Response steps
 
 If a Response is sitting **between** two Conditions (not inside Yes or No), drag it into the correct Yes or No box.
+
+---
+
+## If login shows HTTP 502
+
+Power Automate returns 502 when the flow stops before any **Response** step runs.
+
+Most common cause: **Get a row** fails with `No row was found with Id '...'`.
+
+Fix:
+
+1. Open the login flow → **Edit**.
+2. Click **…** on the **Get a row** step → **Configure run after**.
+3. Check both **is successful** and **has failed** → **Done**.
+4. Make sure the **No** side of Condition 1 has a **Response** with `{ "ok": false, "reason": "notFound" }`.
+5. **Save**.
+
+Also check the Orbit Login ID spelling in Excel (for example `David-Orbit`, not `David-Oribt`).
