@@ -252,4 +252,18 @@ Fix:
 4. Make sure the **No** side of Condition 1 has a **Response** with `{ "ok": false, "reason": "notFound" }`.
 5. **Save**.
 
-Also check the Orbit Login ID spelling in Excel (for example `David-Orbit`, not `David-Oribt`).
+Also check the Orbit Login ID spelling in Excel (for example `David-orbit`, not `David-Oribt`).
+
+Capitalization does not matter when signing in. The app looks up the typed ID
+without case, then corrects it to the spelling stored in Excel before it calls
+this flow.
+
+---
+
+## Two things to clean up in Excel
+
+1. Use only the **Password** column in this flow (check it, and update it).
+   The **NewPassword** column is not used by the app — leave it empty or delete it.
+2. The directory read flow currently returns **Password** and **NewPassword** to
+   the browser. Remove those two columns from that flow's Response so passwords
+   never leave Excel. The app already discards them, but they should not be sent.

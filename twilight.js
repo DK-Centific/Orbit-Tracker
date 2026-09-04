@@ -5063,7 +5063,17 @@ async function fetchWithRetry(url, opts) {
 
       // Any other non-2xx is a hard failure · no retry, surface it.
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        let bodyText = '';
+        try { bodyText = await res.text(); } catch (_) {}
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        err.bodyText = bodyText;
+        // PA answers with this code when a flow's HTTP trigger only
+        // accepts POST but the caller used GET (or vice versa).
+        if (/TriggerRequestMethodNotValid/i.test(bodyText)) {
+          err.isTriggerMethodMismatch = true;
+        }
+        throw err;
       }
 
       // Happy path: parse and return. JSON parse errors are NOT
@@ -5122,22 +5132,35 @@ async function fetchWithRetry(url, opts) {
   throw lastErr || new Error('Request failed after retries');
 }
 
-// Directory reads historically used GET. Newer HTTP triggers are often
-// POST-only. Try GET first, then POST an empty body on HTTP 400.
-async function fetchModeratorDirectory(opts) {
+// PA read flows historically used GET. Newer HTTP triggers are often
+// POST-only, and PA then answers TriggerRequestMethodNotValid. Try GET
+// first, then POST an empty body so a flow rebuilt as POST keeps working
+// without a client change.
+async function fetchPaRead(url, opts) {
   opts = opts || {};
-  const common = { timeoutMs: 45000, maxAttempts: 3, signal: opts.signal || null };
+  const common = {
+    timeoutMs: opts.timeoutMs || 45000,
+    maxAttempts: opts.maxAttempts || 3,
+    signal: opts.signal || null,
+  };
   try {
-    return await fetchWithRetry(ADMIN_PA_MODERATORS_URL, Object.assign({ method: 'GET' }, common));
+    return await fetchWithRetry(url, Object.assign({ method: 'GET' }, common));
   } catch (e) {
     const msg = (e && e.message) || '';
-    if (!/^HTTP 400/.test(msg)) throw e;
-    return await fetchWithRetry(ADMIN_PA_MODERATORS_URL, Object.assign({
+    const methodMismatch = !!(e && e.isTriggerMethodMismatch)
+      || /^HTTP 40[015]/.test(msg)
+      || /^HTTP 405/.test(msg);
+    if (!methodMismatch) throw e;
+    return await fetchWithRetry(url, Object.assign({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     }, common));
   }
+}
+
+function fetchModeratorDirectory(opts) {
+  return fetchPaRead(ADMIN_PA_MODERATORS_URL, opts || {});
 }
 
 function extractArray(payload) {
@@ -11162,7 +11185,8 @@ function stripModeratorSecrets(row) {
   const out = Object.assign({}, row);
   Object.keys(out).forEach(k => {
     const n = String(k).replace(/[\s_-]+/g, '').toLowerCase();
-    if (n === 'password' || n === 'pwd' || n === 'passwd' || n === 'secret' || n === 'passphrase') {
+    // Substring match so columns like NewPassword / tempPwd are dropped too.
+    if (/password|passwd|pwd|passphrase|secret/.test(n)) {
       delete out[k];
     }
   });
@@ -11771,8 +11795,7 @@ async function loadParticipants(force = false) {
   adminState._partPaginationWarning = false;
   renderParticipants();
   try {
-    const data = await fetchWithRetry(ADMIN_PA_PARTICIPANTS_URL, {
-      method: 'GET',
+    const data = await fetchPaRead(ADMIN_PA_PARTICIPANTS_URL, {
       signal: abortCtrl.signal,
       timeoutMs: 45000,
       maxAttempts: 3,
@@ -24852,9 +24875,8 @@ async function fetchSessionStateRows() {
     // longer (whole table fetch) but bounded enough that a stalled
     // read doesn't block subsequent polls.
     let parsed;
-    if (typeof fetchWithRetry === 'function') {
-      parsed = await fetchWithRetry(SESSIONSTATE_PA_READ_URL, {
-        method: 'GET',
+    if (typeof fetchPaRead === 'function') {
+      parsed = await fetchPaRead(SESSIONSTATE_PA_READ_URL, {
         timeoutMs: 30000,
         maxAttempts: 3,
       });
@@ -31334,6 +31356,11 @@ function syncLoginPasswordFieldForUsername() {
   pw.disabled = !!passwordless;
   if (passwordless) pw.value = '';
   pw.required = !passwordless;
+  // Warm the Orbit Login ID spelling index while the user is still
+  // typing so sign-in doesn't wait on a directory read.
+  if (!passwordless && userEl.value.trim() && typeof loadOrbitLoginIdIndex === 'function') {
+    loadOrbitLoginIdIndex().catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -31356,6 +31383,59 @@ function clearPendingAuth() {
   _pendingAuthPassword = null;
   _pendingAuthProfile = null;
   _pendingAuthOrbitId = null;
+}
+
+// Orbit Login IDs are typed by people but used as the Excel key column,
+// where lookups match the stored spelling exactly. Build a
+// normalized -> exact map from the directory so "david-orbit" or
+// "DAVID-ORBIT " signs in as the stored "David-Orbit".
+let _orbitLoginIdIndexPromise = null;
+
+function orbitLoginIdMatchKey(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+async function loadOrbitLoginIdIndex() {
+  if (!_orbitLoginIdIndexPromise) {
+    _orbitLoginIdIndexPromise = (async () => {
+      const map = new Map();
+      const addRows = (rows) => {
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          if (!row || typeof row !== 'object') return;
+          const exact = String(pickField(row, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').trim();
+          if (!exact) return;
+          const key = orbitLoginIdMatchKey(exact);
+          if (key && !map.has(key)) map.set(key, exact);
+        });
+      };
+      try { addRows(typeof adminState !== 'undefined' && adminState ? adminState.moderators : null); } catch (_) {}
+      if (map.size) return map;
+      try {
+        addRows(extractArray(await fetchModeratorDirectory({ timeoutMs: 20000, maxAttempts: 2 })));
+      } catch (e) {
+        console.warn('[Twilight] Orbit Login ID index unavailable:', (e && e.message) || e);
+      }
+      return map;
+    })();
+  }
+  const index = await _orbitLoginIdIndexPromise;
+  // A transient read failure must not freeze auto-correct for the session.
+  if (!index || !index.size) _orbitLoginIdIndexPromise = null;
+  return index;
+}
+
+async function resolveCanonicalOrbitLoginId(typed) {
+  const trimmed = String(typed || '').trim();
+  if (!trimmed) return trimmed;
+  const admin = ADMIN_USERNAMES.find(u => orbitLoginIdMatchKey(u) === orbitLoginIdMatchKey(trimmed));
+  if (admin) return admin;
+  try {
+    const index = await loadOrbitLoginIdIndex();
+    if (index && index.size) {
+      return index.get(orbitLoginIdMatchKey(trimmed)) || trimmed;
+    }
+  } catch (_) {}
+  return trimmed;
 }
 
 function unwrapAuthResponse(data) {
@@ -31697,9 +31777,26 @@ async function doLogin() {
   _loginInFlight = true;
   setLoginLoading(true);
   try {
+    // Typed IDs are matched case-insensitively, then corrected to the
+    // spelling stored in the directory (the Excel key column).
+    const loginId = await resolveCanonicalOrbitLoginId(v);
+    if (loginId !== v) {
+      const userEl = document.getElementById('loginUsername');
+      if (userEl) userEl.value = loginId;
+      if (isPasswordlessAdminUsername(loginId)) {
+        if (pwEl) pwEl.value = '';
+        typedPassword = '';
+        clearPendingAuth();
+        setLoginLoading(false);
+        _loginInFlight = false;
+        enterPasswordlessAdmin(loginId);
+        return;
+      }
+    }
+
     const data = await postPasswordAuth({
       operation: 'login',
-      orbitLoginId: v,
+      orbitLoginId: loginId,
       password: typedPassword,
     });
 
@@ -31717,9 +31814,9 @@ async function doLogin() {
 
     const rawProfile = (data.profile && typeof data.profile === 'object') ? data.profile : {};
     const profile = buildSafeModProfileFromAuth(Object.assign({}, rawProfile, {
-      orbitLoginId: pickField(rawProfile, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || v,
+      orbitLoginId: pickField(rawProfile, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || loginId,
     }));
-    const orbitId = profile.orbitLoginId || v;
+    const orbitId = profile.orbitLoginId || loginId;
     const mustChange = !!data.mustChangePassword;
 
     if (mustChange) {
