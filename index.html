@@ -12446,40 +12446,17 @@ button.perf-stat-chip.scheduled.active {
                 stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
         </svg>
       </button>
-      <!-- Lakitu quick link · opens Amazon's session console in a new tab.
-           Placed before the Refresh button so it sits in a predictable
-           "external action" zone alongside other utility buttons. The
-           rel="noopener noreferrer" pair is the standard security hardening
-           for any target="_blank" link: prevents the destination page from
-           accessing window.opener (which could otherwise navigate this tab
-           or read its origin). target="_blank" is what opens the new tab.
-
-           Visual: icon-only square button on every screen size, sized
-           to match the user-chip avatar. The brand name "Lakitu App"
-           appears in the menu drawer's Quick Links row instead · kept
-           out of the nav so the nav's visual rhythm stays consistent
-           across breakpoints. -->
-      <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+      <!-- Ring dashboard quick link · opens the Ring account dashboard
+           in a new tab. id stays navLakituBtn so the Helios rail still
+           docks this node. rel="noopener noreferrer" with target="_blank"
+           keeps the destination from accessing window.opener. -->
+      <a href="https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e" target="_blank" rel="noopener noreferrer"
          class="icon-btn nav-lakitu-btn" id="navLakituBtn"
-         aria-label="Open Lakitu App in a new tab"
-         title="Open Lakitu App (sessions)">
-        <!-- Sized to 22x22 to match the user-chip avatar (.user-chip .avatar)
-             so the two "identity markers" in the nav read at the same
-             visual weight. The viewBox stays 16x16 · only the rendered
-             size grows, which keeps the path coordinates simple. -->
+         aria-label="Open Ring dashboard in a new tab"
+         title="Open Ring dashboard">
         <svg class="nav-lakitu-icon" width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <!-- Lakitu Ring app logo: a white triangle inside a black circle.
-               (The source asset has a green app-icon background; we drop
-               that so the logo reads cleanly in both dark and light themes.)
-               Hardcoded #000 / #fff (not currentColor) so the brand mark
-               looks identical in dark and light modes · it shouldn't
-               invert with the surroundings. -->
-          <circle cx="8" cy="8" r="7.25" fill="#000"/>
-          <!-- Upward-pointing equilateral triangle, centered inside the
-               circle. Apex at top (~y=4.0), base across (~y=11.5). Slight
-               rounding via stroke-linejoin so the triangle's corners
-               feel intentional rather than razor-sharp. -->
-          <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+          <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+          <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
         </svg>
       </a>
       <button class="icon-btn" id="navRefreshBtn" aria-label="Refresh schedule" title="Refresh next-session queue">
@@ -12671,27 +12648,18 @@ button.perf-stat-chip.scheduled.active {
          an outbound-arrow glyph so the moderator can tell at a glance
          which menu rows leave the app vs. navigate within it. -->
     <div class="menu-section-label">Quick Links</div>
-    <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+    <a href="https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e" target="_blank" rel="noopener noreferrer"
        class="menu-row menu-row-link" id="lakituRow">
       <div class="label">
-        <!-- Drop the .ic wrapper's default bg3 background here · the
-             Lakitu logo's black disc IS the icon shape, so a tinted
-             wrapper would visually fight with it. Size matches other
-             .ic wrappers (30x30) so the row alignment stays consistent
-             with sibling menu rows like My Calendar / Export. -->
         <span class="ic" style="background: transparent; padding: 0;">
-          <!-- Same Lakitu logo as the nav button · keeps the brand
-               glyph consistent wherever the link appears in the app.
-               White triangle inside a black disc; theme-independent
-               colors so the brand looks identical in dark and light. -->
           <svg width="26" height="26" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="7.25" fill="#000"/>
-            <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+            <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+            <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
           </svg>
         </span>
         <div>
-          <div class="text">Lakitu App</div>
-          <div class="desc">Open Amazon's session console in a new tab</div>
+          <div class="text">Ring</div>
+          <div class="desc">Open the Ring dashboard in a new tab</div>
         </div>
       </div>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="opacity: 0.55;">

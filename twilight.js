@@ -3157,27 +3157,28 @@ function isValidLakituUrl(v) {
 // SINGLE SOURCE OF TRUTH for the project dropdown shown in the team modal
 // (under the team-name field). Each option maps a human label to the
 // Lakitu PROJECT URL an admin wants the team's moderators to open. Edit
-// this list to change the options everywhere. NOTE: several labels
-// intentionally map to the SAME url · only item 4 differs.
+// this list to change the options everywhere. Each Centific slot maps
+// to its own Lakitu session URL.
 const LAKITU_PROJECTS = [
-  { key: 'centific-1', label: 'US - BEV+ LeapFrog - Centific 1', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-2', label: 'US - BEV+ LeapFrog - Centific 2', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-3', label: 'US - BEV+ LeapFrog - Centific 3', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-4', label: 'US - BEV+ LeapFrog - Centific 4', url: 'https://lakitu.ring.amazon.dev/project/ad65fa51-d211-4144-9f55-c078b862cce9' },
-  { key: 'centific-5', label: 'US - BEV+ LeapFrog - Centific 5', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-6', label: 'US - BEV+ LeapFrog - Centific 6', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-7', label: 'US - BEV+ LeapFrog - Centific 7', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-1',  label: 'US - BEV+ LeapFrog - Centific 1',  url: 'https://lakitu.ring.amazon.dev/?session=80ddee87-7f5f-4113-80a2-4d4574973301' },
+  { key: 'centific-2',  label: 'US - BEV+ LeapFrog - Centific 2',  url: 'https://lakitu.ring.amazon.dev/?session=eb7f995b-f0f0-4af3-9686-c60c080e8f42' },
+  { key: 'centific-3',  label: 'US - BEV+ LeapFrog - Centific 3',  url: 'https://lakitu.ring.amazon.dev/?session=2a78366e-78c5-435e-890b-4a314c8ee749' },
+  { key: 'centific-4',  label: 'US - BEV+ LeapFrog - Centific 4',  url: 'https://lakitu.ring.amazon.dev/?session=3157be0a-2321-41e7-a925-76239a3a3d5c' },
+  { key: 'centific-5',  label: 'US - BEV+ LeapFrog - Centific 5',  url: 'https://lakitu.ring.amazon.dev/?session=f71b5b17-2298-467c-9198-3b4dd0fe0b05' },
+  { key: 'centific-6',  label: 'US - BEV+ LeapFrog - Centific 6',  url: 'https://lakitu.ring.amazon.dev/?session=f965116f-3cd9-4737-876d-98a3f28f73c3' },
+  { key: 'centific-7',  label: 'US - BEV+ LeapFrog - Centific 7',  url: 'https://lakitu.ring.amazon.dev/?session=e9a04818-53ea-4eb5-bd0f-95a7f2bb3d14' },
+  { key: 'centific-8',  label: 'US - BEV+ LeapFrog - Centific 8',  url: 'https://lakitu.ring.amazon.dev/?session=95911f83-8085-47a5-9692-2de1a8bc22b8' },
+  { key: 'centific-9',  label: 'US - BEV+ LeapFrog - Centific 9',  url: 'https://lakitu.ring.amazon.dev/?session=7c19ce77-ff46-4349-a76e-8a304f96ace4' },
+  { key: 'centific-10', label: 'US - BEV+ LeapFrog - Centific 10', url: 'https://lakitu.ring.amazon.dev/?session=10d98fd0-bf99-486b-9f0c-07ee7898d8e6' },
 ];
 
-// Lakitu PROJECT URLs (what admins assign) look different from the SESSION
-// URLs a moderator would otherwise paste (/p/<uuid>?session=<uuid>). Project
-// links are /project/<uuid>. Accept those as a valid pre-filled value so the
-// moderator gets a working clickable link without pasting anything.
+// Assigned Lakitu links may be a project page or a session query URL.
 const LAKITU_PROJECT_URL_RE = /^https:\/\/lakitu\.ring\.amazon\.dev\/project\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?&#].*)?$/i;
+const LAKITU_ASSIGNED_SESSION_URL_RE = /^https:\/\/lakitu\.ring\.amazon\.dev\/\?session=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[&#].*)?$/i;
 
 function isLakituProjectUrl(v) {
   const s = (v == null ? '' : String(v)).trim();
-  return LAKITU_PROJECT_URL_RE.test(s);
+  return LAKITU_PROJECT_URL_RE.test(s) || LAKITU_ASSIGNED_SESSION_URL_RE.test(s);
 }
 
 // Look up a project entry (label + url) by its stored key. Returns null
