@@ -11049,10 +11049,18 @@ async function loadParticipants(force = false) {
 }
 
 function renderParticipants() {
-  const extraFilters = document.getElementById('modviewExtraFilters');
-  if (extraFilters) {
-    extraFilters.hidden = true;
-    extraFilters.innerHTML = '';
+  // Only tear down Activities filters when Participants is actually the
+  // active subtab. loadParticipants() always calls renderParticipants() on
+  // completion (to refresh the count badge) — that used to wipe
+  // #modviewExtraFilters even while admin was on Activities, which made the
+  // Team / Moderator dropdowns vanish after an async race.
+  if (adminState.subtab === 'participants') {
+    const extraFilters = document.getElementById('modviewExtraFilters');
+    if (extraFilters) {
+      extraFilters.hidden = true;
+      extraFilters.innerHTML = '';
+      delete extraFilters.dataset.filterSig;
+    }
   }
   const partCountEl = document.getElementById('partCount');
   if (partCountEl) {
