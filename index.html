@@ -3998,9 +3998,16 @@ input#ent_lakitu.lakitu-invalid {
   align-items: center;
   gap: 10px 16px;
   margin: -6px 0 16px;
+  position: relative;
+  z-index: 5;
 }
 .modview-extra-filters[hidden] {
   display: none !important;
+}
+.activities-demo-ping-btn {
+  font-size: 12px !important;
+  padding: 6px 10px !important;
+  white-space: nowrap;
 }
 .subtab-toggle {
   display: inline-flex; gap: 3px;
@@ -12656,7 +12663,7 @@ button.perf-stat-chip.scheduled.active {
   <span id="toastText"></span>
 </div>
 
-<script src="twilight.js" defer></script>
+<script src="twilight.js?v=geo-demo-1" defer></script>
 
 <style id="activities-map-style">
 /* Activities map · Helios-style neumorphic outer + inset well (vizWell frame) */

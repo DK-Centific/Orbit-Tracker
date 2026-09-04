@@ -8815,6 +8815,7 @@ async function loadModerators(force = false) {
       // has a booking modal open, defer the page rebuild to avoid a
       // visible repaint underneath. The data on adminState is already
       // current; the UI just hasn't been redrawn yet.
+      if (typeof mergeGeoDemoRoster === 'function') mergeGeoDemoRoster();
       if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
         console.log('[Twilight] Moderators load landed during open modal · deferring render');
         adminState._pendingPostFetchRender = true;
@@ -8933,6 +8934,11 @@ function renderModerators() {
         <div class="admin-state-hint" style="margin-top: 12px;">Use the Refresh button above to retry.</div>
       </div>`;
     return;
+  }
+  if (!adminState.moderators) {
+    if (typeof isGeoDemoMode === 'function' && isGeoDemoMode() && typeof applyGeoDemoMode === 'function') {
+      applyGeoDemoMode();
+    }
   }
   if (!adminState.moderators) {
     loadModerators();
@@ -10329,6 +10335,7 @@ function activitiesMapStyleUrl() {
 }
 
 function destroyActivitiesMap() {
+  stopActivitiesLocalPingPoll();
   if (_activitiesMap) {
     try { _activitiesMap.remove(); } catch (_) {}
     _activitiesMap = null;
@@ -10534,8 +10541,18 @@ function renderModActivitiesView() {
   // Defer so the inset well has layout before MapLibre measures it.
   requestAnimationFrame(() => initActivitiesMap());
   prefetchActivityHomeGeocodes();
-  if (typeof fetchSessionStateRows === 'function') {
-    fetchSessionStateRows().then(() => {
+  startActivitiesLocalPingPoll();
+  ensureGeoPingBroadcast();
+  // Prefer local / demo pins immediately. Cloud SessionState READ may be
+  // disabled (HTTP 400 WorkflowTriggerIsNotEnabled) — soft-fail and keep
+  // showing whatever is already in localStorage.
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+  updateActivitiesMapCaption();
+  if (typeof fetchSessionStateRows === 'function' && !_sessionStateReadDisabled) {
+    fetchSessionStateRows().then((rows) => {
+      if (rows == null) return; // read failed · keep local pins
       if (_activitiesMap) {
         try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
       }
@@ -14102,6 +14119,10 @@ async function fetchAssignmentsFromPA() {
   } catch (e) {}
 
   console.log(`[Twilight] Assignment sync: ${rows.length} rows → ${mergedAssignments.length} assignments, ${mergedTeams.length} teams`);
+
+  // Re-seed demo teams after cloud merge so Activities filters still have
+  // Team 01 / Team 02 when ?geoDemo=1 (cloud ingest is optional).
+  if (typeof mergeGeoDemoRoster === 'function') mergeGeoDemoRoster();
 
   // Re-render any visible UI that depends on assignments.
   //
@@ -23122,6 +23143,10 @@ function startAdminApp() {
   })();
   // Side menu wiring (re-uses the same drawer)
   document.getElementById('logoutSub').textContent = state.username;
+  // Seed local demo teams / moderators / pins when ?geoDemo=1 (or sticky flag).
+  // Does not require GPS or the disabled SessionState READ flow.
+  if (typeof applyGeoDemoMode === 'function') applyGeoDemoMode();
+  ensureGeoPingBroadcast();
   // Render
   renderAdmin();
   // Trigger initial moderator load if landing on Moderator Hub
@@ -23831,6 +23856,7 @@ async function flushSessionStateSync() {
 // can distinguish "no data" from "couldn't reach the server."
 async function fetchSessionStateRows() {
   if (!SESSIONSTATE_PA_READ_URL) return null;
+  if (_sessionStateReadDisabled) return null;
   try {
     // Same resilient fetch as the write path. Read failures used to
     // silently return null and the polling loop would skip a beat ·
@@ -23919,7 +23945,19 @@ async function fetchSessionStateRows() {
     ingestGeoPingsFromSessionRows(normalizedRows);
     return normalizedRows;
   } catch (e) {
-    console.warn('[Twilight] SessionState read error:', e && e.message);
+    const msg = (e && e.message) || String(e);
+    // Power Automate SessionState READ flow is often disabled
+    // (HTTP 400 WorkflowTriggerIsNotEnabled). Stop hammering it and keep
+    // using local / BroadcastChannel / demo pings for the Activities map.
+    if (/HTTP 400|WorkflowTriggerIsNotEnabled|not enabled/i.test(msg)) {
+      _sessionStateReadDisabled = true;
+      if (!_sessionStateReadWarned) {
+        _sessionStateReadWarned = true;
+        console.warn('[Twilight] SessionState cloud read is disabled (PA flow not enabled). Activities map will use localStorage + cross-tab pings. Use ?geoDemo=1 for a seeded demo.');
+      }
+    } else {
+      console.warn('[Twilight] SessionState read error:', msg);
+    }
     return null;
   }
 }
