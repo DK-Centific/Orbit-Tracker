@@ -373,6 +373,11 @@ function defaultState() {
     // clicks "Arrived at participant" in the entry bar.
     arrivedAt: '',
     remindersShown: [],
+    officeCheckedInAt: '',
+    officeCheckedOutAt: '',
+    officeCheckinGeo: null,
+    officeCheckoutGeo: null,
+    arrivalGeo: null,
     // Change-detection key used by syncBookedParticipantName to decide
     // when to prefill the Participant Name field. Null on fresh state
     // means "no booking seen yet" · the first time the mod lands on
@@ -646,6 +651,11 @@ function migrateState(loaded) {
   // reminder loop. Empty string = not yet arrived (no reminders fire).
   // Reminders fire at arrivedAt + 1h, +2h, ... up to PROGRESS_REMINDER_MAX_HOUR.
   if (typeof loaded.arrivedAt !== 'string') loaded.arrivedAt = '';
+  if (typeof loaded.officeCheckedInAt !== 'string') loaded.officeCheckedInAt = '';
+  if (typeof loaded.officeCheckedOutAt !== 'string') loaded.officeCheckedOutAt = '';
+  if (!loaded.officeCheckinGeo || typeof loaded.officeCheckinGeo !== 'object') loaded.officeCheckinGeo = null;
+  if (!loaded.officeCheckoutGeo || typeof loaded.officeCheckoutGeo !== 'object') loaded.officeCheckoutGeo = null;
+  if (!loaded.arrivalGeo || typeof loaded.arrivalGeo !== 'object') loaded.arrivalGeo = null;
   // Hour-marks already acknowledged (array of integers 1, 2, 3, ...).
   // Stored as an array (not a Set) because state is JSON-serialized to
   // localStorage and Sets don't survive JSON.stringify. Idempotent
@@ -1092,12 +1102,34 @@ function renderWelcomeWorklogBannerHTML() {
   const displayStatus = (statusOrderIdx(teamStatus) > statusOrderIdx(myStatus)) ? teamStatus : myStatus;
   const arrivedIdx = statusOrderIdx('arrived');
   const myIdx = statusOrderIdx(myStatus);
+  const phase = (typeof getModeratorGeoPhase === 'function') ? getModeratorGeoPhase(asgn) : null;
+  const officeIn = (typeof hasOfficeCheckin === 'function') ? hasOfficeCheckin(asgn) : !!(state && state.officeCheckedInAt);
 
   const requiredEquipment = (typeof EQUIPMENT_LIST !== 'undefined') ? EQUIPMENT_LIST.filter(e => !e.optional) : [];
   const equipmentReady = requiredEquipment.length === 0 || requiredEquipment.every(e => state.equipment && state.equipment[e.id]);
+  const stationDots = (typeof WORKLOG_STATION_DOT_STATUSES !== 'undefined' && WORKLOG_STATION_DOT_STATUSES)
+    ? WORKLOG_STATION_DOT_STATUSES
+    : WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
-  // ---- Locked: session done ----
-  if (displayStatus === 'session_done') {
+  // ---- Session complete: prompt return-to-office OR show locked/checked-out ----
+  if (displayStatus === 'session_done' || displayStatus === 'office_checkout' ||
+      (statusOrderIdx(displayStatus) >= statusOrderIdx('session_done') && statusOrderIdx(displayStatus) >= 0)) {
+    if (phase === 'stations_complete') {
+      return `<div class="welcome-worklog-banner ready">
+        <div class="welcome-worklog-banner-icon">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
+            <path d="M8 14c3-3.5 5-6 5-8a5 5 0 0 0-10 0c0 2 2 4.5 5 8z" stroke="currentColor" stroke-width="1.6"/>
+            <circle cx="8" cy="6" r="1.7" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+        </div>
+        <div class="welcome-worklog-banner-text">
+          <div class="welcome-worklog-banner-title">Session done · return to the office</div>
+          <div class="welcome-worklog-banner-sub">Do not check out at the house. Go back to the Redmond office. When you are inside the office area, the app checks you out automatically.<span class="geo-hint">Office area is about ${GEOFENCE_HQ_RADIUS_M} m around the Redmond office.</span></div>
+        </div>
+        <button class="btn btn-secondary welcome-worklog-action" id="welcomeGeoCheckBtn">Check location</button>
+      </div>`;
+    }
+    const checkedOut = phase === 'office_checkout' || displayStatus === 'office_checkout';
     return `<div class="welcome-worklog-banner done">
       <div class="welcome-worklog-banner-icon">
         <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
@@ -1105,20 +1137,39 @@ function renderWelcomeWorklogBannerHTML() {
         </svg>
       </div>
       <div class="welcome-worklog-banner-text">
-        <div class="welcome-worklog-banner-title">Session locked</div>
-        <div class="welcome-worklog-banner-sub">This session is complete. Stations and equipment are now read-only.</div>
+        <div class="welcome-worklog-banner-title">${checkedOut ? 'Checked out for the day' : 'Session locked'}</div>
+        <div class="welcome-worklog-banner-sub">${checkedOut
+          ? 'Office check-out is complete. Stations and equipment are read-only.'
+          : 'This session is complete. Stations and equipment are now read-only.'}</div>
       </div>
     </div>`;
   }
 
-  // ---- Pre-arrival ----
+  // ---- Need office check-in first ----
+  if (phase === 'need_office_checkin' || (!officeIn && myIdx < arrivedIdx)) {
+    return `<div class="welcome-worklog-banner waiting">
+      <div class="welcome-worklog-banner-icon">
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
+          <path d="M3 13V5l5-3 5 3v8" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M6 13v-4h4v4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="welcome-worklog-banner-text">
+        <div class="welcome-worklog-banner-title">Check in at the Redmond office</div>
+        <div class="welcome-worklog-banner-sub">Open the app at the office. When you are inside the office area, the app checks you in automatically.<span class="geo-hint">Then pack equipment and travel to the assigned location. Applies to every moderator role.</span></div>
+      </div>
+      <button class="btn btn-secondary welcome-worklog-action" id="welcomeGeoCheckBtn">Check location</button>
+    </div>`;
+  }
+
+  // ---- Pre-arrival (en route) ----
   if (myIdx < arrivedIdx) {
     if (!equipmentReady) {
       return `<div class="welcome-worklog-banner waiting">
         <div class="welcome-worklog-banner-icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6 8l1.5 1.5L11 6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="welcome-worklog-banner-text">
           <div class="welcome-worklog-banner-title">Pack your equipment first</div>
-          <div class="welcome-worklog-banner-sub">Once all required items below are checked off, you can confirm your arrival.</div>
+          <div class="welcome-worklog-banner-sub">You are checked in at the office. Once all required items below are checked off, you can confirm your arrival.</div>
         </div>
       </div>`;
     }
@@ -1130,8 +1181,8 @@ function renderWelcomeWorklogBannerHTML() {
         </svg>
       </div>
       <div class="welcome-worklog-banner-text">
-        <div class="welcome-worklog-banner-title">Traveling to the assigned location</div>
-        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, please confirm your arrival.<span class="geo-hint">Location check applies to primary, backup, and every other moderator role (${GEOFENCE_HOME_RADIUS_M} m).</span></div>
+        <div class="welcome-worklog-banner-title">On the way to the assigned location</div>
+        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, confirm arrival. The app only accepts it inside the location area.<span class="geo-hint">Location check · ${GEOFENCE_HOME_RADIUS_M} m · every moderator role.</span></div>
       </div>
       <button class="btn btn-primary welcome-worklog-action" id="welcomeArrivalBtn">
         Confirm Arrival
@@ -1150,7 +1201,7 @@ function renderWelcomeWorklogBannerHTML() {
       </div>
       <div class="welcome-worklog-banner-text">
         <div class="welcome-worklog-banner-title">Ready to begin</div>
-        <div class="welcome-worklog-banner-sub">Please check in with the participant and complete rig setup before you start.</div>
+        <div class="welcome-worklog-banner-sub">Please check in with the participant and complete rig setup before you start. Check out only when you return to the office later.</div>
       </div>
       <button class="btn btn-primary welcome-worklog-action" id="welcomeStartBtn">
         Start with first station
@@ -1177,10 +1228,10 @@ function renderWelcomeWorklogBannerHTML() {
     </div>
     <div class="welcome-worklog-banner-text">
       <div class="welcome-worklog-banner-title">${escapeHTML(stageLabel)}</div>
-      <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar.</div>
+      <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar. When everything is done, return to the office to check out.</div>
     </div>
     <div class="welcome-worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
+      ${stationDots.slice(0, 6).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="welcome-worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
@@ -1220,6 +1271,14 @@ function bindWelcomeWorklogActions() {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
+    });
+  }
+  const geoCheckBtn = document.getElementById('welcomeGeoCheckBtn');
+  if (geoCheckBtn) {
+    geoCheckBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+      if (typeof toast === 'function') toast('Checking your location…');
     });
   }
   const startBtn = document.getElementById('welcomeStartBtn');
@@ -5868,6 +5927,8 @@ function perfLiveStatusDisplay(a) {
     return { key: 'completed', label: 'Completed' };
   }
   if (live && (typeof statusOrderIdx === 'function') && statusOrderIdx(live.status) >= 0) {
+    if (live.status === 'office_checkin') return { key: 'notified', label: 'Office check-in' };
+    if (live.status === 'office_checkout') return { key: 'completed', label: 'Office check-out' };
     if (live.status === 'arrived') return { key: 'checkin', label: 'Check-in' };
     const st = PERF_STATUS_STATION_SHORT[live.status];
     return { key: 'insession', label: st ? `In session · ${st}` : 'In session' };
@@ -8973,17 +9034,27 @@ function updateActivitiesTeamContext() {
 }
 
 /* =====================================================================
-   GEO FENCE · every moderator role
-   Primary, backup, and any other non-admin LoginRole must be inside
-   the participant-home fence to confirm arrival. The Activities map
-   draws the Redmond HQ fence and live pins for all of those roles.
+   GEO FENCE · full day flow for every moderator role
+   State machine:
+     office_checkin → en_route → arrived at assignment → stations complete
+     → office_checkout
+   Primary, backup, and any other non-admin LoginRole. Foreground GPS only.
+   Activities map draws HQ fence + assignment fence + role pins.
    ===================================================================== */
-const GEOFENCE_HOME_RADIUS_M = 200;
-const GEOFENCE_HQ_RADIUS_M = 400;
+const GEOFENCE_HOME_RADIUS_M = 200;   // participant / assignment (~150–200 m)
+const GEOFENCE_HQ_RADIUS_M = 150;     // Redmond office · indoor GPS tolerance
+const GEO_HQ_CENTER = { lng: -122.1370, lat: 47.6446 };
+const GEO_HQ_ADDRESS = '14980 NE 31st St Ste 100, Redmond, WA 98052';
 const GEOCODE_CACHE_KEY = 'centific_orbit_geocode_v1';
 const GEO_PINGS_KEY = 'centific_orbit_geo_pings_v1';
 const GEO_PING_STALE_MS = 15 * 60 * 1000;
+const GEO_FLOW_TICK_MS = 45000;
+const GEO_MOCK_LS_KEY = 'centific_orbit_mock_geo_v1';
 let _geoPingTimer = null;
+let _geoFlowBusy = false;
+let _geoPermissionDenied = false;
+let _geoLastToastKey = '';
+let _geoLastToastAt = 0;
 
 function isGeofencePreviewHost() {
   const h = (location && location.hostname) || '';
@@ -9116,8 +9187,102 @@ function recordGeoPing(ping) {
   saveGeoPings(map);
 }
 
+/* ---- Mock geolocation (localhost / QA) ---- */
+function parseMockGeoQuery() {
+  try {
+    const q = new URLSearchParams((location && location.search) || '');
+    const raw = (q.get('mockGeo') || q.get('geo') || '').trim().toLowerCase();
+    return raw || '';
+  } catch (_) { return ''; }
+}
+
+function resolveMockGeoPreset(preset) {
+  const key = String(preset || '').trim().toLowerCase();
+  if (!key || key === 'off' || key === 'none' || key === 'clear') return null;
+  if (key === 'hq' || key === 'office' || key === 'redmond') {
+    return { lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng, accuracy: 12, label: 'HQ', preset: 'hq' };
+  }
+  if (key === 'far' || key === 'away' || key === 'seattle') {
+    return { lat: 47.6062, lng: -122.3321, accuracy: 20, label: 'Far (Seattle)', preset: 'far' };
+  }
+  if (key === 'home' || key === 'assignment' || key === 'participant') {
+    // Prefer cached assignment geocode; fall back to a nearby Redmond residential pin.
+    try {
+      const asgn = (typeof getActiveOperatorAssignment === 'function')
+        ? getActiveOperatorAssignment()
+        : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+      const addr = assignmentFenceAddress(asgn);
+      if (addr) {
+        const cache = loadGeocodeCache();
+        const hit = cache[addr.toLowerCase()];
+        if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+          return { lat: hit.lat, lng: hit.lng, accuracy: 15, label: 'Assignment', preset: 'assignment' };
+        }
+      }
+    } catch (_) {}
+    return { lat: 47.6701, lng: -122.1209, accuracy: 15, label: 'Assignment (sample)', preset: 'assignment' };
+  }
+  const parts = key.split(',').map(s => s.trim());
+  if (parts.length === 2) {
+    const lat = Number(parts[0]);
+    const lng = Number(parts[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng, accuracy: 15, label: 'Custom', preset: 'custom' };
+    }
+  }
+  return null;
+}
+
+function getOrbitMockGeo() {
+  if (typeof window !== 'undefined' && window.__orbitMockGeo &&
+      Number.isFinite(window.__orbitMockGeo.lat) && Number.isFinite(window.__orbitMockGeo.lng)) {
+    return Object.assign({ accuracy: 15, label: 'Custom', preset: 'custom' }, window.__orbitMockGeo);
+  }
+  const fromQuery = resolveMockGeoPreset(parseMockGeoQuery());
+  if (fromQuery) return fromQuery;
+  if (!isGeofencePreviewHost()) return null;
+  try {
+    const raw = localStorage.getItem(GEO_MOCK_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) return parsed;
+  } catch (_) {}
+  return null;
+}
+
+function setOrbitMockGeo(presetOrCoords) {
+  if (presetOrCoords == null || presetOrCoords === '' || presetOrCoords === 'off') {
+    try { localStorage.removeItem(GEO_MOCK_LS_KEY); } catch (_) {}
+    try { delete window.__orbitMockGeo; } catch (_) {}
+    ensureGeoQaPanel();
+    if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+    return null;
+  }
+  const resolved = (typeof presetOrCoords === 'object' && presetOrCoords !== null)
+    ? Object.assign({ accuracy: 15, label: 'Custom', preset: 'custom' }, presetOrCoords)
+    : resolveMockGeoPreset(presetOrCoords);
+  if (!resolved) return setOrbitMockGeo(null);
+  try { window.__orbitMockGeo = resolved; } catch (_) {}
+  try { localStorage.setItem(GEO_MOCK_LS_KEY, JSON.stringify(resolved)); } catch (_) {}
+  ensureGeoQaPanel();
+  if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+  return resolved;
+}
+try { window.setOrbitMockGeo = setOrbitMockGeo; } catch (_) {}
+
 function readCurrentPosition() {
   return new Promise((resolve, reject) => {
+    const mock = getOrbitMockGeo();
+    if (mock) {
+      resolve({
+        lat: mock.lat,
+        lng: mock.lng,
+        accuracy: mock.accuracy != null ? mock.accuracy : 15,
+        mocked: true,
+        mockLabel: mock.label || mock.preset || 'mock',
+      });
+      return;
+    }
     if (!navigator.geolocation) {
       reject(Object.assign(new Error('Location is not available on this device.'), { code: 0 }));
       return;
@@ -9127,6 +9292,7 @@ function readCurrentPosition() {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy,
+        mocked: false,
       }),
       err => reject(err),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
@@ -9134,11 +9300,131 @@ function readCurrentPosition() {
   });
 }
 
+function formatGeoWorklogNote(kind, result) {
+  const role = fenceRoleLabel((result && result.role) || getOperatorFenceRole());
+  const parts = ['Geo', kind];
+  if (result) {
+    if (result.skipped) parts.push('skipped');
+    else if (result.inside != null) parts.push(result.inside ? 'inside' : 'outside');
+    if (result.meters != null && Number.isFinite(result.meters)) parts.push(result.meters + 'm');
+    if (result.pos && Number.isFinite(result.pos.lat) && Number.isFinite(result.pos.lng)) {
+      parts.push('lat=' + Number(result.pos.lat).toFixed(5));
+      parts.push('lng=' + Number(result.pos.lng).toFixed(5));
+    }
+    if (result.mocked) parts.push('preview');
+  }
+  parts.push(role);
+  return parts.join(' · ');
+}
+
+function geoToastOnce(key, message, cooldownMs) {
+  const now = Date.now();
+  const cool = cooldownMs != null ? cooldownMs : 20000;
+  if (_geoLastToastKey === key && (now - _geoLastToastAt) < cool) return;
+  _geoLastToastKey = key;
+  _geoLastToastAt = now;
+  if (typeof toast === 'function') toast(message);
+}
+
+function activeOperatorAssignmentForGeo() {
+  if (typeof getActiveOperatorAssignment === 'function') return getActiveOperatorAssignment();
+  if (typeof getOperatorAssignment === 'function') return getOperatorAssignment();
+  return null;
+}
+
+function worklogHasStatus(asgnId, status) {
+  if (!asgnId || !state.modProfile || !state.modProfile.orbitLoginId) return false;
+  const myId = String(state.modProfile.orbitLoginId).toLowerCase();
+  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  return (cache || []).some(r =>
+    r.assignmentId === asgnId &&
+    r.status === status &&
+    String(r.orbitLoginId || '').toLowerCase() === myId
+  );
+}
+
+function hasOfficeCheckin(asgn) {
+  if (state && state.officeCheckedInAt) return true;
+  return !!(asgn && worklogHasStatus(asgn.id, 'office_checkin'));
+}
+
+function hasOfficeCheckout(asgn) {
+  if (state && state.officeCheckedOutAt) return true;
+  return !!(asgn && worklogHasStatus(asgn.id, 'office_checkout'));
+}
+
+function hasAssignmentArrival(asgn) {
+  if (state && state.arrivedAt) return true;
+  return !!(asgn && (
+    worklogHasStatus(asgn.id, 'arrived') ||
+    (typeof statusOrderIdx === 'function' && (() => {
+      const my = (typeof getMyLatestStatusForAssignment === 'function')
+        ? getMyLatestStatusForAssignment(asgn.id) : null;
+      return my && statusOrderIdx(my.status) >= statusOrderIdx('arrived');
+    })())
+  ));
+}
+
+function isSessionCompleteForGeo(asgn) {
+  if (state && state.sessionCompletedAt) return true;
+  if (!asgn) return false;
+  if (asgn.status === 'Completed') return true;
+  const my = (typeof getMyLatestStatusForAssignment === 'function')
+    ? getMyLatestStatusForAssignment(asgn.id) : null;
+  if (my && (my.status === 'session_done' || my.status === 'office_checkout')) return true;
+  if (typeof statusOrderIdx === 'function' && my &&
+      statusOrderIdx(my.status) >= statusOrderIdx('session_done')) return true;
+  return false;
+}
+
+/** Plain-language phase for banners / QA. */
+function getModeratorGeoPhase(asgn) {
+  asgn = asgn || activeOperatorAssignmentForGeo();
+  if (hasOfficeCheckout(asgn)) return 'office_checkout';
+  if (isSessionCompleteForGeo(asgn)) return 'stations_complete';
+  if (hasAssignmentArrival(asgn)) return 'arrived';
+  if (hasOfficeCheckin(asgn)) return 'en_route';
+  return 'need_office_checkin';
+}
+
+function geoPhaseBannerCopy(phase) {
+  switch (phase) {
+    case 'need_office_checkin':
+      return {
+        title: 'Check in at the Redmond office',
+        sub: 'Open the app at the office. When you are inside the office area, the app checks you in automatically.',
+      };
+    case 'en_route':
+      return {
+        title: 'Checked in at the office · on the way',
+        sub: 'Travel to the assigned address. Confirm arrival only when you are there — the app checks your location.',
+      };
+    case 'arrived':
+      return {
+        title: 'Arrived at the assignment',
+        sub: 'Finish every station in the app. Do not check out at the house — come back to the office when you are done.',
+      };
+    case 'stations_complete':
+      return {
+        title: 'Session done · return to the office',
+        sub: 'Head back to the Redmond office. When you are inside the office area, the app checks you out automatically.',
+      };
+    case 'office_checkout':
+      return {
+        title: 'Checked out for the day',
+        sub: 'Office check-out is complete. Thanks — you are done with location steps for this session.',
+      };
+    default:
+      return { title: 'Location steps', sub: '' };
+  }
+}
+
 async function pingModeratorLocation() {
   if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
   if (state.isAdmin || isAdminUsername(state.username)) return;
   try {
     const pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
     recordGeoPing({
       orbitLoginId: state.modProfile.orbitLoginId,
       name: state.modProfile.name || state.username,
@@ -9146,21 +9432,190 @@ async function pingModeratorLocation() {
       lat: pos.lat,
       lng: pos.lng,
       accuracy: pos.accuracy,
+      mocked: !!pos.mocked,
     });
-  } catch (_) { /* permission denied · arrival click will explain */ }
+    if (_activitiesMap) {
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    }
+  } catch (err) {
+    if (err && err.code === 1) _geoPermissionDenied = true;
+  }
 }
 
-function startModeratorGeofence() {
-  if (state.isAdmin || isAdminUsername(state.username)) return;
-  pingModeratorLocation();
-  if (_geoPingTimer) return;
-  _geoPingTimer = setInterval(pingModeratorLocation, 60000);
+function buildFenceCheckResult(kind, role, pos, dest, radiusM, extra) {
+  const meters = (pos && dest)
+    ? Math.round(haversineMeters(pos.lat, pos.lng, dest.lat, dest.lng))
+    : null;
+  const inside = meters != null ? meters <= radiusM : false;
+  return Object.assign({
+    kind,
+    role,
+    pos,
+    dest,
+    meters,
+    inside,
+    radiusM,
+    mocked: !!(pos && pos.mocked),
+    ok: inside,
+    reason: inside ? 'inside' : 'outside',
+  }, extra || {});
 }
 
-function stopModeratorGeofence() {
-  if (_geoPingTimer) {
-    clearInterval(_geoPingTimer);
-    _geoPingTimer = null;
+async function checkHqGeofence() {
+  const role = getOperatorFenceRole();
+  let pos;
+  try {
+    pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
+  } catch (err) {
+    const denied = err && (err.code === 1);
+    if (denied) _geoPermissionDenied = true;
+    return {
+      ok: false,
+      role,
+      reason: denied ? 'denied' : 'unavailable',
+      error: err,
+      kind: 'hq',
+    };
+  }
+  const dest = { lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng };
+  const result = buildFenceCheckResult('hq', role, pos, dest, GEOFENCE_HQ_RADIUS_M, {
+    address: GEO_HQ_ADDRESS,
+  });
+  recordGeoPing({
+    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
+    name: (state.modProfile && state.modProfile.name) || state.username,
+    role,
+    lat: pos.lat,
+    lng: pos.lng,
+    accuracy: pos.accuracy,
+    inside: result.inside,
+    meters: result.meters,
+    fence: 'hq',
+    mocked: !!pos.mocked,
+  });
+  return result;
+}
+
+async function checkParticipantGeofence(asgn) {
+  const role = getOperatorFenceRole();
+  const address = assignmentFenceAddress(asgn);
+  if (!address) {
+    return { ok: true, skipped: true, role, reason: 'no-address', kind: 'home', inside: true };
+  }
+  let pos;
+  try {
+    pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
+  } catch (err) {
+    const denied = err && (err.code === 1);
+    if (denied) _geoPermissionDenied = true;
+    return {
+      ok: false,
+      role,
+      reason: denied ? 'denied' : 'unavailable',
+      error: err,
+      kind: 'home',
+    };
+  }
+  const dest = await geocodeAddress(address);
+  if (!dest) {
+    return { ok: false, role, reason: 'geocode', pos, kind: 'home', address };
+  }
+  const result = buildFenceCheckResult('home', role, pos, dest, GEOFENCE_HOME_RADIUS_M, { address });
+  recordGeoPing({
+    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
+    name: (state.modProfile && state.modProfile.name) || state.username,
+    role,
+    lat: pos.lat,
+    lng: pos.lng,
+    accuracy: pos.accuracy,
+    assignmentId: asgn && asgn.id,
+    inside: result.inside,
+    meters: result.meters,
+    fence: 'home',
+    mocked: !!pos.mocked,
+  });
+  return result;
+}
+
+function applyOfficeCheckin(asgn, result) {
+  const note = formatGeoWorklogNote('office_checkin', result);
+  state.officeCheckedInAt = new Date().toISOString();
+  if (!state.officeCheckinGeo) state.officeCheckinGeo = {};
+  state.officeCheckinGeo = {
+    at: state.officeCheckedInAt,
+    lat: result && result.pos && result.pos.lat,
+    lng: result && result.pos && result.pos.lng,
+    meters: result && result.meters,
+    inside: !!(result && result.inside),
+    role: (result && result.role) || getOperatorFenceRole(),
+  };
+  saveState();
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'office_checkin', { notes: note });
+  }
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  geoToastOnce('office_checkin', 'Checked in at the Redmond office');
+  refreshGeoFlowUi();
+}
+
+function applyOfficeCheckout(asgn, result) {
+  const note = formatGeoWorklogNote('office_checkout', result);
+  state.officeCheckedOutAt = new Date().toISOString();
+  state.officeCheckoutGeo = {
+    at: state.officeCheckedOutAt,
+    lat: result && result.pos && result.pos.lat,
+    lng: result && result.pos && result.pos.lng,
+    meters: result && result.meters,
+    inside: !!(result && result.inside),
+    role: (result && result.role) || getOperatorFenceRole(),
+  };
+  saveState();
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'office_checkout', { notes: note });
+  }
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  geoToastOnce('office_checkout', 'Checked out at the Redmond office');
+  refreshGeoFlowUi();
+}
+
+function applyOperatorArrival(asgn, geoNote, result) {
+  const note = geoNote || formatGeoWorklogNote('arrival', result || { role: getOperatorFenceRole(), inside: true });
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'arrived', { notes: note });
+  }
+  state.arrivedAt = new Date().toISOString();
+  if (result && result.pos) {
+    state.arrivalGeo = {
+      at: state.arrivedAt,
+      lat: result.pos.lat,
+      lng: result.pos.lng,
+      meters: result.meters,
+      inside: result.inside != null ? !!result.inside : true,
+      role: result.role || getOperatorFenceRole(),
+    };
+  }
+  state.remindersShown = [];
+  saveState();
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  if (typeof schedulePerHourReminder === 'function') schedulePerHourReminder();
+  refreshGeoFlowUi();
+}
+
+function refreshGeoFlowUi() {
+  ensureGeoStatusBanner();
+  ensureGeoQaPanel();
+  try {
+    if (typeof renderMySessionSection === 'function') renderMySessionSection();
+  } catch (_) {}
+  try {
+    if (currentStationKey === null && typeof renderWelcome === 'function') renderWelcome();
+    else if (typeof renderApp === 'function') renderApp();
+    else if (typeof render === 'function') render();
+  } catch (_) {}
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
   }
 }
 
@@ -9199,88 +9654,21 @@ function showGeoFenceModal(opts) {
   }
 }
 
-async function checkParticipantGeofence(asgn) {
-  const role = getOperatorFenceRole();
-  const address = assignmentFenceAddress(asgn);
-  if (!address) {
-    return { ok: true, skipped: true, role, reason: 'no-address' };
-  }
-  let pos;
-  try {
-    pos = await readCurrentPosition();
-  } catch (err) {
-    const denied = err && (err.code === 1);
-    return {
-      ok: false,
-      role,
-      reason: denied ? 'denied' : 'unavailable',
-      error: err,
-    };
-  }
-  const dest = await geocodeAddress(address);
-  if (!dest) {
-    return { ok: false, role, reason: 'geocode', pos };
-  }
-  const meters = haversineMeters(pos.lat, pos.lng, dest.lat, dest.lng);
-  recordGeoPing({
-    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
-    name: (state.modProfile && state.modProfile.name) || state.username,
-    role,
-    lat: pos.lat,
-    lng: pos.lng,
-    accuracy: pos.accuracy,
-    assignmentId: asgn && asgn.id,
-    inside: meters <= GEOFENCE_HOME_RADIUS_M,
-    meters: Math.round(meters),
-  });
-  return {
-    ok: meters <= GEOFENCE_HOME_RADIUS_M,
-    role,
-    meters: Math.round(meters),
-    pos,
-    dest,
-    address,
-    reason: meters <= GEOFENCE_HOME_RADIUS_M ? 'inside' : 'outside',
-  };
-}
-
-function applyOperatorArrival(asgn, geoNote) {
-  if (asgn && typeof pushWorklogStatus === 'function') {
-    pushWorklogStatus(asgn, 'arrived', { notes: geoNote || '' });
-  }
-  state.arrivedAt = new Date().toISOString();
-  state.remindersShown = [];
-  saveState();
-  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
-  if (typeof schedulePerHourReminder === 'function') schedulePerHourReminder();
-  if (typeof renderApp === 'function') renderApp();
-  else if (typeof render === 'function') render();
-}
-
-async function confirmOperatorArrival() {
-  const asgn = (typeof getActiveOperatorAssignment === 'function')
-    ? getActiveOperatorAssignment()
-    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
-  const role = getOperatorFenceRole();
-  const result = await checkParticipantGeofence(asgn);
-  if (result.ok) {
-    const note = result.skipped
-      ? `Geo fence skipped · no address · ${fenceRoleLabel(role)}`
-      : `Geo fence · inside ${result.meters} m · ${fenceRoleLabel(role)}`;
-    applyOperatorArrival(asgn, note);
-    toast('Arrival confirmed');
-    return;
-  }
-  const retry = () => confirmOperatorArrival();
+function showArrivalFenceFailure(result, asgn, retryFn) {
+  const role = (result && result.role) || getOperatorFenceRole();
+  const retry = retryFn || (() => confirmOperatorArrival());
   const previewArrive = () => {
-    applyOperatorArrival(asgn, `Geo fence · preview confirm · ${fenceRoleLabel(role)}`);
-    toast('Arrival confirmed (preview)');
+    applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', {
+      role, inside: true, meters: 0, mocked: true, skipped: false,
+      pos: result && result.pos,
+    }), Object.assign({}, result, { inside: true, meters: 0, mocked: true }));
+    geoToastOnce('arrival_preview', 'Arrival confirmed (preview)');
   };
   if (result.reason === 'denied') {
     showGeoFenceModal({
       role,
       title: 'Turn on location',
-      body: 'This check is required for every moderator role. Allow location access, then try again.',
+      body: 'Location is required for every moderator role — office check-in, arrival, and office check-out. Allow location access, then try again.',
       retry: true,
       onRetry: retry,
       preview: isGeofencePreviewHost(),
@@ -9316,7 +9704,7 @@ async function confirmOperatorArrival() {
   showGeoFenceModal({
     role,
     title: 'You are not at the location yet',
-    body: `You are about ${meters} meters away. The check covers a ${GEOFENCE_HOME_RADIUS_M} meter circle around the participant home, for primary, backup, and every other moderator role.`,
+    body: `You are about ${meters} meters away. Arrival only works inside a ${GEOFENCE_HOME_RADIUS_M} meter circle around the participant home (primary, backup, and every other moderator role).`,
     retry: true,
     onRetry: retry,
     preview: isGeofencePreviewHost(),
@@ -9325,9 +9713,202 @@ async function confirmOperatorArrival() {
   });
 }
 
+async function confirmOperatorArrival() {
+  const asgn = activeOperatorAssignmentForGeo();
+  if (!hasOfficeCheckin(asgn) && !(isGeofencePreviewHost() && getOrbitMockGeo())) {
+    // Soft gate: still allow preview hosts; otherwise ask them to check in at HQ first.
+    // Auto flow may still catch HQ if they are there.
+    geoToastOnce('need_hq_first', 'Check in at the Redmond office first, then travel to the assignment.');
+  }
+  const role = getOperatorFenceRole();
+  const result = await checkParticipantGeofence(asgn);
+  if (result.ok) {
+    applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', result), result);
+    geoToastOnce('arrival_ok', 'Arrival confirmed');
+    return true;
+  }
+  showArrivalFenceFailure(result, asgn, () => confirmOperatorArrival());
+  return false;
+}
+
+/**
+ * Foreground auto state machine. Safe to call often; gated by _geoFlowBusy.
+ * Does NOT check out at the participant house — checkout only at HQ after
+ * the session is complete.
+ */
+async function tickModeratorGeoFlow(opts) {
+  opts = opts || {};
+  if (_geoFlowBusy && !opts.force) return;
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+  _geoFlowBusy = true;
+  try {
+    const asgn = activeOperatorAssignmentForGeo();
+    const phase = getModeratorGeoPhase(asgn);
+    ensureGeoStatusBanner();
+    ensureGeoQaPanel();
+
+    // 1) Office check-in
+    if (!hasOfficeCheckin(asgn)) {
+      const hq = await checkHqGeofence();
+      if (hq.reason === 'denied') {
+        ensureGeoStatusBanner();
+        return;
+      }
+      if (hq.ok) {
+        applyOfficeCheckin(asgn, hq);
+      }
+      return;
+    }
+
+    // 2) Auto-confirm arrival when already inside the assignment fence
+    if (asgn && !hasAssignmentArrival(asgn) && !isSessionCompleteForGeo(asgn)) {
+      const home = await checkParticipantGeofence(asgn);
+      if (home.ok && !home.skipped) {
+        applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', home), home);
+        geoToastOnce('arrival_auto', 'Arrival confirmed — you are at the assignment');
+      }
+      return;
+    }
+
+    // 3) Stations complete → only check out at HQ (never at the house)
+    if (isSessionCompleteForGeo(asgn) && !hasOfficeCheckout(asgn)) {
+      const hq = await checkHqGeofence();
+      if (hq.ok) {
+        applyOfficeCheckout(asgn, hq);
+      } else if (hq.reason !== 'denied' && hq.reason !== 'unavailable') {
+        // Still at house / en route back — quiet banner only
+        ensureGeoStatusBanner();
+      }
+      return;
+    }
+
+    // Keep map pins fresh even when no transition fires
+    await pingModeratorLocation();
+  } catch (err) {
+    console.warn('[Twilight] geo flow tick failed', err);
+  } finally {
+    _geoFlowBusy = false;
+    ensureGeoStatusBanner();
+  }
+}
+
+function startModeratorGeofence() {
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  ensureGeoStatusBanner();
+  ensureGeoQaPanel();
+  tickModeratorGeoFlow({ force: true });
+  pingModeratorLocation();
+  if (_geoPingTimer) return;
+  _geoPingTimer = setInterval(() => {
+    tickModeratorGeoFlow();
+  }, GEO_FLOW_TICK_MS);
+  document.addEventListener('visibilitychange', onGeoVisibilityChange);
+}
+
+function onGeoVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    tickModeratorGeoFlow({ force: true });
+  }
+}
+
+function stopModeratorGeofence() {
+  if (_geoPingTimer) {
+    clearInterval(_geoPingTimer);
+    _geoPingTimer = null;
+  }
+  try { document.removeEventListener('visibilitychange', onGeoVisibilityChange); } catch (_) {}
+  const banner = document.getElementById('geoStatusBanner');
+  if (banner) banner.remove();
+  const qa = document.getElementById('geoQaPanel');
+  if (qa) qa.remove();
+  closeGeoFenceModal();
+}
+
+function ensureGeoStatusBanner() {
+  if (!state || !state.modProfile || state.isAdmin || isAdminUsername(state.username)) {
+    const stale = document.getElementById('geoStatusBanner');
+    if (stale) stale.remove();
+    return;
+  }
+  let el = document.getElementById('geoStatusBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'geoStatusBanner';
+    el.className = 'geo-status-banner';
+    document.body.appendChild(el);
+  }
+  const asgn = activeOperatorAssignmentForGeo();
+  const phase = getModeratorGeoPhase(asgn);
+  const copy = geoPhaseBannerCopy(phase);
+  const mock = getOrbitMockGeo();
+  let extra = '';
+  if (_geoPermissionDenied && !mock) {
+    extra = '<div class="geo-status-banner-extra">Location is off. Turn it on in your browser settings so the app can check you in and out.</div>';
+  } else if (mock) {
+    extra = `<div class="geo-status-banner-extra">Preview location: ${escapeHTML(mock.label || mock.preset || 'mock')}</div>`;
+  }
+  el.dataset.phase = phase;
+  el.innerHTML = `
+    <div class="geo-status-banner-inner">
+      <div class="geo-status-banner-text">
+        <div class="geo-status-banner-title">${escapeHTML(copy.title)}</div>
+        <div class="geo-status-banner-sub">${escapeHTML(copy.sub)}</div>
+        ${extra}
+      </div>
+      <button type="button" class="btn btn-ghost geo-status-refresh" id="geoStatusRefreshBtn">Check location</button>
+    </div>`;
+  const btn = document.getElementById('geoStatusRefreshBtn');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      tickModeratorGeoFlow({ force: true });
+      geoToastOnce('manual_check', 'Checking your location…', 4000);
+    });
+  }
+}
+
+function ensureGeoQaPanel() {
+  if (!isGeofencePreviewHost()) {
+    const stale = document.getElementById('geoQaPanel');
+    if (stale) stale.remove();
+    return;
+  }
+  if (!state || !state.modProfile || state.isAdmin || isAdminUsername(state.username)) {
+    const stale = document.getElementById('geoQaPanel');
+    if (stale) stale.remove();
+    return;
+  }
+  let el = document.getElementById('geoQaPanel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'geoQaPanel';
+    el.className = 'geo-qa-panel';
+    document.body.appendChild(el);
+  }
+  const mock = getOrbitMockGeo();
+  el.innerHTML = `
+    <div class="geo-qa-title">Location preview (QA)</div>
+    <div class="geo-qa-actions">
+      <button type="button" data-geo="hq" class="btn btn-secondary">At office</button>
+      <button type="button" data-geo="assignment" class="btn btn-secondary">At assignment</button>
+      <button type="button" data-geo="far" class="btn btn-secondary">Far away</button>
+      <button type="button" data-geo="off" class="btn btn-ghost">Clear</button>
+    </div>
+    <div class="geo-qa-current">${mock ? ('Using: ' + escapeHTML(mock.label || mock.preset)) : 'Using real GPS'}</div>`;
+  el.querySelectorAll('[data-geo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.getAttribute('data-geo');
+      setOrbitMockGeo(v === 'off' ? null : v);
+      geoToastOnce('mock_' + v, v === 'off' ? 'Using real GPS' : ('Preview: ' + v), 3000);
+    });
+  });
+}
+
 function activitiesFenceFeatures() {
   const features = [
-    Object.assign(geofenceCirclePolygon(ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
+    Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
       properties: { kind: 'hq' },
     }),
   ];
@@ -9380,13 +9961,30 @@ function placeActivitiesGeofence(map) {
       id: 'twilight-geofence-fill',
       type: 'fill',
       source: 'twilight-geofence',
-      paint: { 'fill-color': '#00F0FF', 'fill-opacity': 0.10 },
+      paint: {
+        'fill-color': [
+          'match', ['get', 'kind'],
+          'hq', '#C68A00',
+          'home', '#00F0FF',
+          '#00F0FF'
+        ],
+        'fill-opacity': 0.12,
+      },
     });
     map.addLayer({
       id: 'twilight-geofence-line',
       type: 'line',
       source: 'twilight-geofence',
-      paint: { 'line-color': '#00F0FF', 'line-width': 2, 'line-opacity': 0.7 },
+      paint: {
+        'line-color': [
+          'match', ['get', 'kind'],
+          'hq', '#C68A00',
+          'home', '#00F0FF',
+          '#00F0FF'
+        ],
+        'line-width': 2,
+        'line-opacity': 0.75,
+      },
     });
   }
   document.querySelectorAll('.geo-mod-marker').forEach(el => {
@@ -9427,10 +10025,10 @@ function placeActivitiesGeofence(map) {
 }
 
 /* ----------- Activities (live map) ----------- */
-// Redmond HQ · 14980 NE 31st St Ste 100, Redmond, WA 98052
-const ACTIVITIES_MAP_CENTER = { lng: -122.1370, lat: 47.6446 };
+// Redmond HQ · shared with GEO_HQ_* (office geofence)
+const ACTIVITIES_MAP_CENTER = GEO_HQ_CENTER;
 const ACTIVITIES_MAP_ZOOM = 15;
-const ACTIVITIES_MAP_ADDRESS = '14980 NE 31st St Ste 100, Redmond, WA 98052';
+const ACTIVITIES_MAP_ADDRESS = GEO_HQ_ADDRESS;
 const ACTIVITIES_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/positron';
 const ACTIVITIES_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 // Liberty kept as a light-theme alternate if positron is unavailable.
@@ -22766,6 +23364,8 @@ function extractSyncableState(s) {
     // state · cross-pollinating it would mean Alice's "I saw the
     // 1h reminder" stops Bob from seeing his own reminder.
     arrivedAt:          s.arrivedAt          || '',
+    officeCheckedInAt:  s.officeCheckedInAt  || '',
+    officeCheckedOutAt: s.officeCheckedOutAt || '',
     // Workflow / calibration guide acknowledgment. Object or null.
     // Synced so teammates can see "yes, the lead has acknowledged
     // the guide" without re-prompting, AND so admin pulling the
@@ -23291,6 +23891,16 @@ function mergeTeammateState(syncableState) {
       state.remindersShown = [];
     }
   }
+  if (syncableState.officeCheckedInAt) {
+    const incoming = String(syncableState.officeCheckedInAt);
+    const current  = String(state.officeCheckedInAt || '');
+    if (!current || incoming < current) state.officeCheckedInAt = incoming;
+  }
+  if (syncableState.officeCheckedOutAt) {
+    const incoming = String(syncableState.officeCheckedOutAt);
+    const current  = String(state.officeCheckedOutAt || '');
+    if (!current || incoming > current) state.officeCheckedOutAt = incoming;
+  }
   if (syncableState.equipment)          state.equipment          = { ...state.equipment, ...syncableState.equipment };
   if (syncableState.stations) {
     // Deep merge stations · for each station, overlay scenarios + cameras.
@@ -23358,6 +23968,8 @@ function applySelfSyncReplace(s) {
     : {};
   state.sessionCompletedAt = s.sessionCompletedAt || null;
   state.arrivedAt          = s.arrivedAt          || '';
+  state.officeCheckedInAt  = s.officeCheckedInAt  || '';
+  state.officeCheckedOutAt = s.officeCheckedOutAt || '';
   state.calGuideAck        = s.calGuideAck         || null;
   // Personal per-device reminder tracking is re-derived from the
   // adopted arrival anchor (same rationale as mergeTeammateState).
@@ -23402,14 +24014,15 @@ window.addEventListener('beforeunload', () => {
 });
 
 const WORKLOG_STATUS_LABELS = {
+  office_checkin:          'Office check-in',
   arrived:                 'Check-in',
   // Workflow guide acknowledgment · fires once per session when the mod
   // clicks the "I acknowledge..." button in the cal-guide modal at
   // Station 0a. Deliberately NOT added to WORKLOG_STATUS_ORDER below
   // since it's a one-shot meta event, not a progression milestone.
-  // Including it in the ORDER array would break the slice(1, 7) calls
-  // that render station-progress dots (would offset all stations by
-  // one). Label-only is enough for buildWorklogRow's statusLabel field.
+  // Including it in the ORDER array would break station-progress dots
+  // (use WORKLOG_STATION_DOT_STATUSES instead of raw slice). Label-only
+  // is enough for buildWorklogRow's statusLabel field.
   cal_guide_acknowledged:  'Workflow guide acknowledged',
   station_0a_done:         'In session',
   station_0b_done:         'In session',
@@ -23419,14 +24032,21 @@ const WORKLOG_STATUS_LABELS = {
   station_3_done:          'In session',
   station_4_done:          'In session',
   session_done:            'Completed',
+  office_checkout:         'Office check-out',
 };
 
-// Ordering for "what is the latest status" calculations
+// Ordering for "what is the latest status" calculations.
+// Full day geo flow: office_checkin → arrived → stations → session_done → office_checkout.
 const WORKLOG_STATUS_ORDER = [
+  'office_checkin',
   'arrived', 'station_0a_done', 'station_0b_done', 'station_0c_done',
   'station_1_done', 'station_2_done', 'station_3_done', 'station_4_done',
   'session_done',
+  'office_checkout',
 ];
+
+// Station progress dots only (excludes office geo + arrived + session_done).
+const WORKLOG_STATION_DOT_STATUSES = WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
 // Maps a station's internal key to its Worklog status code
 const STATION_KEY_TO_STATUS = {
@@ -23669,6 +24289,8 @@ function deriveLatestStatusFromSessionState(asgnId) {
   let sessionCompletedAt = null;
   const stationCompletedAt = {};
   let arrivedAt = null;
+  let officeCheckedInAt = null;
+  let officeCheckedOutAt = null;
   let attributionRow = null;  // the row we'll borrow timestamp + orbitLoginId from
   for (const r of matching) {
     let parsed;
@@ -23676,6 +24298,14 @@ function deriveLatestStatusFromSessionState(asgnId) {
     catch (_) { continue; }
     if (parsed.sessionCompletedAt && !sessionCompletedAt) {
       sessionCompletedAt = parsed.sessionCompletedAt;
+      if (!attributionRow) attributionRow = r;
+    }
+    if (parsed.officeCheckedOutAt && !officeCheckedOutAt) {
+      officeCheckedOutAt = parsed.officeCheckedOutAt;
+      if (!attributionRow) attributionRow = r;
+    }
+    if (parsed.officeCheckedInAt && !officeCheckedInAt) {
+      officeCheckedInAt = parsed.officeCheckedInAt;
       if (!attributionRow) attributionRow = r;
     }
     if (parsed.stationCompletedAt) {
@@ -23721,6 +24351,7 @@ function deriveLatestStatusFromSessionState(asgnId) {
 
   // Priority walk. First match wins.
   const checks = [
+    { has: officeCheckedOutAt,                        status: 'office_checkout', at: officeCheckedOutAt },
     { has: sessionCompletedAt,                        status: 'session_done',    at: sessionCompletedAt },
     { has: stationCompletedAt['Station4'],            status: 'station_4_done',  at: stationCompletedAt['Station4'] },
     { has: stationCompletedAt['Station3'],            status: 'station_3_done',  at: stationCompletedAt['Station3'] },
@@ -23730,6 +24361,7 @@ function deriveLatestStatusFromSessionState(asgnId) {
     { has: stationCompletedAt['Station0b'],           status: 'station_0b_done', at: stationCompletedAt['Station0b'] },
     { has: stationCompletedAt['Station0a'],           status: 'station_0a_done', at: stationCompletedAt['Station0a'] },
     { has: arrivedAt,                                 status: 'arrived',         at: arrivedAt },
+    { has: officeCheckedInAt,                         status: 'office_checkin',  at: officeCheckedInAt },
   ];
   for (const c of checks) {
     if (c.has) {
@@ -23792,7 +24424,10 @@ function isSessionLocked(asgn) {
   }
   if (!asgn) return false;
   const my = (typeof getMyLatestStatusForAssignment === 'function') ? getMyLatestStatusForAssignment(asgn.id) : null;
-  return !!(my && my.status === 'session_done');
+  if (!my) return false;
+  if (my.status === 'session_done' || my.status === 'office_checkout') return true;
+  return (typeof statusOrderIdx === 'function') &&
+    statusOrderIdx(my.status) >= statusOrderIdx('session_done');
 }
 
 function getAllWorklogRowsForAssignment(asgnId) {
@@ -25531,7 +26166,8 @@ function renderMySessionSection() {
 
   const isArrived   = statusOrderIdx(displayStatus) >= statusOrderIdx('arrived');
   const isInSession = statusOrderIdx(displayStatus) >= statusOrderIdx('station_0a_done') && statusOrderIdx(displayStatus) < statusOrderIdx('session_done');
-  const isComplete  = displayStatus === 'session_done';
+  const isComplete  = displayStatus === 'session_done' || displayStatus === 'office_checkout' ||
+    statusOrderIdx(displayStatus) >= statusOrderIdx('session_done');
 
   // Equipment check · Confirm Arrival is only available once equipment is packed
   const requiredEquipment = (typeof EQUIPMENT_LIST !== 'undefined') ? EQUIPMENT_LIST.filter(e => !e.optional) : [];
@@ -25622,7 +26258,16 @@ function renderMySessionSection() {
   if (arrivalBtn) {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      pushWorklogStatus(asgn, 'arrived');
+      if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
+      else pushWorklogStatus(asgn, 'arrived');
+    });
+  }
+  const geoCheckBtn = el.querySelector('.worklog-btn-geo-check');
+  if (geoCheckBtn) {
+    geoCheckBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+      if (typeof toast === 'function') toast('Checking your location…');
     });
   }
   const startBtn = el.querySelector('.worklog-btn-start');
@@ -25672,14 +26317,17 @@ function renderMySessionSection() {
 function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, isCancelled, equipmentReady) {
   if (isCancelled) return '';
 
-  const todayStr = getPSTDateString();  // PST team-reference day (matches login welcome + My Session)
-  const isToday = asgn.date === todayStr;
+  const todayStr = getPSTDateString();
   const isFuture = asgn.date > todayStr;
   const arrivedIdx = statusOrderIdx('arrived');
   const myIdx = statusOrderIdx(myStatus);
   const teamIdx = statusOrderIdx(teamStatus);
+  const phase = (typeof getModeratorGeoPhase === 'function') ? getModeratorGeoPhase(asgn) : null;
+  const officeIn = (typeof hasOfficeCheckin === 'function') ? hasOfficeCheckin(asgn) : false;
+  const stationDots = (typeof WORKLOG_STATION_DOT_STATUSES !== 'undefined' && WORKLOG_STATION_DOT_STATUSES)
+    ? WORKLOG_STATION_DOT_STATUSES
+    : WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
-  // ---- Future assignment ----
   if (isFuture) {
     return `<div class="worklog-row">
       <button class="worklog-btn worklog-btn-disabled" disabled>
@@ -25688,20 +26336,43 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Completed (mine OR team) ----
-  if (myStatus === 'session_done' || teamStatus === 'session_done') {
-    const teammateCompleted = teamStatus === 'session_done' && myStatus !== 'session_done';
+  if (myStatus === 'session_done' || teamStatus === 'session_done' ||
+      myStatus === 'office_checkout' || teamStatus === 'office_checkout' ||
+      statusOrderIdx(displayStatus) >= statusOrderIdx('session_done')) {
+    if (phase === 'stations_complete') {
+      return `<div class="worklog-row">
+        <div class="worklog-copy">
+          <strong>Session complete.</strong> Return to the Redmond office to check out. Do not check out at the house.
+        </div>
+        <button class="worklog-btn worklog-btn-geo-check worklog-btn-primary">
+          Check location
+        </button>
+      </div>`;
+    }
+    const teammateCompleted = (teamStatus === 'session_done' || teamStatus === 'office_checkout') &&
+      myStatus !== 'session_done' && myStatus !== 'office_checkout';
+    const checkedOut = phase === 'office_checkout' || myStatus === 'office_checkout' || displayStatus === 'office_checkout';
     return `<div class="worklog-summary done">
       <div class="worklog-summary-head">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
           <path d="M3 8l3 3 7-7" stroke="var(--green-text)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>Session complete${teammateCompleted ? ' (by teammate)' : ''}</span>
+        <span>${checkedOut ? 'Checked out' : 'Session complete'}${teammateCompleted ? ' (by teammate)' : ''}</span>
       </div>
     </div>`;
   }
 
-  // ---- Phase 1a: not yet arrived ----
+  if (phase === 'need_office_checkin' || (!officeIn && myIdx < arrivedIdx && teamIdx < arrivedIdx)) {
+    return `<div class="worklog-row">
+      <div class="worklog-copy">
+        <strong>Check in at the Redmond office first.</strong> Open the app there — check-in is automatic inside the office area.
+      </div>
+      <button class="worklog-btn worklog-btn-geo-check worklog-btn-primary">
+        Check location
+      </button>
+    </div>`;
+  }
+
   if (myIdx < arrivedIdx && teamIdx < arrivedIdx) {
     if (!equipmentReady) {
       return `<div class="worklog-row">
@@ -25715,7 +26386,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     }
     return `<div class="worklog-row">
       <div class="worklog-copy">
-        Traveling to the assigned location. When you arrive, please confirm your arrival.
+        Checked in at the office. When you arrive at the assigned location, confirm arrival.
       </div>
       <button class="worklog-btn worklog-btn-arrival worklog-btn-primary">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -25727,7 +26398,6 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Phase 1b: arrived, not yet started a station ----
   if (statusOrderIdx(displayStatus) === arrivedIdx) {
     return `<div class="worklog-row">
       <div class="worklog-copy">
@@ -25742,7 +26412,6 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Phase 2: in session · show progress bar ----
   const stationLabelMap = {
     station_0a_done: 'Station 0a complete',
     station_0b_done: 'Station 0b complete',
@@ -25763,7 +26432,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>
     ${teammateName ? `<div class="worklog-teammate-hint">Updated by ${escapeHTML(teammateName.split(' ')[0])}</div>` : ''}
     <div class="worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
+      ${stationDots.slice(0, 6).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
@@ -25939,6 +26608,11 @@ function openWrapUpModal(asgn) {
         // teammate merges can compare timestamps; included in
         // extractSyncableState).
         try { state.sessionCompletedAt = new Date().toISOString(); saveState(); } catch (_) {}
+        // Refresh geo banners · checkout only happens back at HQ.
+        try {
+          if (typeof ensureGeoStatusBanner === 'function') ensureGeoStatusBanner();
+          if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+        } catch (_) {}
         // Push final SessionState so admin Performance + teammate-sync see the
         // completion marker, then flush immediately (terminal action · worth
         // the round trip).
