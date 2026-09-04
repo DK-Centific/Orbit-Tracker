@@ -4491,14 +4491,12 @@ function isValidDirectoryLoginRole(raw) {
   return DIRECTORY_LOGIN_ROLE_OPTIONS.some(o => o.value === c);
 }
 
-const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
+const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/12/workflows/b1c2ebab26ca46b48157a9b3eb1fe8ea/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=30zTIugKOWleHUNplcvGBs6d6u_2VZxmBipvvs9O0P0';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
 
-// Moderator directory write/upsert · paste the HTTP POST URL from the
-// "Orbit App Mod Info Write" Power Automate flow (see
-// docs/power-automate-moderator-write.md). Empty = feature shows a
-// configure message and keeps the form draft (no silent local-only save).
-const ADMIN_PA_MODERATOR_WRITE_URL = '';
+// Moderator directory write/upsert · former Orbit App Mod Info HTTP URL,
+// now used as the write/upsert flow. See docs/power-automate-moderator-write.md.
+const ADMIN_PA_MODERATOR_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 
 // Participant column schema · single source of truth for headers,
 // field keys, default visibility, and rendering style.
@@ -4882,6 +4880,24 @@ async function fetchWithRetry(url, opts) {
 
   // Defensive: shouldn't reach here, but if we do, surface the last error.
   throw lastErr || new Error('Request failed after retries');
+}
+
+// Directory reads historically used GET. Newer HTTP triggers are often
+// POST-only. Try GET first, then POST an empty body on HTTP 400.
+async function fetchModeratorDirectory(opts) {
+  opts = opts || {};
+  const common = { timeoutMs: 45000, maxAttempts: 3, signal: opts.signal || null };
+  try {
+    return await fetchWithRetry(ADMIN_PA_MODERATORS_URL, Object.assign({ method: 'GET' }, common));
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (!/^HTTP 400/.test(msg)) throw e;
+    return await fetchWithRetry(ADMIN_PA_MODERATORS_URL, Object.assign({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }, common));
+  }
 }
 
 function extractArray(payload) {
@@ -8816,12 +8832,7 @@ async function loadModerators(force = false) {
   adminState.modError = null;
   renderModerators();
   try {
-    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
-      method: 'GET',
-      signal: abortCtrl.signal,
-      timeoutMs: 45000,
-      maxAttempts: 3,
-    });
+    const data = await fetchModeratorDirectory({ signal: abortCtrl.signal });
     const arr = extractArray(data);
     adminState.moderators = arr;
   } catch (e) {
@@ -30882,11 +30893,7 @@ async function doLogin() {
   // retries matter more than anywhere else.
   setLoginLoading(true);
   try {
-    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
-      method: 'GET',
-      timeoutMs: 45000,
-      maxAttempts: 3,
-    });
+    const data = await fetchModeratorDirectory();
     const moderators = extractArray(data);
 
     // Find the moderator (case-insensitive match on orbitLoginId)
