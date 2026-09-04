@@ -9051,8 +9051,9 @@ function paintActivitiesExtraFilters() {
       teamSel.addEventListener('change', e => {
         adminState.activitiesTeamId = e.target.value || '';
         adminState.activitiesModeratorId = '';
-        // Never re-render the hub on filter change — only sync + focus map.
-        paintActivitiesExtraFilters();
+        // Keep the filter row mounted — only sync the sibling select.
+        const other = document.getElementById('activitiesModeratorSelect');
+        if (other) other.value = '';
         refreshActivitiesMapFocus();
       });
     }
@@ -9060,7 +9061,8 @@ function paintActivitiesExtraFilters() {
       modSel.addEventListener('change', e => {
         adminState.activitiesModeratorId = e.target.value || '';
         adminState.activitiesTeamId = '';
-        paintActivitiesExtraFilters();
+        const other = document.getElementById('activitiesTeamSelect');
+        if (other) other.value = '';
         refreshActivitiesMapFocus();
       });
     }
