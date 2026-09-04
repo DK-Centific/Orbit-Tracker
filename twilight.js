@@ -9327,9 +9327,27 @@ function geoToastOnce(key, message, cooldownMs) {
 }
 
 function activeOperatorAssignmentForGeo() {
-  if (typeof getActiveOperatorAssignment === 'function') return getActiveOperatorAssignment();
-  if (typeof getOperatorAssignment === 'function') return getOperatorAssignment();
-  return null;
+  let asgn = null;
+  try {
+    if (typeof getActiveOperatorAssignment === 'function') asgn = getActiveOperatorAssignment();
+  } catch (_) {}
+  if (asgn) return asgn;
+  try {
+    if (typeof getOperatorAssignment === 'function') asgn = getOperatorAssignment();
+  } catch (_) {}
+  if (asgn) return asgn;
+  // Last-resort: today's non-cancelled booking that includes this mod.
+  try {
+    const myId = String((state.modProfile && state.modProfile.orbitLoginId) || '').toLowerCase();
+    const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+    const list = (adminState && adminState.assignments) || [];
+    asgn = list.find(a => {
+      if (!a || a.status === 'Cancelled' || a.status === 'Unassigned') return false;
+      if (todayStr && a.date !== todayStr) return false;
+      return (a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId);
+    }) || null;
+  } catch (_) {}
+  return asgn || null;
 }
 
 function worklogHasStatus(asgnId, status) {
