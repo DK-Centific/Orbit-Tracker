@@ -2918,7 +2918,45 @@ button, a, label, input, select, textarea,
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
+.login-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .login-card .btn { width: 100%; justify-content: center; padding: 14px; margin-top: 8px; }
+/* Forced first-login password change · blocks app entry until saved */
+.pw-change-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(6px);
+}
+.pw-change-overlay.open { display: flex; }
+.pw-change-modal {
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+  padding: 28px 26px;
+  width: 100%; max-width: 400px;
+  animation: fadeUp 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.pw-change-modal h2 {
+  font-size: 20px; font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+.pw-change-modal .pw-change-sub {
+  font-size: 14px; font-weight: 300;
+  color: var(--text2);
+  line-height: 1.45;
+  margin: 0 0 20px;
+}
+.pw-change-actions {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 8px;
+}
+.pw-change-actions .btn { width: 100%; justify-content: center; }
 .login-meta {
   margin-top: 22px;
   display: flex; align-items: center; justify-content: space-between;
@@ -12376,10 +12414,14 @@ button.perf-stat-chip.scheduled.active {
     <div class="login-mark" role="img" aria-label="Centific logo"></div>
     <div class="login-eyebrow">Centific Data Collection</div>
     <h1 class="login-title">Project Twilight</h1>
-    <p class="login-sub">Enter your username to begin a session. Your progress will save automatically as you work.</p>
+    <p class="login-sub">Enter your Orbit Login ID and password to begin a session. Your progress will save automatically as you work.</p>
     <div class="login-field">
       <label for="loginUsername">Username</label>
-      <input type="text" id="loginUsername" placeholder="enter your username" autocomplete="username" autocapitalize="off" autocorrect="off">
+      <input type="text" id="loginUsername" placeholder="enter your username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="login-field" id="loginPasswordField">
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" placeholder="enter your password" autocomplete="current-password">
     </div>
     <button class="btn btn-primary" id="loginBtn">
       Sign In
@@ -12389,6 +12431,27 @@ button.perf-stat-chip.scheduled.active {
     </button>
     <div class="login-meta" style="justify-content: center">
       <span id="loginVersionLabel"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Forced first-login password change (cannot dismiss into the app) -->
+<div id="pwChangeOverlay" class="pw-change-overlay" aria-hidden="true">
+  <div class="pw-change-modal" role="dialog" aria-modal="true" aria-labelledby="pwChangeTitle">
+    <h2 id="pwChangeTitle">Set a new password</h2>
+    <p class="pw-change-sub">This is your first sign-in (or your password still needs updating). Choose a new password of at least 8 characters to continue.</p>
+    <div class="login-field">
+      <label for="pwChangeNew">New password</label>
+      <input type="password" id="pwChangeNew" autocomplete="new-password" spellcheck="false">
+    </div>
+    <div class="login-field">
+      <label for="pwChangeConfirm">Confirm password</label>
+      <input type="password" id="pwChangeConfirm" autocomplete="new-password" spellcheck="false">
+    </div>
+    <div id="pwChangeError" style="display:none; margin: 0 0 12px; font-size: 13.5px; color: var(--red); text-align: center; line-height: 1.4;"></div>
+    <div class="pw-change-actions">
+      <button type="button" class="btn btn-primary" id="pwChangeSubmit">Save password &amp; continue</button>
+      <button type="button" class="btn btn-ghost" id="pwChangeCancel">Cancel</button>
     </div>
   </div>
 </div>

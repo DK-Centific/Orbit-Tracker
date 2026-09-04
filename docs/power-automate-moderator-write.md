@@ -238,8 +238,8 @@ const ADMIN_PA_MODERATOR_WRITE_URL = 'https://…/triggers/manual/paths/invoke?�
 
 ### Admin login note (important)
 
-- Passwordless admin via the hardcoded allowlist (`Admin-orbit`, `Ritu-Orbit`, `John-Orbit`) is **unchanged**.
-- Creating a directory row with `LoginRole = Admin` stores the role for display/directory purposes. Existing login already routes directory `Admin` matches to the admin app **only after** a successful Orbit Login ID lookup against the directory — it does **not** accept arbitrary usernames. Do not broaden the hardcoded allowlist unless you intentionally want new passwordless admin IDs.
+- Only **Admin-orbit** is passwordless. **Ritu-Orbit** and **John-Orbit** (and every other directory user) sign in through the dedicated password auth flow (`ADMIN_PA_AUTH_URL` — see `docs/power-automate-password-auth.md`).
+- Creating a directory row with `LoginRole = Admin` stores the role for display/directory purposes. After a successful password auth response, `LoginRole = Admin` still routes into the admin app. Do not treat the hardcoded display allowlist as a password bypass.
 
 ---
 

@@ -4541,22 +4541,27 @@ function escapeHTML(s) {
    ADMIN APP
    ===================================================================== */
 
-// Admin login is allowed for any username in this list (case-insensitive).
+// Hardcoded admin display allowlist (case-insensitive). Used for nav
+// labels, avatar initials, and auto-resume routing — NOT for password
+// bypass. Only Admin-orbit is passwordless at login (see
+// isPasswordlessAdminUsername). Ritu-Orbit / John-Orbit authenticate
+// through the Power Automate password flow like other directory users;
+// if their directory LoginRole is Admin they still enter the admin app.
+//
 // The legacy single-username form is kept as ADMIN_USERNAME (= the first
 // entry) for any code outside the auth path that needs a "default" admin
-// label; everywhere else, prefer isAdminUsername() so all listed admins
-// authenticate correctly.
-//
-// To add a new admin: append to ADMIN_USERNAMES. No other code changes
-// needed · every check goes through isAdminUsername. The username the
-// admin typed at login is preserved on state.username and displayed in
-// the top-nav, so each admin sees their own identity.
+// label; everywhere else, prefer isAdminUsername() for display helpers.
 const ADMIN_USERNAMES = ['Admin-orbit', 'Ritu-Orbit', 'John-Orbit'];
 const ADMIN_USERNAME = ADMIN_USERNAMES[0];  // legacy alias, default label
 function isAdminUsername(name) {
   if (!name) return false;
   const lower = String(name).toLowerCase();
   return ADMIN_USERNAMES.some(u => u.toLowerCase() === lower);
+}
+// Sole passwordless login account · exact name, case-insensitive.
+function isPasswordlessAdminUsername(name) {
+  if (!name) return false;
+  return String(name).toLowerCase() === 'admin-orbit';
 }
 // Resolve the canonical-case version of an admin username from the
 // list (so "ritu-orbit" types matches "Ritu-Orbit" in the display).
@@ -4583,9 +4588,9 @@ function directoryRoleIsAdmin(row) {
 }
 // Canonical LoginRole values written to Excel / accepted by the create-user
 // form. Excel historically stores moderators as "Mod"; the UI label is
-// "Moderator". Reviewer and Admin are stored as-is. Login still routes only
-// LoginRole=Admin to the admin app (see doLogin); the hardcoded ADMIN_USERNAMES
-// allowlist is unchanged — passwordless admin via allowlist stays as-is.
+// "Moderator". Reviewer and Admin are stored as-is. Login routes
+// LoginRole=Admin to the admin app after successful PA password auth
+// (or passwordless Admin-orbit). See doLogin / isPasswordlessAdminUsername.
 const DIRECTORY_LOGIN_ROLE_OPTIONS = [
   { value: 'Mod', label: 'Moderator' },
   { value: 'Reviewer', label: 'Reviewer' },
@@ -4618,6 +4623,19 @@ const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6
 // Moderator directory write/upsert · former Orbit App Mod Info HTTP URL,
 // now used as the write/upsert flow. See docs/power-automate-moderator-write.md.
 const ADMIN_PA_MODERATOR_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
+
+// Dedicated password auth flow (login + changePassword). Do NOT reuse the
+// directory read/write URLs. Paste the HTTP POST URL from
+// docs/power-automate-password-auth.md ("Orbit App Password Auth") here.
+// Until set, Admin-orbit still signs in passwordlessly; all other users
+// see a clear “Password login is not configured yet” error.
+const ADMIN_PA_AUTH_URL = '';
+
+// Default first-login password accepted by PA only while Excel Password
+// is blank. Client never reads Excel Password; this constant is used only
+// to reject re-using the default when forcing a password change, and as
+// the documented default for the PA guide.
+const DEFAULT_FIRST_LOGIN_PASSWORD = 'Twilight2006';
 
 // Participant column schema · single source of truth for headers,
 // field keys, default visibility, and rendering style.
@@ -12423,9 +12441,9 @@ const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
 //   firstName, lastName, phoneNumber, centificEmail
 //                      · moderator snapshot fields (same pattern as
 //                        Assignment rows)
-//   personalEmail      · TeamLog transport for the versioned Lakitu project
+//   personalEmail      · TeamLog transport for the versioned team meta
 //                        JSON: {"type":"teamLakituProject","version":1,
-//                        "lakituProjectKey":"...","lakituProjectUrl":"..."}
+//                        "lakituProjectKey":"...","lakituProjectUrl":"...",
 //                        (not a moderator personal email in this table)
 //   teamId             · numeric team ID (same value across all rows of
 //                        the same team)
@@ -12589,7 +12607,13 @@ async function fetchTeamsFromPA() {
               const proj = getLakituProjectByKey(key);
               if (proj && proj.url) url = proj.url;
             }
-            return { lakituProjectKey: key, lakituProjectUrl: url };
+            if (!ringUrl && ringKey) {
+              if (dash && dash.url) ringUrl = dash.url;
+            }
+            return {
+              lakituProjectKey: key,
+              lakituProjectUrl: url,
+            };
           })(),
           createdAt: r.createdTimestamp || '',
           updatedAt: r.updatedTimestamp || '',
@@ -18937,6 +18961,7 @@ function openTeamModal(teamId) {
     // Admin-assigned Lakitu project (see LAKITU_PROJECTS). Stored as the
     // project KEY on the modal; saveTeam resolves it to the label + url.
     lakituProjectKey: team ? (team.lakituProjectKey || '') : '',
+    // Office address used for moderator office check-in / check-out geofence.
     _availWeekAnchor: ymdLocal(monday),
     _overlapOpen: false,
     _backupOpen: false,
@@ -19154,6 +19179,16 @@ function renderTeamModal() {
         </select>
         <div class="asgn-field-hint">Assign the Lakitu project link this team's moderators should open · it appears as a clickable link in their Lakitu session field.</div>
       </div>
+      <div class="asgn-field">
+        <label class="asgn-field-label">Ring link <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <select id="teamRingDashboard" class="teams-sort" aria-label="Ring link">
+        </select>
+        <div class="asgn-field-hint">Assign the Ring account dashboard this team's moderators should open from the Ring nav button and menu.</div>
+      </div>
+      <div class="asgn-field">
+        <label class="asgn-field-label">Team address <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <div class="asgn-field-hint">Assigned map location for this team · used for office check-in and check-out geofence (falls back to Redmond HQ when empty).</div>
+      </div>
       <div class="team-avail-toolbar">
         <div class="team-avail-toolbar-left">
           <span class="team-avail-toolbar-label">Availability preview</span>
@@ -19222,6 +19257,15 @@ function renderTeamModal() {
   if (lakituProjSel) {
     lakituProjSel.addEventListener('change', e => {
       adminState.modal.lakituProjectKey = e.target.value || '';
+    });
+  }
+  const ringDashSel = document.getElementById('teamRingDashboard');
+  if (ringDashSel) {
+    ringDashSel.addEventListener('change', e => {
+    });
+  }
+  if (teamAddrInput) {
+    teamAddrInput.addEventListener('input', e => {
     });
   }
   document.querySelectorAll('[data-team-disclosure]').forEach(details => {
@@ -19305,6 +19349,8 @@ function saveTeam() {
   const lakituProjectKey = m.lakituProjectKey || '';
   const lakituProject = getLakituProjectByKey(lakituProjectKey);
   const lakituProjectUrl = lakituProject ? lakituProject.url : '';
+  // Ring dashboard (optional) · https URL only.
+  // Team office address for geofence · trim; empty is allowed (HQ fallback).
   if (m.kind === 'createTeam') {
     // The team is local-only until either (a) an assignment uses it and
     // saves it via the assignment row, or (b) we have a TeamLog write URL
@@ -28064,11 +28110,15 @@ function logoutAndClearOperatorState() {
   if (adminAppEl) adminAppEl.classList.remove('active');
   const loginEl = document.getElementById('loginScreen');
   if (loginEl) loginEl.style.display = 'flex';
+  clearPendingAuth();
+  closePasswordChangeModal();
+  clearLoginPasswordInputs();
   const loginInput = document.getElementById('loginUsername');
   if (loginInput) {
     loginInput.value = '';
     setTimeout(() => loginInput.focus(), 100);
   }
+  syncLoginPasswordFieldForUsername();
 }
 
 
@@ -31025,196 +31075,501 @@ function setLoginError(message) {
   }
 }
 
+function clearLoginPasswordInputs() {
+  const pw = document.getElementById('loginPassword');
+  if (pw) pw.value = '';
+  const n = document.getElementById('pwChangeNew');
+  if (n) n.value = '';
+  const c = document.getElementById('pwChangeConfirm');
+  if (c) c.value = '';
+}
+
 function setLoginLoading(isLoading) {
   const btn = document.getElementById('loginBtn');
   const input = document.getElementById('loginUsername');
+  const pw = document.getElementById('loginPassword');
   if (isLoading) {
     btn.disabled = true;
     btn.style.opacity = '0.7';
     btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:6px;vertical-align:-1px;"></span>Verifying…';
     input.disabled = true;
+    if (pw) pw.disabled = true;
   } else {
     btn.disabled = false;
     btn.style.opacity = '';
     btn.innerHTML = 'Sign In <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="margin-left:4px"><path d="M5 4l4 4-4 4M3 8h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     input.disabled = false;
+    // Re-apply passwordless visibility (may keep password disabled for Admin-orbit)
+    syncLoginPasswordFieldForUsername();
   }
 }
 
+// Hide/disable password when the typed username is the passwordless Admin-orbit.
+function syncLoginPasswordFieldForUsername() {
+  const userEl = document.getElementById('loginUsername');
+  const field = document.getElementById('loginPasswordField');
+  const pw = document.getElementById('loginPassword');
+  if (!userEl || !field || !pw) return;
+  const passwordless = isPasswordlessAdminUsername(userEl.value.trim());
+  field.style.display = passwordless ? 'none' : '';
+  pw.disabled = !!passwordless;
+  if (passwordless) pw.value = '';
+  pw.required = !passwordless;
+}
+
+// ---------------------------------------------------------------------------
+// Password auth via dedicated Power Automate flow (ADMIN_PA_AUTH_URL).
+// SECURITY: never fetch/compare/log/cache Excel Password in the browser.
+// Typed passwords live only in input DOM / local vars until POST, then clear.
+// ---------------------------------------------------------------------------
+
+// In-memory only (never localStorage / never state). Holds the password
+// briefly between a successful login that requires changePassword and the
+// changePassword POST. Cleared on success, cancel, logout, or failed auth.
+let _pendingAuthPassword = null;
+let _pendingAuthProfile = null; // safe profile fields only
+let _pendingAuthOrbitId = null;
+let _loginInFlight = false;
+
+function clearPendingAuth() {
+  _pendingAuthPassword = null;
+  _pendingAuthProfile = null;
+  _pendingAuthOrbitId = null;
+}
+
+function unwrapAuthResponse(data) {
+  if (!data || typeof data !== 'object') return data;
+  if ('ok' in data || 'mustChangePassword' in data || 'profile' in data || 'error' in data) {
+    return data;
+  }
+  let body = data.body != null ? data.body
+    : (data.data != null ? data.data
+      : (data.result != null ? data.result : null));
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (_) { return data; }
+  }
+  if (body && typeof body === 'object') return body;
+  return data;
+}
+
+function buildSafeModProfileFromAuth(src) {
+  // Safe fields only — never copy Password / password / secret fields.
+  const orbitId = pickField(src, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+  const fName   = pickField(src, 'firstName', 'first_name', 'FirstName', 'First Name');
+  const lName   = pickField(src, 'lastName',  'last_name',  'LastName',  'Last Name');
+  const phone   = pickField(src, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone');
+  const cEmail  = pickField(src, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email');
+  const loginRole = pickField(src, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE');
+  const profile = {
+    orbitLoginId: orbitId,
+    firstName: fName,
+    lastName: lName,
+    phoneNumber: phone,
+    centificEmail: cEmail,
+  };
+  if (loginRole) profile.LoginRole = loginRole;
+  profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
+  return profile;
+}
+
+function isAuthUrlConfigured() {
+  return !!(ADMIN_PA_AUTH_URL && String(ADMIN_PA_AUTH_URL).trim());
+}
+
+async function postPasswordAuth(payload) {
+  // Dev/test intercept · set window.__orbitTestAuthHandler = async (payload) => ({...})
+  // to stub PA without a real URL. Checked before the empty-URL guard so
+  // browser tests can exercise login/changePassword. Never set in production.
+  if (typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function') {
+    return unwrapAuthResponse(await window.__orbitTestAuthHandler(payload));
+  }
+  const url = String(ADMIN_PA_AUTH_URL || '').trim();
+  if (!url) {
+    const err = new Error('Password login is not configured yet.');
+    err.isAuthConfigMissing = true;
+    throw err;
+  }
+  try {
+    const data = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+      maxAttempts: 2,
+    });
+    return unwrapAuthResponse(data);
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/^HTTP 401/.test(msg)) {
+      const err = new Error('invalid_credentials');
+      err.isInvalidCredentials = true;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+function setPwChangeError(message) {
+  const el = document.getElementById('pwChangeError');
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.style.display = 'block';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+function openPasswordChangeModal() {
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (!overlay) return;
+  setPwChangeError(null);
+  const n = document.getElementById('pwChangeNew');
+  const c = document.getElementById('pwChangeConfirm');
+  if (n) n.value = '';
+  if (c) c.value = '';
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden', 'false');
+  setTimeout(() => { try { if (n) n.focus(); } catch (_) {} }, 50);
+}
+
+function closePasswordChangeModal() {
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden', 'true');
+  setPwChangeError(null);
+  const n = document.getElementById('pwChangeNew');
+  const c = document.getElementById('pwChangeConfirm');
+  if (n) n.value = '';
+  if (c) c.value = '';
+}
+
+function cancelForcedPasswordChange() {
+  clearPendingAuth();
+  closePasswordChangeModal();
+  clearLoginPasswordInputs();
+  setLoginError(null);
+  const loginEl = document.getElementById('loginScreen');
+  if (loginEl) loginEl.style.display = 'flex';
+  const user = document.getElementById('loginUsername');
+  if (user) setTimeout(() => user.focus(), 50);
+}
+
+async function submitForcedPasswordChange() {
+  const newEl = document.getElementById('pwChangeNew');
+  const confEl = document.getElementById('pwChangeConfirm');
+  const submitBtn = document.getElementById('pwChangeSubmit');
+  const cancelBtn = document.getElementById('pwChangeCancel');
+  const newPw = newEl ? newEl.value : '';
+  const conf = confEl ? confEl.value : '';
+  setPwChangeError(null);
+
+  if (!newPw || newPw.length < 8) {
+    setPwChangeError('Password must be at least 8 characters.');
+    return;
+  }
+  if (newPw === DEFAULT_FIRST_LOGIN_PASSWORD) {
+    setPwChangeError('Choose a different password than the default first-login password.');
+    return;
+  }
+  if (newPw !== conf) {
+    setPwChangeError('New password and confirmation do not match.');
+    return;
+  }
+  if (!_pendingAuthOrbitId || _pendingAuthPassword == null) {
+    setPwChangeError('Session expired. Return to login and try again.');
+    return;
+  }
+  if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
+    setPwChangeError('Password login is not configured yet.');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  try {
+    // Current password stays in the local var only for this POST.
+    const currentPw = _pendingAuthPassword;
+    const orbitId = _pendingAuthOrbitId;
+    const profile = _pendingAuthProfile;
+    const result = await postPasswordAuth({
+      operation: 'changePassword',
+      orbitLoginId: orbitId,
+      password: currentPw,
+      newPassword: newPw,
+    });
+    // Clear secrets from memory and DOM immediately after POST returns.
+    clearPendingAuth();
+    if (newEl) newEl.value = '';
+    if (confEl) confEl.value = '';
+    clearLoginPasswordInputs();
+
+    if (!result || result.ok === false) {
+      setPwChangeError('Could not update password. Check your connection and try again.');
+      // Restore pending orbit/profile without the password so user must re-login
+      closePasswordChangeModal();
+      setLoginError('Could not update password. Please sign in again.');
+      return;
+    }
+
+    closePasswordChangeModal();
+    // Prefer a fresh safe profile from the change response if provided;
+    // otherwise use the profile already returned by the login call.
+    const nextProfile = (result.profile && typeof result.profile === 'object')
+      ? buildSafeModProfileFromAuth(result.profile)
+      : profile;
+    routeAfterSuccessfulAuth(orbitId, nextProfile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId }));
+  } catch (e) {
+    if (e && e.isInvalidCredentials) {
+      setPwChangeError('Orbit Login ID or password is incorrect.');
+    } else if (e && e.isAuthConfigMissing) {
+      setPwChangeError('Password login is not configured yet.');
+    } else {
+      setPwChangeError("Couldn't reach the password service. Check your connection and try again.");
+      console.error('changePassword failed:', e);
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+  }
+}
+
+function routeAfterSuccessfulAuth(orbitId, profile) {
+  const safe = profile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId });
+  const id = safe.orbitLoginId || orbitId;
+  // Role comes only from the PA profile response — never from client input.
+  // Directory LoginRole=Admin → admin app. Hardcoded display-list names
+  // (Ritu-Orbit / John-Orbit) without an explicit non-admin role also
+  // enter admin so existing admin-role routing is preserved after PA auth.
+  const roleIsAdmin = directoryRoleIsAdmin(safe);
+  const roleExplicitNonAdmin = !!(safe.LoginRole && !roleIsAdmin);
+  const enterAdmin = roleIsAdmin || (isAdminUsername(id) && !roleExplicitNonAdmin);
+
+  if (enterAdmin) {
+    const enteredName = isAdminUsername(id) ? canonicalAdminUsername(id) : id;
+    const savedA = loadState(enteredName);
+    if (savedA && savedA.username &&
+        (isAdminUsername(savedA.username) ||
+         String(savedA.username).toLowerCase() === String(enteredName).toLowerCase())) {
+      state = savedA;
+      state.username = enteredName;
+    } else {
+      state = defaultState();
+      state.username = enteredName;
+    }
+    state.modProfile = safe;
+    state.isAdmin = true;
+    saveState();
+    setLastLoginUsername(enteredName);
+    startAdminApp();
+    return;
+  }
+
+  const saved = loadState(id);
+  let resumed = false;
+  if (saved && saved.username && saved.username.toLowerCase() === String(id).toLowerCase()) {
+    state = saved;
+    state.username = id;
+    resumed = true;
+  } else {
+    state = defaultState();
+    state.username = id;
+  }
+  state.modProfile = safe;
+  state.isAdmin = false;
+  if (maybeResetStaleSession()) resumed = false;
+  saveState();
+  setLastLoginUsername(id);
+  _loginWelcomePending = true;
+  startApp();
+  if (resumed && state.participantId) {
+    setTimeout(() => {
+      if (typeof showToast === 'function') {
+        const partLabel = state.participantName
+          ? state.participantName
+          : (state.participantId ? `participant ${state.participantId}` : 'your session');
+        showToast(`Resumed where you left off · ${partLabel}`, 'success', 4500);
+      }
+    }, 500);
+  }
+  setTimeout(async () => {
+    if (!_loginWelcomePending) return;
+    _loginWelcomePending = false;
+    try {
+      const initial = window._orbitInitialAsgnRefresh;
+      if (initial && typeof initial.then === 'function') {
+        await Promise.race([
+          initial,
+          new Promise(resolve => setTimeout(resolve, 2500)),
+        ]);
+      }
+      checkLoginWelcome();
+    } catch (e) {
+      console.warn('[Twilight] Welcome check error:', e && e.message);
+      try { checkLoginWelcome(); } catch (_) {}
+    }
+  }, 900);
+}
+
+function enterPasswordlessAdmin(enteredName) {
+  const enteredAdminName = canonicalAdminUsername(enteredName);
+  const saved = loadState(enteredAdminName);
+  if (saved && saved.username && isAdminUsername(saved.username)) {
+    state = saved;
+    state.username = enteredAdminName;
+  } else {
+    state = defaultState();
+    state.username = enteredAdminName;
+  }
+  state.isAdmin = true;
+  saveState();
+  setLastLoginUsername(enteredAdminName);
+  startAdminApp();
+}
+
 async function doLogin() {
+  if (_loginInFlight) return;
   const v = document.getElementById('loginUsername').value.trim();
+  const pwEl = document.getElementById('loginPassword');
+  // Read password into a local var only — never assign to state / localStorage.
+  let typedPassword = pwEl ? pwEl.value : '';
   setLoginError(null);
   if (!v) {
     shakeLoginCard();
     return;
   }
-  // Admin login · match against the list of allowed admin usernames
-  // (case-insensitive). Multiple admins (Admin-orbit, Ritu-Orbit,
-  // John-Orbit) can sign in; the username they typed is preserved and
-  // rendered in the top nav so each admin sees their own identity.
-  // Same-account behavior for everyone · all admins share the same
-  // localStorage cache because the data layer (Excel) is the source
-  // of truth and admin-specific separation isn't a data concept here.
-  if (isAdminUsername(v)) {
-    const enteredAdminName = canonicalAdminUsername(v);
-    // Admin login uses the same per-username slot pattern as operators.
-    // Each admin (Admin-orbit, Ritu-Orbit, John-Orbit) has their own
-    // localStorage slot keyed by their username. Admins primarily read
-    // data from the cloud (Excel via PA), so the slot contents are
-    // small · mostly UI state like which tab they had open. Per-user
-    // slots prevent admin A's tab choice from leaking into admin B's
-    // session when they swap on the same device.
-    const saved = loadState(enteredAdminName);
-    if (saved && saved.username && isAdminUsername(saved.username)) {
-      state = saved;
-      state.username = enteredAdminName;
-    } else {
-      state = defaultState();
-      state.username = enteredAdminName;
-    }
-    saveState();
-    setLastLoginUsername(enteredAdminName);
-    startAdminApp();
+
+  // Sole passwordless account: Admin-orbit (case-insensitive).
+  if (isPasswordlessAdminUsername(v)) {
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    clearPendingAuth();
+    enterPasswordlessAdmin(v);
     return;
   }
 
-  // Operator login · must match an orbitLoginId in the Moderators table.
-  // Uses the same resilient fetchWithRetry helper as loadModerators so a
-  // transient PA hiccup during login doesn't bounce the user back to
-  // the error state. Login is the most painful spot to hit a slow PA
-  // flow · admin/mod is trying to GET INTO the app, so timeout +
-  // retries matter more than anywhere else.
+  if (!typedPassword) {
+    setLoginError('Enter your password to sign in.');
+    shakeLoginCard();
+    return;
+  }
+
+  if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
+    setLoginError('Password login is not configured yet. Ask an admin to finish the Orbit App Password Auth setup.');
+    shakeLoginCard();
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    return;
+  }
+
+  _loginInFlight = true;
   setLoginLoading(true);
   try {
-    const data = await fetchModeratorDirectory();
-    const moderators = extractArray(data);
-
-    // Find the moderator (case-insensitive match on orbitLoginId)
-    const matched = moderators.find(m => {
-      const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-      return String(id || '').toLowerCase() === v.toLowerCase();
+    const data = await postPasswordAuth({
+      operation: 'login',
+      orbitLoginId: v,
+      password: typedPassword,
     });
 
-    if (!matched) {
+    // Clear the password from the input as soon as the POST returns.
+    if (pwEl) pwEl.value = '';
+
+    if (!data || data.ok === false) {
+      typedPassword = '';
       setLoginLoading(false);
-      setLoginError("That username isn't recognized. Please use your Orbit Login ID exactly as registered.");
+      _loginInFlight = false;
+      setLoginError('Orbit Login ID or password is incorrect.');
       shakeLoginCard();
       return;
     }
 
-    // Cache the moderator profile so the operator app can use it
-    const orbitId  = pickField(matched, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-    const fName    = pickField(matched, 'firstName', 'first_name', 'FirstName', 'First Name');
-    const lName    = pickField(matched, 'lastName',  'last_name',  'LastName',  'Last Name');
-    const phone    = pickField(matched, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone');
-    const cEmail   = pickField(matched, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email');
-    const profile = {
-      orbitLoginId: orbitId, firstName: fName, lastName: lName, phoneNumber: phone, centificEmail: cEmail,
-    };
-    profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
+    const rawProfile = (data.profile && typeof data.profile === 'object') ? data.profile : {};
+    const profile = buildSafeModProfileFromAuth(Object.assign({}, rawProfile, {
+      orbitLoginId: pickField(rawProfile, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || v,
+    }));
+    const orbitId = profile.orbitLoginId || v;
+    const mustChange = !!data.mustChangePassword;
 
-    // Role routing · the Moderators table's `LoginRole` column decides
-    // the app. LoginRole = "Admin" → admin app (keeping the profile so the
-    // admin's real name prints as decided_by on approvals). Any other value
-    // ("Mod"/"Moderator"/blank) falls through to the moderator app below.
-    if (directoryRoleIsAdmin(matched)) {
-      const savedA = loadState(orbitId);
-      if (savedA && savedA.username && savedA.username.toLowerCase() === orbitId.toLowerCase()) {
-        state = savedA; state.username = orbitId;
-      } else {
-        state = defaultState(); state.username = orbitId;
-      }
-      state.modProfile = profile;
-      state.isAdmin = true;          // persisted flag so auto-resume re-routes to admin
-      saveState();
-      setLastLoginUsername(orbitId);
+    if (mustChange) {
+      // Hold current password in memory only until changePassword completes.
+      _pendingAuthPassword = typedPassword;
+      typedPassword = '';
+      _pendingAuthProfile = profile;
+      _pendingAuthOrbitId = orbitId;
       setLoginLoading(false);
-      startAdminApp();
+      _loginInFlight = false;
+      openPasswordChangeModal();
       return;
     }
 
-    // Try to restore saved state for THIS specific user. Pass orbitId
-    // so loadState() looks in the per-username slot
-    // (centific_orbit_session_<orbitId>) rather than the legacy global
-    // key. If the user has prior session data, it's returned here ·
-    // their participant ID, equipment checklist, scenario progress,
-    // and notes all come back intact.
-    const saved = loadState(orbitId);
-    let resumed = false;
-    if (saved && saved.username && saved.username.toLowerCase() === orbitId.toLowerCase()) {
-      state = saved;
-      state.username = orbitId; // canonicalize casing
-      resumed = true;
-    } else {
-      state = defaultState();
-      state.username = orbitId;
-    }
-    state.modProfile = profile;
-    // Day-boundary guard: if the restored slot is from a prior day, reset to
-    // a fresh session for today. The mod closed the app and reopened on a
-    // new day · yesterday's participant/station data must not carry over.
-    if (maybeResetStaleSession()) resumed = false;
-    saveState();
-    setLastLoginUsername(orbitId);
+    typedPassword = '';
+    clearPendingAuth();
     setLoginLoading(false);
-    // Mark this as a FRESH login (not auto-resume on refresh) so the
-    // welcome modal fires. The flag is consumed by the timer below
-    // and reset, so subsequent renderApp/state changes don't re-trigger.
-    _loginWelcomePending = true;
-    startApp();
-    // After the app paints, surface a non-intrusive toast confirming
-    // the resume happened · gives the operator visual confirmation
-    // that their progress was preserved (vs silently restoring, which
-    // could feel unsettling if they expected a fresh slate). The toast
-    // includes the participant name if known so they can verify it's
-    // the right session before continuing.
-    if (resumed && state.participantId) {
-      setTimeout(() => {
-        if (typeof showToast === 'function') {
-          const partLabel = state.participantName
-            ? state.participantName
-            : (state.participantId ? `participant ${state.participantId}` : 'your session');
-          showToast(`Resumed where you left off · ${partLabel}`, 'success', 4500);
-        }
-      }, 500);
-    }
-    // Trigger the login welcome modal (Feature 1 / Feature 2). Runs
-    // ~900ms after paint so the operator sees the app briefly before
-    // the modal appears. This is BEFORE the teammate-sync check
-    // (~1200ms) so the welcome decision happens first; if welcome
-    // shows a "today completed" or "next session" modal, the teammate
-    // sync check skips (its own dedupe sees the welcome overlay).
-    //
-    // CRITICAL: we AWAIT the initial assignment fetch before deciding
-    // which welcome variant to show. Otherwise a fresh-device mod
-    // would always see "no_session" because their local cache is
-    // empty before the fetch lands. The fetch resolves typically in
-    // 400-800ms; we cap the wait at 2.5s so a flaky network doesn't
-    // block the welcome forever (fallback: show whatever local cache
-    // has, same as the old behavior).
-    setTimeout(async () => {
-      if (!_loginWelcomePending) return;
-      _loginWelcomePending = false;
-      try {
-        const initial = window._orbitInitialAsgnRefresh;
-        if (initial && typeof initial.then === 'function') {
-          await Promise.race([
-            initial,
-            new Promise(resolve => setTimeout(resolve, 2500)),  // safety timeout
-          ]);
-        }
-        checkLoginWelcome();
-      } catch (e) {
-        console.warn('[Twilight] Welcome check error:', e && e.message);
-        // Still try the welcome check with whatever state we have
-        try { checkLoginWelcome(); } catch (_) {}
-      }
-    }, 900);
+    _loginInFlight = false;
+    routeAfterSuccessfulAuth(orbitId, profile);
   } catch (e) {
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    clearPendingAuth();
     setLoginLoading(false);
-    setLoginError("Couldn't reach the moderator directory. Check your connection and try again.");
-    console.error('Login fetch failed:', e);
+    _loginInFlight = false;
+    if (e && e.isInvalidCredentials) {
+      setLoginError('Orbit Login ID or password is incorrect.');
+    } else if (e && e.isAuthConfigMissing) {
+      setLoginError('Password login is not configured yet. Ask an admin to finish the Orbit App Password Auth setup.');
+    } else {
+      setLoginError("Couldn't reach the password service. Check your connection and try again.");
+      console.error('Login auth failed:', e);
+    }
+    shakeLoginCard();
   }
+}
+
+function wirePasswordLoginUi() {
+  const userEl = document.getElementById('loginUsername');
+  const pwEl = document.getElementById('loginPassword');
+  if (userEl && !userEl._pwSyncWired) {
+    userEl._pwSyncWired = true;
+    userEl.addEventListener('input', syncLoginPasswordFieldForUsername);
+    userEl.addEventListener('change', syncLoginPasswordFieldForUsername);
+  }
+  if (pwEl && !pwEl._enterWired) {
+    pwEl._enterWired = true;
+    pwEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+  }
+  const submit = document.getElementById('pwChangeSubmit');
+  const cancel = document.getElementById('pwChangeCancel');
+  const conf = document.getElementById('pwChangeConfirm');
+  if (submit && !submit._wired) {
+    submit._wired = true;
+    submit.addEventListener('click', () => { submitForcedPasswordChange(); });
+  }
+  if (cancel && !cancel._wired) {
+    cancel._wired = true;
+    cancel.addEventListener('click', () => { cancelForcedPasswordChange(); });
+  }
+  if (conf && !conf._enterWired) {
+    conf._enterWired = true;
+    conf.addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitForcedPasswordChange();
+    });
+  }
+  // Overlay click must NOT dismiss into the app (forced change).
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (overlay && !overlay._wired) {
+    overlay._wired = true;
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) {
+        // Ignore backdrop clicks — cancel is the only escape.
+        e.stopPropagation();
+      }
+    });
+  }
+  syncLoginPasswordFieldForUsername();
 }
 
 // Dock the nav action buttons into the right-side Helios rail on desktop, or
@@ -31308,6 +31663,7 @@ function init() {
   }
 
   // Login bindings
+  wirePasswordLoginUi();
   document.getElementById('loginBtn').addEventListener('click', doLogin);
   document.getElementById('loginUsername').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
@@ -31465,6 +31821,10 @@ function init() {
     document.getElementById('adminApp').classList.remove('active');
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('loginUsername').value = '';
+    clearPendingAuth();
+    closePasswordChangeModal();
+    clearLoginPasswordInputs();
+    syncLoginPasswordFieldForUsername();
     document.getElementById('loginUsername').focus();
   });
 
