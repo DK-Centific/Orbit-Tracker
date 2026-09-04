@@ -26289,6 +26289,8 @@ function logoutAndClearOperatorState() {
   if (typeof stopSessionStatePolling === 'function') stopSessionStatePolling();
   if (typeof stopMidnightWatcher === 'function') stopMidnightWatcher();
   if (typeof stopModAssignmentRefresh === 'function') stopModAssignmentRefresh();
+  if (typeof stopModeratorGeofence === 'function') stopModeratorGeofence();
+  if (typeof closeGeoFenceModal === 'function') closeGeoFenceModal();
   if (window._mySessionCarouselIdx) window._mySessionCarouselIdx = 0;
   // Force adminState reload on next access
   adminState._asgnLoaded = false;
