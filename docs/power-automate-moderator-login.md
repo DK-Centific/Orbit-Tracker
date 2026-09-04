@@ -2,7 +2,7 @@
 
 Build this in a **new** flow. Do **not** edit your existing GET or POST flows.
 
-When you are done, send me the HTTP POST URL.
+The login HTTP POST URL is already in the app (`ADMIN_PA_MODERATOR_LOGIN_URL` in `twilight.js`). Keep this guide if you ever need to rebuild the flow.
 
 ---
 

@@ -4729,11 +4729,7 @@ const ADMIN_PA_MODERATOR_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d5
 
 // Dedicated password auth flow (login + setPassword). Do NOT reuse the
 // directory read/write URLs — never fetch passwords via ADMIN_PA_MODERATORS_URL.
-// Paste the HTTP POST URL from docs/power-automate-moderator-login.md here
-// after you build and turn on the flow. Leave empty until then: passwordless
-// allowlist admins still sign in; every other user sees a clear
-// “login flow not configured” error (no passwordless operator fallback).
-const ADMIN_PA_MODERATOR_LOGIN_URL = '';
+const ADMIN_PA_MODERATOR_LOGIN_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/30/workflows/18e20403ab9b4c7a98980743fec5fb13/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=0k-8C0cw4MnkS7QiMQjkeqaf-hzTlvs8Y88CFyEvPls';
 
 // Default first-login password accepted by PA only while Excel Password
 // is blank. Client never reads Excel Password; this constant is used only
