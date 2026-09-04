@@ -4379,7 +4379,57 @@ input#ent_lakitu.lakitu-invalid {
    column keeps the panel from stretching uncomfortably wide across the
    full hub body while matching the Assignment tab's look. */
 .asgn-shell.asgn-shell-teams-only { grid-template-columns: minmax(0, 640px); }
-.asgn-shell.asgn-shell-teams-only .teams-panel { position: static; max-height: none; }
+.asgn-shell.asgn-shell-teams-only .teams-panel { position: static; }
+
+/* Moderator Hub · By Team uses a compact master/detail workspace. The team
+   list keeps its own scrollbar, while the selected team's editor occupies
+   the right column on desktop. The shared modal remains a popup below the
+   desktop breakpoint, including on phones. */
+.mod-team-workspace {
+  width: min(100%, 1080px);
+  display: grid;
+  grid-template-columns: minmax(300px, 390px) minmax(0, 640px);
+  gap: clamp(14px, 1.5vw, 24px);
+  align-items: start;
+}
+.mod-team-workspace .asgn-shell-teams-only {
+  display: block;
+  min-width: 0;
+}
+.mod-team-workspace .teams-panel {
+  height: min(68vh, 620px);
+  max-height: min(68vh, 620px);
+}
+@media (min-width: 1101px) {
+  .mod-team-workspace .asgn-modal {
+    position: sticky;
+    top: 70px;
+    left: auto;
+    width: 100%;
+    height: min(68vh, 620px);
+    max-height: min(68vh, 620px);
+    transform: none;
+    visibility: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .mod-team-workspace .asgn-modal.open {
+    transform: none;
+    visibility: visible;
+  }
+  .mod-team-workspace + .asgn-modal-overlay {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .mod-team-workspace {
+    display: block;
+    width: 100%;
+  }
+  .mod-team-workspace .teams-panel {
+    height: min(62vh, 520px);
+    max-height: min(62vh, 520px);
+  }
+}
 
 /* Teams panel */
 .teams-panel {
@@ -4404,7 +4454,17 @@ input#ent_lakitu.lakitu-invalid {
   padding: 14px 16px;
   border-bottom: 0.5px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
   flex-shrink: 0;
+}
+.teams-head-meta {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+}
+.teams-head-new {
+  min-height: 30px;
+  padding: 6px 10px;
+  white-space: nowrap;
 }
 .teams-head-title {
   font-size: 13px; font-weight: 600;
@@ -5431,6 +5491,42 @@ input#ent_lakitu.lakitu-invalid {
   background: var(--accent-soft);
   border: 0.5px solid var(--border);
   border-radius: 10px;
+}
+.team-disclosure {
+  margin-bottom: 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.team-disclosure > summary {
+  list-style: none;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text2);
+}
+.team-disclosure > summary::-webkit-details-marker { display: none; }
+.team-disclosure > summary:hover { background: var(--bg4); }
+.team-disclosure-title {
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.team-disclosure-arrow {
+  flex: 0 0 auto;
+  transition: transform 0.18s ease;
+}
+.team-disclosure[open] > summary .team-disclosure-arrow {
+  transform: rotate(180deg);
+}
+.team-disclosure-content {
+  padding: 0 12px 12px;
+}
+.team-disclosure-content .team-overlap-panel,
+.team-disclosure-content .asgn-field {
+  margin-bottom: 0;
 }
 .team-overlap-head {
   margin-bottom: 8px;
@@ -10146,6 +10242,8 @@ button.perf-stat-chip.scheduled.active {
 /* Mod view toolbar (List / Team / Assignment switcher) */
 .modview-toolbar {
   margin-bottom: 18px;
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
 }
 .modview-toggle {
   display: inline-flex; gap: 3px;
@@ -10168,6 +10266,38 @@ button.perf-stat-chip.scheduled.active {
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 [data-theme="dark"] .modview-btn.active { background: var(--bg4); }
+.activities-team-filter {
+  display: inline-flex; align-items: center; gap: 8px;
+  animation: activitiesFilterIn 0.18s ease both;
+}
+.activities-team-filter-label {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text3);
+}
+.activities-team-select {
+  min-width: 190px;
+  max-width: min(320px, 72vw);
+  font-family: var(--font); font-size: 13px;
+  padding: 7px 30px 7px 10px;
+  color: var(--text);
+  background: var(--bg3);
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+}
+.activities-team-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+@keyframes activitiesFilterIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (max-width: 600px) {
+  .activities-team-filter { width: 100%; }
+  .activities-team-select { flex: 1; min-width: 0; }
+}
 
 /* Team-grouped view */
 .mod-group { margin-bottom: 28px; }
@@ -17010,6 +17140,7 @@ const adminState = {
   partPage: 1,               // 1-indexed current page in the participant table
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
+  activitiesTeamId: '',      // selected team context in the Activities map
   // Assignment state
   teams: [],                 // [{ id, name, primaryIds: [orbitLoginId,...], backupIds: [orbitLoginId,...] }]
   assignments: [],           // [{ id, teamId, date (YYYY-MM-DD), startMin, endMin, participantOrbitId, participantData, modSnapshots, savedAt }]
@@ -21267,6 +21398,12 @@ function renderModerators() {
 
   // View switcher + body
   let view = adminState.modView || 'list';
+  const activityTeams = [...(adminState.teams || [])]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  if (adminState.activitiesTeamId == null) adminState.activitiesTeamId = '';
+  if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
+    adminState.activitiesTeamId = '';
+  }
   body.innerHTML = `
     <div class="modview-toolbar">
       <div class="modview-toggle">
@@ -21292,6 +21429,15 @@ function renderModerators() {
           Activities
         </button>
       </div>
+      ${view === 'activities' ? `
+        <label class="activities-team-filter" for="activitiesTeamSelect">
+          <span class="activities-team-filter-label">Team</span>
+          <select class="activities-team-select" id="activitiesTeamSelect">
+            <option value="">All teams</option>
+            ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(adminState.activitiesTeamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
+          </select>
+        </label>
+      ` : ''}
     </div>
     <div id="modviewBody"></div>
   `;
@@ -21302,6 +21448,13 @@ function renderModerators() {
       renderModerators();
     });
   });
+  const activitiesTeamSelect = document.getElementById('activitiesTeamSelect');
+  if (activitiesTeamSelect) {
+    activitiesTeamSelect.addEventListener('change', e => {
+      adminState.activitiesTeamId = e.target.value || '';
+      updateActivitiesTeamContext();
+    });
+  }
   // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
   // hidden attr). Un-hide the button + set this true to restore the tab.
   // Prior sessions that still have modView === 'availability' fall back to
@@ -21325,6 +21478,19 @@ function renderModAvailabilityView() {
   // Tab button is hidden in the UI; this function is kept so Availability
   // can be restored by un-hiding the modview button above.
   if (typeof renderAvailabilityHub === 'function') renderAvailabilityHub();
+}
+
+function getSelectedActivitiesTeam() {
+  const id = adminState.activitiesTeamId;
+  if (!id) return null;
+  return (adminState.teams || []).find(t => String(t.id) === String(id)) || null;
+}
+
+function updateActivitiesTeamContext() {
+  const target = document.getElementById('activitiesTeamContext');
+  if (!target) return;
+  const team = getSelectedActivitiesTeam();
+  target.textContent = team ? `Live map · ${team.name}` : 'Live map · All teams';
 }
 
 /* ----------- Activities (live map) ----------- */
@@ -21570,7 +21736,7 @@ function renderModActivitiesView() {
           </div>
         </div>
         <div class="activities-map-caption">
-          <div class="activities-map-eyebrow">Live map · OpenFreeMap</div>
+          <div class="activities-map-eyebrow" id="activitiesTeamContext">${getSelectedActivitiesTeam() ? `Live map · ${escapeHTML(getSelectedActivitiesTeam().name || 'Unnamed team')}` : 'Live map · All teams'}</div>
           <div class="activities-map-title">Redmond HQ</div>
           <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
         </div>
@@ -21619,13 +21785,15 @@ function renderModTeamView() {
   // shared asgn-modal infrastructure, so we render the modal shell here
   // too · otherwise openTeamModal()/showAsgnModal() would have no target.
   wrap.innerHTML = `
-    <div class="asgn-shell asgn-shell-teams-only">
-      ${renderTeamsPanelHTML()}
+    <div class="mod-team-workspace">
+      <div class="asgn-shell asgn-shell-teams-only">
+        ${renderTeamsPanelHTML()}
+      </div>
+      <div class="asgn-modal" id="asgnModal" role="dialog" aria-modal="true">
+        <div id="asgnModalContent"></div>
+      </div>
     </div>
     <div class="asgn-modal-overlay" id="asgnModalOverlay"></div>
-    <div class="asgn-modal" id="asgnModal" role="dialog" aria-modal="true">
-      <div id="asgnModalContent"></div>
-    </div>
   `;
   bindTeamsPanelEvents();
 }
@@ -26622,6 +26790,7 @@ function openAdminAvailabilitySubmit(modId) {
 /* ----------- Teams Panel ----------- */
 function renderTeamsPanelHTML() {
   const teams = adminState.teams || [];
+  const isModeratorHubTeamView = adminState.tab === 'moderators' && adminState.modView === 'team';
   // Sort/search state · defaults are admin-friendly: alphabetical
   // ascending (predictable), no search filter applied. Both persist
   // across tab switches via adminState but reset on page reload.
@@ -26689,7 +26858,17 @@ function renderTeamsPanelHTML() {
     <div class="teams-panel">
       <div class="teams-head">
         <span class="teams-head-title">Teams · ${headerCountLabel}</span>
-        <span class="teams-head-title" style="font-size: 11px; color: var(--text3);">${adminState.moderators ? adminState.moderators.length + ' mods loaded' : 'loading mods…'}</span>
+        <div class="teams-head-meta">
+          <span class="teams-head-title" style="font-size: 11px; color: var(--text3);">${adminState.moderators ? adminState.moderators.length + ' mods loaded' : 'loading mods…'}</span>
+          ${isModeratorHubTeamView ? `
+            <button class="btn btn-primary teams-head-new" id="newTeamBtn">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+              New Team
+            </button>
+          ` : ''}
+        </div>
       </div>
       <div class="teams-controls">
         <div class="teams-search-wrap">
@@ -26719,14 +26898,16 @@ function renderTeamsPanelHTML() {
             ? `<div class="teams-empty">No teams match "<strong>${escapeHTML(adminState._teamsSearch)}</strong>".<br>Try a different search or <button class="teams-empty-link" id="teamsClearSearchInline">clear the search</button>.</div>`
             : sorted.map(t => teamCardHTML(t)).join('')}
       </div>
-      <div class="teams-foot">
-        <button class="btn btn-primary" id="newTeamBtn">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          </svg>
-          New Team
-        </button>
-      </div>
+      ${isModeratorHubTeamView ? '' : `
+        <div class="teams-foot">
+          <button class="btn btn-primary" id="newTeamBtn">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+            New Team
+          </button>
+        </div>
+      `}
     </div>
   `;
 }
@@ -26761,6 +26942,7 @@ function rerenderTeamsPanelInPlace() {
 // controls. Extracted so rerenderTeamsPanelInPlace can call it without
 // triggering double-binding on the calendar side.
 function bindTeamsPanelEvents() {
+  const isModeratorHubTeamView = adminState.tab === 'moderators' && adminState.modView === 'team';
   // New team
   const newTeamBtn = document.getElementById('newTeamBtn');
   if (newTeamBtn && !newTeamBtn._wired) {
@@ -26813,6 +26995,24 @@ function bindTeamsPanelEvents() {
     inlineClear.addEventListener('click', () => {
       adminState._teamsSearch = '';
       rerenderTeamsPanelInPlace();
+    });
+  }
+  // In Moderator Hub, clicking a team opens its editor in the adjacent
+  // desktop detail pane (the same editor remains a popup on mobile).
+  if (isModeratorHubTeamView) {
+    document.querySelectorAll('.teams-panel .team-card').forEach(card => {
+      if (card._teamOpenWired) return;
+      card._teamOpenWired = true;
+      card.addEventListener('click', e => {
+        if (e.target.closest('.team-action-btn')) return;
+        const teamId = parseInt(card.dataset.teamId, 10);
+        if (!Number.isFinite(teamId)) return;
+        adminState._selectedTeam = teamId;
+        document.querySelectorAll('.teams-panel .team-card').forEach(c => {
+          c.classList.toggle('selected', parseInt(c.dataset.teamId, 10) === teamId);
+        });
+        openTeamModal(teamId);
+      });
     });
   }
   // Team card edit/delete buttons
@@ -29208,6 +29408,8 @@ function openTeamModal(teamId) {
     // project KEY on the modal; saveTeam resolves it to the label + url.
     lakituProjectKey: team ? (team.lakituProjectKey || '') : '',
     _availWeekAnchor: ymdLocal(monday),
+    _overlapOpen: false,
+    _backupOpen: false,
   };
   renderTeamModal();
   showAsgnModal();
@@ -29377,12 +29579,22 @@ function renderTeamModal() {
       return m.primaryIds.every(id => getModAvailabilityForDate(id, day.ymd) === 'yes');
     }).length;
     overlapHTML = `
-      <div class="team-overlap-panel">
-        <div class="team-overlap-head">
-          <span class="team-overlap-title">Team overlap · ${greenDays} day${greenDays === 1 ? '' : 's'} all-available this week</span>
+      <details class="team-disclosure" data-team-disclosure="overlap" ${m._overlapOpen ? 'open' : ''}>
+        <summary>
+          <span class="team-disclosure-title">Team overlap · ${greenDays} day${greenDays === 1 ? '' : 's'} all-available</span>
+          <svg class="team-disclosure-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </summary>
+        <div class="team-disclosure-content">
+          <div class="team-overlap-panel">
+            <div class="team-overlap-head">
+              <span class="team-overlap-title">All primary moderators · ${escapeHTML(periodLabel)}</span>
+            </div>
+            <div class="team-overlap-strip">${overlapCells}</div>
+          </div>
         </div>
-        <div class="team-overlap-strip">${overlapCells}</div>
-      </div>
+      </details>
     `;
   }
 
@@ -29442,19 +29654,25 @@ function renderTeamModal() {
         <div class="asgn-field-hint">Select up to 2 moderators who'll lead this team. The strip shows each mod's availability for the previewed week · green = available, red = not available, grey = no submission yet.</div>
       </div>
       ${overlapHTML}
-      <div class="asgn-field">
-        <label class="asgn-field-label">
-          Backup moderators · <span style="color: var(--accent-ink); font-weight: 600;">${m.backupIds.length}/2</span>
-          <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span>
-        </label>
-        <div class="mod-picker">
-          ${moderators.length === 0
-            ? '<div class="part-pick-empty">No moderators loaded · click Refresh.</div>'
-            : moderators.map(md => modPickerItem(md, 'backup')).join('')
-          }
+      <details class="team-disclosure" data-team-disclosure="backup" ${m._backupOpen ? 'open' : ''}>
+        <summary>
+          <span class="team-disclosure-title">Backup moderators · <span style="color: var(--accent-ink);">${m.backupIds.length}/2</span> <span style="color: var(--text3); font-weight: 500; text-transform: none;">(optional)</span></span>
+          <svg class="team-disclosure-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </summary>
+        <div class="team-disclosure-content">
+          <div class="asgn-field">
+            <div class="mod-picker">
+              ${moderators.length === 0
+                ? '<div class="part-pick-empty">No moderators loaded · click Refresh.</div>'
+                : moderators.map(md => modPickerItem(md, 'backup')).join('')
+              }
+            </div>
+            <div class="asgn-field-hint">Select up to 2 moderators who'll fill in if a primary is unavailable.</div>
+          </div>
         </div>
-        <div class="asgn-field-hint">Select up to 2 moderators who'll fill in if a primary is unavailable.</div>
-      </div>
+      </details>
     </div>
     <div class="asgn-modal-foot">
       ${isEdit ? '<button class="btn btn-danger" id="teamDeleteBtn">Delete team</button>' : ''}
@@ -29476,6 +29694,13 @@ function renderTeamModal() {
       adminState.modal.lakituProjectKey = e.target.value || '';
     });
   }
+  document.querySelectorAll('[data-team-disclosure]').forEach(details => {
+    details.addEventListener('toggle', () => {
+      if (!adminState.modal) return;
+      if (details.dataset.teamDisclosure === 'overlap') adminState.modal._overlapOpen = details.open;
+      if (details.dataset.teamDisclosure === 'backup') adminState.modal._backupOpen = details.open;
+    });
+  });
 
   // Availability week navigation. Prev/Next shift the anchor by 7 days;
   // "This week" snaps back to today's Monday. All three trigger a full
