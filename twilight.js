@@ -9249,6 +9249,25 @@ function mergeGeoDemoRoster() {
     }));
   });
   adminState._asgnLoaded = true;
+  // Persist demo teams into the assignment cache so a later loadAssignmentData()
+  // (or TeamLog empty wipe of localStorage) does not erase them mid-session.
+  try {
+    const raw = localStorage.getItem(ASGN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : { teams: [], assignments: [] };
+    const teams = Array.isArray(parsed.teams) ? parsed.teams.slice() : [];
+    GEO_DEMO_TEAMS.forEach(dt => {
+      if (teams.some(t => String(t.id) === String(dt.id))) return;
+      teams.push(Object.assign({}, dt, {
+        primaryIds: [...(dt.primaryIds || [])],
+        backupIds: [...(dt.backupIds || [])],
+      }));
+    });
+    localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+      ...parsed,
+      teams,
+      assignments: Array.isArray(parsed.assignments) ? parsed.assignments : (adminState.assignments || []),
+    }));
+  } catch (_) {}
 }
 
 function seedGeoDemoPings(force) {
@@ -14027,11 +14046,16 @@ async function fetchAssignmentsFromPA() {
       } else if (!tl.error && Array.isArray(tl.teams) && tl.teams.length === 0) {
         // TeamLog read succeeded and Excel has no active teams. Drop the
         // browser cache so wiped tables do not keep showing old teams.
+        // Keep geo-demo teams (?geoDemo=1) so Activities still has Team 01 / 02.
+        const keepDemo = (t) => t && (t._pending || String(t.id || '').startsWith('demo-team-'));
         const pending = (typeof adminState !== 'undefined' && Array.isArray(adminState.teams))
-          ? adminState.teams.filter(t => t._pending)
+          ? adminState.teams.filter(keepDemo)
           : [];
-        const dropped = mergedTeams.filter(t => !t._pending).length;
-        mergedTeams = pending;
+        const fromMerged = mergedTeams.filter(keepDemo);
+        const keepMap = new Map();
+        [...pending, ...fromMerged].forEach(t => keepMap.set(String(t.id), t));
+        const dropped = mergedTeams.filter(t => !keepDemo(t)).length;
+        mergedTeams = [...keepMap.values()];
         if (dropped > 0) {
           console.log(`[Twilight] TeamLog empty · dropped ${dropped} cached team${dropped === 1 ? '' : 's'} (Excel is empty)`);
         }
