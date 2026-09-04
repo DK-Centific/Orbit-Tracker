@@ -4645,12 +4645,11 @@ function escapeHTML(s) {
    ADMIN APP
    ===================================================================== */
 
-// Hardcoded admin display allowlist (case-insensitive). Used for nav
-// labels, avatar initials, and auto-resume routing — NOT for password
-// bypass. Only Admin-orbit is passwordless at login (see
-// isPasswordlessAdminUsername). Ritu-Orbit / John-Orbit authenticate
-// through the Power Automate password flow like other directory users;
-// if their directory LoginRole is Admin they still enter the admin app.
+// Hardcoded admin allowlist (case-insensitive). Used for nav labels,
+// avatar initials, auto-resume routing, AND passwordless login bypass.
+// Admin-orbit, Ritu-Orbit, and John-Orbit all sign in without a password
+// (see isPasswordlessAdminUsername). Every other Orbit Login ID — including
+// directory LoginRole=Admin rows — must authenticate via the PA login flow.
 //
 // The legacy single-username form is kept as ADMIN_USERNAME (= the first
 // entry) for any code outside the auth path that needs a "default" admin
@@ -4662,10 +4661,10 @@ function isAdminUsername(name) {
   const lower = String(name).toLowerCase();
   return ADMIN_USERNAMES.some(u => u.toLowerCase() === lower);
 }
-// Sole passwordless login account · exact name, case-insensitive.
+// Passwordless login · same allowlist as isAdminUsername (Admin-orbit,
+// Ritu-Orbit, John-Orbit). Case-insensitive.
 function isPasswordlessAdminUsername(name) {
-  if (!name) return false;
-  return String(name).toLowerCase() === 'admin-orbit';
+  return isAdminUsername(name);
 }
 // Resolve the canonical-case version of an admin username from the
 // list (so "ritu-orbit" types matches "Ritu-Orbit" in the display).
@@ -4694,7 +4693,7 @@ function directoryRoleIsAdmin(row) {
 // form. Excel historically stores moderators as "Mod"; the UI label is
 // "Moderator". Reviewer and Admin are stored as-is. Login routes
 // LoginRole=Admin to the admin app after successful PA password auth
-// (or passwordless Admin-orbit). See doLogin / isPasswordlessAdminUsername.
+// (or passwordless allowlist usernames). See doLogin / isPasswordlessAdminUsername.
 const DIRECTORY_LOGIN_ROLE_OPTIONS = [
   { value: 'Mod', label: 'Moderator' },
   { value: 'Reviewer', label: 'Reviewer' },
@@ -4728,12 +4727,13 @@ const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6
 // now used as the write/upsert flow. See docs/power-automate-moderator-write.md.
 const ADMIN_PA_MODERATOR_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 
-// Dedicated password auth flow (login + changePassword). Do NOT reuse the
-// directory read/write URLs. Paste the HTTP POST URL from
-// docs/power-automate-password-auth.md ("Orbit App Password Auth") here.
-// Until set, Admin-orbit still signs in passwordlessly; all other users
-// see a clear “Password login is not configured yet” error.
-const ADMIN_PA_AUTH_URL = '';
+// Dedicated password auth flow (login + setPassword). Do NOT reuse the
+// directory read/write URLs — never fetch passwords via ADMIN_PA_MODERATORS_URL.
+// Paste the HTTP POST URL from docs/power-automate-moderator-login.md here
+// after you build and turn on the flow. Leave empty until then: passwordless
+// allowlist admins still sign in; every other user sees a clear
+// “login flow not configured” error (no passwordless operator fallback).
+const ADMIN_PA_MODERATOR_LOGIN_URL = '';
 
 // Default first-login password accepted by PA only while Excel Password
 // is blank. Client never reads Excel Password; this constant is used only
@@ -9078,7 +9078,9 @@ async function loadModerators(force = false) {
   try {
     const data = await fetchModeratorDirectory({ signal: abortCtrl.signal });
     const arr = extractArray(data);
-    adminState.moderators = arr;
+    // Never keep Password (or similar) from the directory read in memory /
+    // localStorage. Prefer excluding Password from the PA Response mapping.
+    adminState.moderators = arr.map(stripModeratorSecrets);
   } catch (e) {
     if (e && e.isCallerAbort) {
       console.log('[Twilight] Moderators load aborted (force-refresh took over)');
@@ -11136,6 +11138,9 @@ function renderModTableHTML(mods) {
 
 function extractModeratorFields(m) {
   m = m || {};
+  // Whitelist only — never pick Password / password / secret columns.
+  // If the directory read flow still returns Password, stripModeratorSecrets
+  // removes it before rows land in adminState.moderators / localStorage.
   return {
     orbitLoginId: pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id'),
     firstName: pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName', 'given_name', 'GivenName', 'Given Name', 'firstname', 'First'),
@@ -11151,6 +11156,21 @@ function extractModeratorFields(m) {
     'off-date': pickField(m, 'off-date', 'offDate', 'off_date', 'OffDate', 'Off Date'),
     LoginRole: pickField(m, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE'),
   };
+}
+
+// Drop any password/secret keys from a directory row before it is stored in
+// adminState.moderators or rendered. Defense in depth if the PA read flow
+// still maps Password — the read flow should exclude it (see docs).
+function stripModeratorSecrets(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+  const out = Object.assign({}, row);
+  Object.keys(out).forEach(k => {
+    const n = String(k).replace(/[\s_-]+/g, '').toLowerCase();
+    if (n === 'password' || n === 'pwd' || n === 'passwd' || n === 'secret' || n === 'passphrase') {
+      delete out[k];
+    }
+  });
+  return out;
 }
 
 function emptyModUserFormValues() {
@@ -31301,12 +31321,13 @@ function setLoginLoading(isLoading) {
     btn.style.opacity = '';
     btn.innerHTML = 'Sign In <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="margin-left:4px"><path d="M5 4l4 4-4 4M3 8h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     input.disabled = false;
-    // Re-apply passwordless visibility (may keep password disabled for Admin-orbit)
+    // Re-apply passwordless visibility (may keep password disabled for allowlist admins)
     syncLoginPasswordFieldForUsername();
   }
 }
 
-// Hide/disable password when the typed username is the passwordless Admin-orbit.
+// Hide/disable password when the typed username is on the passwordless
+// admin allowlist (Admin-orbit / Ritu-Orbit / John-Orbit).
 function syncLoginPasswordFieldForUsername() {
   const userEl = document.getElementById('loginUsername');
   const field = document.getElementById('loginPasswordField');
@@ -31320,14 +31341,16 @@ function syncLoginPasswordFieldForUsername() {
 }
 
 // ---------------------------------------------------------------------------
-// Password auth via dedicated Power Automate flow (ADMIN_PA_AUTH_URL).
+// Password auth via dedicated Power Automate flow (ADMIN_PA_MODERATOR_LOGIN_URL).
 // SECURITY: never fetch/compare/log/cache Excel Password in the browser.
 // Typed passwords live only in input DOM / local vars until POST, then clear.
+// Do NOT use ADMIN_PA_MODERATORS_URL for login — that read flow must not
+// return Password (and the client strips it if it does).
 // ---------------------------------------------------------------------------
 
 // In-memory only (never localStorage / never state). Holds the password
-// briefly between a successful login that requires changePassword and the
-// changePassword POST. Cleared on success, cancel, logout, or failed auth.
+// briefly between a successful login that requires setPassword and the
+// setPassword POST. Cleared on success, cancel, logout, or failed auth.
 let _pendingAuthPassword = null;
 let _pendingAuthProfile = null; // safe profile fields only
 let _pendingAuthOrbitId = null;
@@ -31375,19 +31398,19 @@ function buildSafeModProfileFromAuth(src) {
 }
 
 function isAuthUrlConfigured() {
-  return !!(ADMIN_PA_AUTH_URL && String(ADMIN_PA_AUTH_URL).trim());
+  return !!(ADMIN_PA_MODERATOR_LOGIN_URL && String(ADMIN_PA_MODERATOR_LOGIN_URL).trim());
 }
 
 async function postPasswordAuth(payload) {
   // Dev/test intercept · set window.__orbitTestAuthHandler = async (payload) => ({...})
   // to stub PA without a real URL. Checked before the empty-URL guard so
-  // browser tests can exercise login/changePassword. Never set in production.
+  // browser tests can exercise login/setPassword. Never set in production.
   if (typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function') {
     return unwrapAuthResponse(await window.__orbitTestAuthHandler(payload));
   }
-  const url = String(ADMIN_PA_AUTH_URL || '').trim();
+  const url = String(ADMIN_PA_MODERATOR_LOGIN_URL || '').trim();
   if (!url) {
-    const err = new Error('Password login is not configured yet.');
+    const err = new Error('Login flow is not configured yet.');
     err.isAuthConfigMissing = true;
     throw err;
   }
@@ -31485,7 +31508,7 @@ async function submitForcedPasswordChange() {
     return;
   }
   if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
-    setPwChangeError('Password login is not configured yet.');
+    setPwChangeError('Login flow is not configured yet.');
     return;
   }
 
@@ -31497,7 +31520,7 @@ async function submitForcedPasswordChange() {
     const orbitId = _pendingAuthOrbitId;
     const profile = _pendingAuthProfile;
     const result = await postPasswordAuth({
-      operation: 'changePassword',
+      operation: 'setPassword',
       orbitLoginId: orbitId,
       password: currentPw,
       newPassword: newPw,
@@ -31517,7 +31540,7 @@ async function submitForcedPasswordChange() {
     }
 
     closePasswordChangeModal();
-    // Prefer a fresh safe profile from the change response if provided;
+    // Prefer a fresh safe profile from the setPassword response if provided;
     // otherwise use the profile already returned by the login call.
     const nextProfile = (result.profile && typeof result.profile === 'object')
       ? buildSafeModProfileFromAuth(result.profile)
@@ -31527,10 +31550,10 @@ async function submitForcedPasswordChange() {
     if (e && e.isInvalidCredentials) {
       setPwChangeError('Orbit Login ID or password is incorrect.');
     } else if (e && e.isAuthConfigMissing) {
-      setPwChangeError('Password login is not configured yet.');
+      setPwChangeError('Login flow is not configured yet.');
     } else {
       setPwChangeError("Couldn't reach the password service. Check your connection and try again.");
-      console.error('changePassword failed:', e);
+      console.error('setPassword failed:', e);
     }
   } finally {
     if (submitBtn) submitBtn.disabled = false;
@@ -31542,9 +31565,8 @@ function routeAfterSuccessfulAuth(orbitId, profile) {
   const safe = profile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId });
   const id = safe.orbitLoginId || orbitId;
   // Role comes only from the PA profile response — never from client input.
-  // Directory LoginRole=Admin → admin app. Hardcoded display-list names
-  // (Ritu-Orbit / John-Orbit) without an explicit non-admin role also
-  // enter admin so existing admin-role routing is preserved after PA auth.
+  // Directory LoginRole=Admin → admin app. Hardcoded passwordless allowlist
+  // names (Admin-orbit / Ritu-Orbit / John-Orbit) enter admin without PA.
   const roleIsAdmin = directoryRoleIsAdmin(safe);
   const roleExplicitNonAdmin = !!(safe.LoginRole && !roleIsAdmin);
   const enterAdmin = roleIsAdmin || (isAdminUsername(id) && !roleExplicitNonAdmin);
@@ -31643,7 +31665,7 @@ async function doLogin() {
     return;
   }
 
-  // Sole passwordless account: Admin-orbit (case-insensitive).
+  // Passwordless allowlist: Admin-orbit / Ritu-Orbit / John-Orbit.
   if (isPasswordlessAdminUsername(v)) {
     if (pwEl) pwEl.value = '';
     typedPassword = '';
@@ -31659,7 +31681,7 @@ async function doLogin() {
   }
 
   if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
-    setLoginError('Password login is not configured yet. Ask an admin to finish the Orbit App Password Auth setup.');
+    setLoginError('Login flow is not configured yet. Ask an admin to finish the Orbit moderator login Power Automate setup (ADMIN_PA_MODERATOR_LOGIN_URL).');
     shakeLoginCard();
     if (pwEl) pwEl.value = '';
     typedPassword = '';
@@ -31695,7 +31717,7 @@ async function doLogin() {
     const mustChange = !!data.mustChangePassword;
 
     if (mustChange) {
-      // Hold current password in memory only until changePassword completes.
+      // Hold current password in memory only until setPassword completes.
       _pendingAuthPassword = typedPassword;
       typedPassword = '';
       _pendingAuthProfile = profile;
@@ -31720,7 +31742,7 @@ async function doLogin() {
     if (e && e.isInvalidCredentials) {
       setLoginError('Orbit Login ID or password is incorrect.');
     } else if (e && e.isAuthConfigMissing) {
-      setLoginError('Password login is not configured yet. Ask an admin to finish the Orbit App Password Auth setup.');
+      setLoginError('Login flow is not configured yet. Ask an admin to finish the Orbit moderator login Power Automate setup (ADMIN_PA_MODERATOR_LOGIN_URL).');
     } else {
       setLoginError("Couldn't reach the password service. Check your connection and try again.");
       console.error('Login auth failed:', e);
