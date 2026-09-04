@@ -3984,11 +3984,33 @@ input#ent_lakitu.lakitu-invalid {
 .subtab-row {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 18px; gap: 14px; flex-wrap: wrap;
+  /* Allow the modview slide + subtabs to wrap or scroll on narrow viewports */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.subtab-cluster {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; min-width: 0; flex: 1;
 }
 .subtab-toggle {
   display: inline-flex; gap: 3px;
   background: var(--bg3); border: 0.5px solid var(--border);
   border-radius: 11px; padding: 3px;
+  flex-shrink: 0;
+}
+/* Horizontal slide for the All / By Team / … toggle next to Moderators */
+.modview-slide {
+  display: grid;
+  grid-template-columns: 0fr;
+  transition: grid-template-columns 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+  min-width: 0;
+}
+.modview-slide.is-open {
+  grid-template-columns: 1fr;
+}
+.modview-slide-clip {
+  overflow: hidden;
+  min-width: 0;
 }
 .subtab-btn {
   font-family: var(--font); font-size: 14px; font-weight: 500;
@@ -10241,14 +10263,33 @@ button.perf-stat-chip.scheduled.active {
 
 /* Mod view toolbar (List / Team / Assignment switcher) */
 .modview-toolbar {
-  margin-bottom: 18px;
+  margin-bottom: 0;
   display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap;
+  width: max-content;
+  max-width: min(100%, 92vw);
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.26s ease,
+              transform 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+  pointer-events: none;
+}
+.modview-slide.is-open .modview-toolbar {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
 }
 .modview-toggle {
   display: inline-flex; gap: 3px;
   background: var(--bg3); border: 0.5px solid var(--border);
   border-radius: 11px; padding: 3px;
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modview-slide,
+  .modview-toolbar {
+    transition: none;
+  }
 }
 .modview-btn {
   display: inline-flex; align-items: center; gap: 7px;
@@ -21253,32 +21294,97 @@ function renderAdminTabBody() {
   }
   // Moderator Hub · now only has Moderators + Participants. Assignment
   // moved out to its own top-level tab above.
+  //
+  // The All / By Team / By Assignment / Activities toggle lives in a
+  // horizontal slide next to the Moderators subtab. It opens when
+  // Moderators is active and slides closed when Participants is selected.
   body.innerHTML = `
     <div class="subtab-row">
-      <div class="subtab-toggle" role="tablist">
-        <button class="subtab-btn ${adminState.subtab === 'moderators' ? 'active' : ''}" data-subtab="moderators" role="tab">
-          Moderators
-          <span class="subtab-count" id="modCount">${adminState.moderators ? adminState.moderators.length : '··'}</span>
-        </button>
-        <button class="subtab-btn ${adminState.subtab === 'participants' ? 'active' : ''}" data-subtab="participants" role="tab">
-          Participants
-          <span class="subtab-count" id="partCount">${adminState.participants ? adminState.participants.length : '··'}</span>
-        </button>
+      <div class="subtab-cluster">
+        <div class="subtab-toggle" role="tablist">
+          <button class="subtab-btn ${adminState.subtab === 'moderators' ? 'active' : ''}" data-subtab="moderators" role="tab">
+            Moderators
+            <span class="subtab-count" id="modCount">${adminState.moderators ? adminState.moderators.length : '··'}</span>
+          </button>
+          <button class="subtab-btn ${adminState.subtab === 'participants' ? 'active' : ''}" data-subtab="participants" role="tab">
+            Participants
+            <span class="subtab-count" id="partCount">${adminState.participants ? adminState.participants.length : '··'}</span>
+          </button>
+        </div>
+        <div id="modviewSlide" class="modview-slide" aria-hidden="true">
+          <div class="modview-slide-clip">
+            <div class="modview-toolbar" id="modviewToolbar"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div id="subtabBody"></div>
   `;
+  const setModviewSlideOpen = (open) => {
+    const slide = document.getElementById('modviewSlide');
+    if (!slide) return;
+    slide.classList.toggle('is-open', !!open);
+    slide.setAttribute('aria-hidden', open ? 'false' : 'true');
+  };
+  const syncSubtabActive = (next) => {
+    body.querySelectorAll('.subtab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.subtab === next);
+    });
+  };
   body.querySelectorAll('.subtab-btn').forEach(b => {
     b.addEventListener('click', () => {
-      adminState.subtab = b.dataset.subtab;
-      renderAdminTabBody();
+      const next = b.dataset.subtab;
+      if (next === adminState.subtab) return;
+      const slide = document.getElementById('modviewSlide');
+      adminState.subtab = next;
+      syncSubtabActive(next);
+
+      if (next === 'participants') {
+        const finishParticipants = () => {
+          if (adminState.subtab !== 'participants') return;
+          if (typeof destroyActivitiesMap === 'function') destroyActivitiesMap();
+          renderParticipants();
+        };
+        if (slide && slide.classList.contains('is-open')) {
+          setModviewSlideOpen(false);
+          let settled = false;
+          const settle = (e) => {
+            if (e && e.target !== slide) return;
+            if (e && e.propertyName && e.propertyName !== 'grid-template-columns') return;
+            if (settled) return;
+            settled = true;
+            slide.removeEventListener('transitionend', settle);
+            finishParticipants();
+          };
+          slide.addEventListener('transitionend', settle);
+          setTimeout(settle, 400);
+        } else {
+          setModviewSlideOpen(false);
+          finishParticipants();
+        }
+        return;
+      }
+
+      // Moderators · render content first (fills the toolbar), then slide open.
+      renderModerators();
+      // Double rAF so the closed → open transition actually plays after paint.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setModviewSlideOpen(true));
+      });
     });
   });
   // Reset assignment if user lands here with old subtab state · it no
   // longer exists at this level.
   if (adminState.subtab === 'assignment') adminState.subtab = 'moderators';
-  if (adminState.subtab === 'moderators') renderModerators();
-  else if (adminState.subtab === 'participants') renderParticipants();
+  if (adminState.subtab === 'moderators') {
+    renderModerators();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setModviewSlideOpen(true));
+    });
+  } else if (adminState.subtab === 'participants') {
+    setModviewSlideOpen(false);
+    renderParticipants();
+  }
 }
 
 /* ----------- Moderators ----------- */
@@ -21361,34 +21467,9 @@ function renderModerators() {
   if (adminState.subtab !== 'moderators') return;
   const body = document.getElementById('subtabBody');
   if (!body) return;
-  if (adminState.modLoading) {
-    body.innerHTML = `
-      <div class="admin-state">
-        <div class="spin-ring"></div>
-        <div class="admin-state-msg">Loading moderators…</div>
-      </div>`;
-    return;
-  }
-  if (adminState.modError) {
-    body.innerHTML = `
-      <div class="admin-state">
-        <div class="admin-state-msg admin-state-error">Couldn't load moderators</div>
-        <div class="admin-state-hint">${escapeHTML(adminState.modError)}</div>
-        <div class="admin-state-hint" style="margin-top: 12px;">Use the Refresh button above to retry.</div>
-      </div>`;
-    return;
-  }
-  if (!adminState.moderators) {
-    loadModerators();
-    body.innerHTML = `
-      <div class="admin-state">
-        <div class="spin-ring"></div>
-        <div class="admin-state-msg">Loading moderators…</div>
-      </div>`;
-    return;
-  }
 
-  // Ensure assignment data is loaded for the team/assignment views
+  // Ensure assignment data is loaded for the team/assignment views and the
+  // Activities team filter in the slide toolbar.
   if (!adminState._asgnLoaded) {
     const stored = loadAssignmentData();
     adminState.teams = stored.teams;
@@ -21396,7 +21477,9 @@ function renderModerators() {
     adminState._asgnLoaded = true;
   }
 
-  // View switcher + body
+  // View switcher lives in the slide next to the Moderators subtab
+  // (#modviewToolbar). Fall back to painting it into #subtabBody only if
+  // the slide shell is missing (shouldn't happen in normal hub renders).
   let view = adminState.modView || 'list';
   const activityTeams = [...(adminState.teams || [])]
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -21404,8 +21487,17 @@ function renderModerators() {
   if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
     adminState.activitiesTeamId = '';
   }
-  body.innerHTML = `
-    <div class="modview-toolbar">
+  // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
+  // hidden attr). Un-hide the button + set this true to restore the tab.
+  // Prior sessions that still have modView === 'availability' fall back to
+  // All so admins aren't stuck on a view with no visible tab.
+  const SHOW_MOD_AVAILABILITY_TAB = false;
+  if (!SHOW_MOD_AVAILABILITY_TAB && view === 'availability') {
+    adminState.modView = 'list';
+    view = 'list';
+  }
+
+  const toolbarHtml = `
       <div class="modview-toggle">
         <button class="modview-btn ${view === 'list' ? 'active' : ''}" data-mview="list" title="Card grid">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
@@ -21438,32 +21530,69 @@ function renderModerators() {
           </select>
         </label>
       ` : ''}
-    </div>
+  `;
+
+  const toolbarHost = document.getElementById('modviewToolbar');
+  const bindModviewControls = (root) => {
+    if (!root) return;
+    root.querySelectorAll('.modview-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.hasAttribute('hidden') || btn.classList.contains('modview-btn--hidden')) return;
+        adminState.modView = btn.dataset.mview;
+        renderModerators();
+      });
+    });
+    const activitiesTeamSelect = root.querySelector('#activitiesTeamSelect') || document.getElementById('activitiesTeamSelect');
+    if (activitiesTeamSelect) {
+      activitiesTeamSelect.addEventListener('change', e => {
+        adminState.activitiesTeamId = e.target.value || '';
+        updateActivitiesTeamContext();
+      });
+    }
+  };
+
+  if (toolbarHost) {
+    toolbarHost.innerHTML = toolbarHtml;
+    bindModviewControls(toolbarHost);
+  }
+
+  if (adminState.modLoading) {
+    body.innerHTML = `
+      <div class="admin-state">
+        <div class="spin-ring"></div>
+        <div class="admin-state-msg">Loading moderators…</div>
+      </div>`;
+    return;
+  }
+  if (adminState.modError) {
+    body.innerHTML = `
+      <div class="admin-state">
+        <div class="admin-state-msg admin-state-error">Couldn't load moderators</div>
+        <div class="admin-state-hint">${escapeHTML(adminState.modError)}</div>
+        <div class="admin-state-hint" style="margin-top: 12px;">Use the Refresh button above to retry.</div>
+      </div>`;
+    return;
+  }
+  if (!adminState.moderators) {
+    loadModerators();
+    body.innerHTML = `
+      <div class="admin-state">
+        <div class="spin-ring"></div>
+        <div class="admin-state-msg">Loading moderators…</div>
+      </div>`;
+    return;
+  }
+
+  // If the slide toolbar wasn't available, keep the legacy in-body toolbar
+  // so the view switcher still works.
+  body.innerHTML = toolbarHost ? `
+    <div id="modviewBody"></div>
+  ` : `
+    <div class="modview-toolbar">${toolbarHtml}</div>
     <div id="modviewBody"></div>
   `;
-  body.querySelectorAll('.modview-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.hasAttribute('hidden') || btn.classList.contains('modview-btn--hidden')) return;
-      adminState.modView = btn.dataset.mview;
-      renderModerators();
-    });
-  });
-  const activitiesTeamSelect = document.getElementById('activitiesTeamSelect');
-  if (activitiesTeamSelect) {
-    activitiesTeamSelect.addEventListener('change', e => {
-      adminState.activitiesTeamId = e.target.value || '';
-      updateActivitiesTeamContext();
-    });
-  }
-  // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
-  // hidden attr). Un-hide the button + set this true to restore the tab.
-  // Prior sessions that still have modView === 'availability' fall back to
-  // All so admins aren't stuck on a view with no visible tab.
-  const SHOW_MOD_AVAILABILITY_TAB = false;
-  if (!SHOW_MOD_AVAILABILITY_TAB && view === 'availability') {
-    adminState.modView = 'list';
-    view = 'list';
-  }
+  if (!toolbarHost) bindModviewControls(body);
+
   if (view !== 'activities' && typeof destroyActivitiesMap === 'function') {
     destroyActivitiesMap();
   }
