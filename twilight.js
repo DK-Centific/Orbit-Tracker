@@ -4702,7 +4702,7 @@ const adminState = {
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
   modListLayout: 'grid',
-  modListSort: { key: 'name', dir: 'asc' },  // list-view column sort · { key, dir:'asc'|'desc' }     // 'grid' | 'list' · All-view card grid vs table list
+  modListSort: null,  // set on first header click · { key, dir:'asc'|'desc' }
   modUserModal: null,        // { mode:'create'|'edit', values:{}, error:'', saving:false } | null
   activitiesTeamId: '',      // selected team context in the Activities map
   activitiesModeratorId: '', // selected moderator on the Activities map (mutually exclusive with team)
@@ -10892,7 +10892,7 @@ function renderModListView() {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-mod-sort');
       if (!key) return;
-      const cur = adminState.modListSort || { key: 'name', dir: 'asc' };
+      const cur = adminState.modListSort || { key: null, dir: 'asc' };
       if (cur.key === key) {
         adminState.modListSort = { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
       } else {
@@ -10904,8 +10904,8 @@ function renderModListView() {
 }
 
 function renderModTableHTML(mods) {
-  const sortSpec = (adminState && adminState.modListSort) || { key: 'name', dir: 'asc' };
-  const sorted = sortModeratorListRows(mods, sortSpec);
+  const sortSpec = (adminState && adminState.modListSort) || null;
+  const sorted = sortSpec ? sortModeratorListRows(mods, sortSpec) : (mods || []).slice();
   const head = `
     <div class="mod-table-wrap">
       <table class="mod-table">
