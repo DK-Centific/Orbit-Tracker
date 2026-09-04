@@ -3188,10 +3188,31 @@ function getLakituProjectByKey(key) {
   return LAKITU_PROJECTS.find(p => p.key === key) || null;
 }
 
-// TeamLog stores the admin-assigned Lakitu project as JSON inside the
-// existing `personalEmail` Excel column (versioned payload). This lets the
-// URL travel through the current Power Automate → Excel mapping without a
-// new column. Moderator-directory personalEmail values are untouched.
+// Admin-assigned Ring account dashboards (Nighttime Centific 1–5).
+// Same pattern as LAKITU_PROJECTS: pick a key in the team modal; the
+// mapped https URL is stored on the team and used for moderator Ring nav.
+const RING_DASHBOARDS = [
+  { key: 'nighttime-centific-1', label: 'Nighttime Centific 1', url: 'https://account.ring.com/account/dashboard?l=7f2fba81-0d37-49be-bff7-291f59c36747' },
+  { key: 'nighttime-centific-2', label: 'Nighttime Centific 2', url: 'https://account.ring.com/account/dashboard?l=b4a61c0c-1414-4d89-a43c-3c6278cfc08e' },
+  { key: 'nighttime-centific-3', label: 'Nighttime Centific 3', url: 'https://account.ring.com/account/dashboard?l=c2cfdef4-5d91-4c8b-a358-5f4d9e6dd7f5' },
+  { key: 'nighttime-centific-4', label: 'Nighttime Centific 4', url: 'https://account.ring.com/account/dashboard?l=cf59ccd3-2f3d-441f-ac44-6b2e8befd904' },
+  { key: 'nighttime-centific-5', label: 'Nighttime Centific 5', url: 'https://account.ring.com/account/dashboard?l=2fa21650-29ae-414b-add7-872f30910719' },
+];
+
+// Fallback Ring dashboard when a team has no assigned Ring link.
+const DEFAULT_RING_DASHBOARD_URL = 'https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e';
+
+function getRingDashboardByKey(key) {
+  if (!key) return null;
+  return RING_DASHBOARDS.find(p => p.key === key) || null;
+}
+
+// TeamLog stores the admin-assigned Lakitu project (+ Ring dashboard +
+// team address) as JSON inside the existing `personalEmail` Excel column
+// (versioned payload). This lets the fields travel through the current
+// Power Automate → Excel mapping without a new column. Moderator-directory
+// personalEmail values are untouched. Old payloads without ring/address
+// still parse (those fields default to empty).
 const TEAM_LAKITU_PROJECT_PAYLOAD_TYPE = 'teamLakituProject';
 const TEAM_LAKITU_PROJECT_PAYLOAD_VERSION = 1;
 
@@ -3202,11 +3223,25 @@ function encodeTeamLakituProjectPayload(team) {
     const proj = getLakituProjectByKey(key);
     if (proj && proj.url) url = String(proj.url).trim();
   }
+  const ringKey = team && team.ringDashboardKey ? String(team.ringDashboardKey) : '';
+  let ringUrl = team && team.ringDashboardUrl ? String(team.ringDashboardUrl).trim() : '';
+  if (!ringUrl && ringKey) {
+    const dash = getRingDashboardByKey(ringKey);
+    if (dash && dash.url) ringUrl = String(dash.url).trim();
+  }
+  // Ring links must be https only · drop anything else before persist.
+  if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+  const teamAddress = team && team.teamAddress != null
+    ? String(team.teamAddress).trim()
+    : '';
   return JSON.stringify({
     type: TEAM_LAKITU_PROJECT_PAYLOAD_TYPE,
     version: TEAM_LAKITU_PROJECT_PAYLOAD_VERSION,
     lakituProjectKey: key,
     lakituProjectUrl: url,
+    ringDashboardKey: ringKey,
+    ringDashboardUrl: ringUrl,
+    teamAddress: teamAddress,
   });
 }
 
@@ -3224,7 +3259,21 @@ function parseTeamLakituProjectFromPersonalEmail(value) {
       const proj = getLakituProjectByKey(key);
       if (proj && proj.url) url = String(proj.url).trim();
     }
-    return { lakituProjectKey: key, lakituProjectUrl: url };
+    const ringKey = obj.ringDashboardKey != null ? String(obj.ringDashboardKey) : '';
+    let ringUrl = obj.ringDashboardUrl != null ? String(obj.ringDashboardUrl).trim() : '';
+    if (!ringUrl && ringKey) {
+      const dash = getRingDashboardByKey(ringKey);
+      if (dash && dash.url) ringUrl = String(dash.url).trim();
+    }
+    if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+    const teamAddress = obj.teamAddress != null ? String(obj.teamAddress).trim() : '';
+    return {
+      lakituProjectKey: key,
+      lakituProjectUrl: url,
+      ringDashboardKey: ringKey,
+      ringDashboardUrl: ringUrl,
+      teamAddress: teamAddress,
+    };
   } catch (_) {
     return null;
   }
@@ -3243,6 +3292,18 @@ function isSafeHttpUrl(v) {
   }
 }
 
+// Ring dashboard links must be https only (stricter than isSafeHttpUrl).
+function isSafeHttpsUrl(v) {
+  const s = (v == null ? '' : String(v)).trim();
+  if (!s) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 function resolveTeamLakituProjectUrl(team) {
   if (!team) return '';
   let url = team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
@@ -3251,6 +3312,21 @@ function resolveTeamLakituProjectUrl(team) {
     if (proj && proj.url) url = String(proj.url).trim();
   }
   return url;
+}
+
+function resolveTeamRingDashboardUrl(team) {
+  if (!team) return '';
+  let url = team.ringDashboardUrl ? String(team.ringDashboardUrl).trim() : '';
+  if (!url && team.ringDashboardKey) {
+    const dash = getRingDashboardByKey(team.ringDashboardKey);
+    if (dash && dash.url) url = String(dash.url).trim();
+  }
+  return (url && isSafeHttpsUrl(url)) ? url : '';
+}
+
+function getTeamOfficeAddress(team) {
+  if (!team || team.teamAddress == null) return '';
+  return String(team.teamAddress).trim();
 }
 
 // Moderator Hub → All → List column sort. Empty values sort last in both
@@ -3316,6 +3392,33 @@ function getAssignedLakituUrl() {
   if (url && typeof isLakituProjectUrl === 'function' && isLakituProjectUrl(url)) return url;
   if (url && typeof isSafeHttpUrl === 'function' && isSafeHttpUrl(url)) return url;
   return '';
+}
+
+// Admin-assigned Ring dashboard for the moderator's active team, or the
+// default Ring dashboard when none is assigned.
+function getAssignedRingUrl() {
+  let team = null;
+  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
+  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let url = (typeof resolveTeamRingDashboardUrl === 'function')
+    ? resolveTeamRingDashboardUrl(team)
+    : '';
+  if (url && isSafeHttpsUrl(url)) return url;
+  return DEFAULT_RING_DASHBOARD_URL;
+}
+
+// Point the nav Ring button + menu Quick Link at the team Ring dashboard
+// (or the default). Safe to call often; no-ops when nodes are missing.
+function syncModeratorRingLinks() {
+  const url = (typeof getAssignedRingUrl === 'function')
+    ? getAssignedRingUrl()
+    : DEFAULT_RING_DASHBOARD_URL;
+  if (!url || !isSafeHttpsUrl(url)) return;
+  const nav = document.getElementById('navLakituBtn');
+  if (nav && nav.tagName === 'A') nav.setAttribute('href', url);
+  const row = document.getElementById('lakituRow');
+  if (row && row.tagName === 'A') row.setAttribute('href', url);
 }
 
 // '' | 'empty' | 'invalid' | 'valid' · drives the entry-bar field error
@@ -4090,6 +4193,7 @@ function exportExcel() {
    MENU + UTILS
    ===================================================================== */
 function openMenu() {
+  if (typeof syncModeratorRingLinks === 'function') syncModeratorRingLinks();
   // Toggle visibility of admin-only menu rows based on which app is
   // active. The shared menu drawer is used by both moderator and admin
   // nav buttons, so we gate admin-specific links (Master List, future
@@ -9338,6 +9442,11 @@ function activitiesViewAddrLine() {
     }
     return 'No location reported yet';
   }
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) return teamAddr;
   return GEO_HQ_ADDRESS;
 }
 
@@ -10080,6 +10189,43 @@ function buildFenceCheckResult(kind, role, pos, dest, radiusM, extra) {
   }, extra || {});
 }
 
+// Office fence for the logged-in moderator: team address when set,
+// otherwise Redmond HQ. Geocodes + caches team addresses via geocodeAddress.
+async function resolveOperatorOfficeFence() {
+  let team = null;
+  try {
+    const asgn = (typeof getActiveOperatorAssignment === 'function')
+      ? getActiveOperatorAssignment()
+      : ((typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  } catch (_) { team = null; }
+  const addr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (addr) {
+    try {
+      const dest = await geocodeAddress(addr);
+      if (dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng)) {
+        return {
+          lat: dest.lat,
+          lng: dest.lng,
+          address: addr,
+          source: 'team',
+          radiusM: GEOFENCE_HQ_RADIUS_M,
+        };
+      }
+    } catch (_) { /* fall through to HQ */ }
+  }
+  return {
+    lat: GEO_HQ_CENTER.lat,
+    lng: GEO_HQ_CENTER.lng,
+    address: GEO_HQ_ADDRESS,
+    source: 'hq',
+    radiusM: GEOFENCE_HQ_RADIUS_M,
+  };
+}
+
 async function checkHqGeofence() {
   const role = getOperatorFenceRole();
   let pos;
@@ -10097,9 +10243,11 @@ async function checkHqGeofence() {
       kind: 'hq',
     };
   }
-  const dest = { lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng };
-  const result = buildFenceCheckResult('hq', role, pos, dest, GEOFENCE_HQ_RADIUS_M, {
-    address: GEO_HQ_ADDRESS,
+  const fence = await resolveOperatorOfficeFence();
+  const dest = { lat: fence.lat, lng: fence.lng };
+  const result = buildFenceCheckResult('hq', role, pos, dest, fence.radiusM || GEOFENCE_HQ_RADIUS_M, {
+    address: fence.address,
+    officeSource: fence.source,
   });
   recordGeoPing({
     orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
@@ -10110,7 +10258,7 @@ async function checkHqGeofence() {
     accuracy: pos.accuracy,
     inside: result.inside,
     meters: result.meters,
-    fence: 'hq',
+    fence: fence.source === 'team' ? 'team_office' : 'hq',
     mocked: !!pos.mocked,
   });
   return result;
@@ -10175,7 +10323,7 @@ function applyOfficeCheckin(asgn, result) {
     pushWorklogStatus(asgn, 'office_checkin', { notes: note });
   }
   if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
-  geoToastOnce('office_checkin', 'Checked in at the Redmond office');
+  geoToastOnce('office_checkin', 'Checked in at the office');
   refreshGeoFlowUi();
 }
 
@@ -10195,7 +10343,7 @@ function applyOfficeCheckout(asgn, result) {
     pushWorklogStatus(asgn, 'office_checkout', { notes: note });
   }
   if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
-  geoToastOnce('office_checkout', 'Checked out at the Redmond office');
+  geoToastOnce('office_checkout', 'Checked out at the office');
   refreshGeoFlowUi();
 }
 
@@ -10376,6 +10524,7 @@ async function tickModeratorGeoFlow(opts) {
 function startModeratorGeofence() {
   if (state.isAdmin || isAdminUsername(state.username)) return;
   hideModeratorGeoUi();
+  if (typeof syncModeratorRingLinks === 'function') syncModeratorRingLinks();
   // App-open upload: location is captured and written to SessionState
   // immediately, even when this moderator has no assignment today.
   _lastGeoSyncAt = Date.now();
@@ -10452,8 +10601,22 @@ function activitiesFenceFeatures() {
       properties: { kind: 'hq' },
     }),
   ];
-  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
   const cache = loadGeocodeCache();
+  // When a team is selected and has an assigned office address, draw that
+  // team office fence in addition to global HQ.
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) {
+    const hit = cache[teamAddr.toLowerCase()];
+    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+      features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HQ_RADIUS_M), {
+        properties: { kind: 'hq', officeSource: 'team' },
+      }));
+    }
+  }
+  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
   asgns.forEach(a => {
     const addr = assignmentFenceAddress(a);
     const hit = cache[addr.toLowerCase()];
@@ -10466,6 +10629,13 @@ function activitiesFenceFeatures() {
 }
 
 async function prefetchActivityHomeGeocodes() {
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) {
+    try { await geocodeAddress(teamAddr); } catch (_) {}
+  }
   const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
   for (const a of asgns) {
     try { await geocodeAddress(assignmentFenceAddress(a)); } catch (_) {}
@@ -12444,6 +12614,8 @@ const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
 //   personalEmail      · TeamLog transport for the versioned team meta
 //                        JSON: {"type":"teamLakituProject","version":1,
 //                        "lakituProjectKey":"...","lakituProjectUrl":"...",
+//                        "ringDashboardKey":"...","ringDashboardUrl":"...",
+//                        "teamAddress":"..."}
 //                        (not a moderator personal email in this table)
 //   teamId             · numeric team ID (same value across all rows of
 //                        the same team)
@@ -12607,12 +12779,22 @@ async function fetchTeamsFromPA() {
               const proj = getLakituProjectByKey(key);
               if (proj && proj.url) url = proj.url;
             }
+            let ringKey = (fromJson && fromJson.ringDashboardKey) || r.ringDashboardKey || '';
+            let ringUrl = (fromJson && fromJson.ringDashboardUrl) || r.ringDashboardUrl || '';
             if (!ringUrl && ringKey) {
+              const dash = getRingDashboardByKey(ringKey);
               if (dash && dash.url) ringUrl = dash.url;
             }
+            if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+            const teamAddress = (fromJson && fromJson.teamAddress != null)
+              ? String(fromJson.teamAddress).trim()
+              : (r.teamAddress != null ? String(r.teamAddress).trim() : '');
             return {
               lakituProjectKey: key,
               lakituProjectUrl: url,
+              ringDashboardKey: ringKey,
+              ringDashboardUrl: ringUrl,
+              teamAddress: teamAddress,
             };
           })(),
           createdAt: r.createdTimestamp || '',
@@ -18961,7 +19143,10 @@ function openTeamModal(teamId) {
     // Admin-assigned Lakitu project (see LAKITU_PROJECTS). Stored as the
     // project KEY on the modal; saveTeam resolves it to the label + url.
     lakituProjectKey: team ? (team.lakituProjectKey || '') : '',
+    // Admin-assigned Ring dashboard (see RING_DASHBOARDS).
+    ringDashboardKey: team ? (team.ringDashboardKey || '') : '',
     // Office address used for moderator office check-in / check-out geofence.
+    teamAddress: team ? (team.teamAddress || '') : '',
     _availWeekAnchor: ymdLocal(monday),
     _overlapOpen: false,
     _backupOpen: false,
@@ -19182,11 +19367,14 @@ function renderTeamModal() {
       <div class="asgn-field">
         <label class="asgn-field-label">Ring link <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
         <select id="teamRingDashboard" class="teams-sort" aria-label="Ring link">
+          <option value="" ${!m.ringDashboardKey ? 'selected' : ''}>No Ring dashboard assigned</option>
+          ${RING_DASHBOARDS.map(p => `<option value="${escapeHTML(p.key)}" ${m.ringDashboardKey === p.key ? 'selected' : ''}>${escapeHTML(p.label)}</option>`).join('')}
         </select>
         <div class="asgn-field-hint">Assign the Ring account dashboard this team's moderators should open from the Ring nav button and menu.</div>
       </div>
       <div class="asgn-field">
         <label class="asgn-field-label">Team address <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <input id="teamAddressInput" type="text" value="${escapeHTML(m.teamAddress || '')}" placeholder="e.g. 14980 NE 31st St Ste 100, Redmond, WA 98052" autocomplete="street-address">
         <div class="asgn-field-hint">Assigned map location for this team · used for office check-in and check-out geofence (falls back to Redmond HQ when empty).</div>
       </div>
       <div class="team-avail-toolbar">
@@ -19262,10 +19450,13 @@ function renderTeamModal() {
   const ringDashSel = document.getElementById('teamRingDashboard');
   if (ringDashSel) {
     ringDashSel.addEventListener('change', e => {
+      adminState.modal.ringDashboardKey = e.target.value || '';
     });
   }
+  const teamAddrInput = document.getElementById('teamAddressInput');
   if (teamAddrInput) {
     teamAddrInput.addEventListener('input', e => {
+      adminState.modal.teamAddress = e.target.value || '';
     });
   }
   document.querySelectorAll('[data-team-disclosure]').forEach(details => {
@@ -19350,7 +19541,12 @@ function saveTeam() {
   const lakituProject = getLakituProjectByKey(lakituProjectKey);
   const lakituProjectUrl = lakituProject ? lakituProject.url : '';
   // Ring dashboard (optional) · https URL only.
+  const ringDashboardKey = m.ringDashboardKey || '';
+  const ringDashboard = getRingDashboardByKey(ringDashboardKey);
+  let ringDashboardUrl = ringDashboard ? ringDashboard.url : '';
+  if (ringDashboardUrl && !isSafeHttpsUrl(ringDashboardUrl)) ringDashboardUrl = '';
   // Team office address for geofence · trim; empty is allowed (HQ fallback).
+  const teamAddress = (m.teamAddress != null ? String(m.teamAddress) : '').trim();
   if (m.kind === 'createTeam') {
     // The team is local-only until either (a) an assignment uses it and
     // saves it via the assignment row, or (b) we have a TeamLog write URL
@@ -19368,6 +19564,9 @@ function saveTeam() {
       backupIds: m.backupIds,
       lakituProjectKey: lakituProjectKey,
       lakituProjectUrl: lakituProjectUrl,
+      ringDashboardKey: ringDashboardKey,
+      ringDashboardUrl: ringDashboardUrl,
+      teamAddress: teamAddress,
       createdAt: new Date().toISOString(),
     };
     if (!TEAMLOG_PA_WRITE_URL) {
@@ -19393,6 +19592,9 @@ function saveTeam() {
       t.backupIds = m.backupIds;
       t.lakituProjectKey = lakituProjectKey;
       t.lakituProjectUrl = lakituProjectUrl;
+      t.ringDashboardKey = ringDashboardKey;
+      t.ringDashboardUrl = ringDashboardUrl;
+      t.teamAddress = teamAddress;
       // Drop the legacy single-id field so memory stays clean. Old reads
       // via getTeamBackupIds() still work because they prefer the array.
       delete t.backupId;
