@@ -8849,18 +8849,15 @@ function renderModerators() {
   // View switcher lives in the slide next to the Moderators subtab
   // (#modviewToolbar). Fall back to painting it into #subtabBody only if
   // the slide shell is missing (shouldn't happen in normal hub renders).
+  // Coerce unknown/stale modView values (e.g. cached "modview") so Activities
+  // filters are never hidden by an invalid view key.
+  const VALID_MOD_VIEWS = new Set(['list', 'team', 'assignment', 'availability', 'activities']);
   let view = adminState.modView || 'list';
-  const activityTeams = [...(adminState.teams || [])]
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  if (adminState.activitiesTeamId == null) adminState.activitiesTeamId = '';
-  if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
-    adminState.activitiesTeamId = '';
+  if (!VALID_MOD_VIEWS.has(view)) {
+    adminState.modView = 'list';
+    view = 'list';
   }
-  if (adminState.activitiesModeratorId == null) adminState.activitiesModeratorId = '';
-  const activityMods = listActivitiesModeratorOptions();
-  if (adminState.activitiesModeratorId && !activityMods.some(m => String(m.id).toLowerCase() === String(adminState.activitiesModeratorId).toLowerCase())) {
-    adminState.activitiesModeratorId = '';
-  }
+  normalizeActivitiesFilterState();
   // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
   // hidden attr). Un-hide the button + set this true to restore the tab.
   // Prior sessions that still have modView === 'availability' fall back to
@@ -8896,63 +8893,29 @@ function renderModerators() {
         </button>
       </div>
   `;
-  const activitiesFiltersHtml = view === 'activities' ? `
-        <div class="activities-map-filters">
-        <label class="activities-team-filter" for="activitiesTeamSelect">
-          <span class="activities-team-filter-label">Team</span>
-          <select class="activities-team-select" id="activitiesTeamSelect">
-            <option value="">All teams</option>
-            ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(adminState.activitiesTeamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
-          </select>
-        </label>
-        <label class="activities-team-filter" for="activitiesModeratorSelect">
-          <span class="activities-team-filter-label">Moderator</span>
-          <select class="activities-team-select" id="activitiesModeratorSelect">
-            <option value="">All moderators</option>
-            ${listActivitiesModeratorOptions().map(m => `<option value="${escapeHTML(m.id)}" ${String(adminState.activitiesModeratorId || '').toLowerCase() === String(m.id).toLowerCase() ? 'selected' : ''}>${escapeHTML(m.name)}</option>`).join('')}
-          </select>
-        </label>
-        </div>
-      ` : '';
 
   const toolbarHost = document.getElementById('modviewToolbar');
-  const bindModviewControls = (root) => {
+  const bindModviewToggle = (root) => {
     if (!root) return;
     root.querySelectorAll('.modview-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.hasAttribute('hidden') || btn.classList.contains('modview-btn--hidden')) return;
-        adminState.modView = btn.dataset.mview;
+        const next = btn.dataset.mview;
+        if (!VALID_MOD_VIEWS.has(next)) return;
+        adminState.modView = next;
         renderModerators();
       });
     });
-    const activitiesTeamSelect = root.querySelector('#activitiesTeamSelect');
-    if (activitiesTeamSelect) {
-      activitiesTeamSelect.addEventListener('change', e => {
-        adminState.activitiesTeamId = e.target.value || '';
-        adminState.activitiesModeratorId = '';
-        refreshActivitiesMapFocus();
-      });
-    }
-    const activitiesModeratorSelect = root.querySelector('#activitiesModeratorSelect');
-    if (activitiesModeratorSelect) {
-      activitiesModeratorSelect.addEventListener('change', e => {
-        adminState.activitiesModeratorId = e.target.value || '';
-        adminState.activitiesTeamId = '';
-        refreshActivitiesMapFocus();
-      });
-    }
   };
 
   if (toolbarHost) {
     toolbarHost.innerHTML = toolbarHtml;
-    bindModviewControls(toolbarHost);
+    bindModviewToggle(toolbarHost);
   }
-  const extraFilters = document.getElementById('modviewExtraFilters');
-  if (extraFilters) {
-    extraFilters.hidden = view !== 'activities';
-    extraFilters.innerHTML = activitiesFiltersHtml;
-    if (view === 'activities') bindModviewControls(extraFilters);
-  }
+  // Filters live outside the overflow-clipped slide so they stay visible.
+  // Always (re)paint after hub rebuilds; filter changes themselves do NOT
+  // call renderModerators — they only update adminState + the map.
+  paintActivitiesExtraFilters();
 
   if (adminState.modLoading) {
     body.innerHTML = `
@@ -8989,7 +8952,7 @@ function renderModerators() {
     <div class="modview-toolbar">${toolbarHtml}</div>
     <div id="modviewBody"></div>
   `;
-  if (!toolbarHost) bindModviewControls(body);
+  if (!toolbarHost) bindModviewToggle(body);
 
   if (view !== 'activities' && typeof destroyActivitiesMap === 'function') {
     destroyActivitiesMap();
@@ -8998,6 +8961,8 @@ function renderModerators() {
   else if (view === 'team')        renderModTeamView();
   else if (view === 'assignment')  renderModAssignmentView();
   else if (view === 'activities')  renderModActivitiesView();
+  // Hub rebuild can recreate #modviewExtraFilters; re-assert filters last.
+  paintActivitiesExtraFilters();
 }
 
 function renderModAvailabilityView() {
@@ -9005,6 +8970,111 @@ function renderModAvailabilityView() {
   // Tab button is hidden in the UI; this function is kept so Availability
   // can be restored by un-hiding the modview button above.
   if (typeof renderAvailabilityHub === 'function') renderAvailabilityHub();
+}
+
+function listActivitiesTeams() {
+  return [...(adminState.teams || [])]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function normalizeActivitiesFilterState() {
+  if (adminState.activitiesTeamId == null) adminState.activitiesTeamId = '';
+  if (adminState.activitiesModeratorId == null) adminState.activitiesModeratorId = '';
+  const activityTeams = listActivitiesTeams();
+  if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
+    // Keep demo team selections across brief roster rebuilds.
+    if (!(isGeoDemoMode() && String(adminState.activitiesTeamId).startsWith('demo-team-'))) {
+      adminState.activitiesTeamId = '';
+    }
+  }
+  const activityMods = listActivitiesModeratorOptions();
+  if (adminState.activitiesModeratorId && !activityMods.some(m => String(m.id).toLowerCase() === String(adminState.activitiesModeratorId).toLowerCase())) {
+    if (!(isGeoDemoMode() && String(adminState.activitiesModeratorId).toLowerCase().startsWith('demo-'))) {
+      adminState.activitiesModeratorId = '';
+    }
+  }
+}
+
+function paintActivitiesExtraFilters() {
+  const extraFilters = document.getElementById('modviewExtraFilters');
+  if (!extraFilters) return;
+  const view = adminState.modView || 'list';
+  const onHub = adminState.tab === 'moderators' && adminState.subtab === 'moderators';
+  const show = onHub && view === 'activities';
+  if (!show) {
+    extraFilters.hidden = true;
+    if (extraFilters.innerHTML) extraFilters.innerHTML = '';
+    return;
+  }
+  normalizeActivitiesFilterState();
+  const activityTeams = listActivitiesTeams();
+  const activityMods = listActivitiesModeratorOptions();
+  const teamId = String(adminState.activitiesTeamId || '');
+  const modId = String(adminState.activitiesModeratorId || '');
+  const signature = [
+    'v1',
+    activityTeams.map(t => String(t.id) + ':' + (t.name || '')).join('|'),
+    activityMods.map(m => String(m.id) + ':' + (m.name || '')).join('|'),
+  ].join('::');
+
+  // Rebuild markup only when the option lists change. Filter *selection*
+  // updates sync values in place so the controls never flash away.
+  if (extraFilters.dataset.filterSig !== signature || !document.getElementById('activitiesTeamSelect')) {
+    extraFilters.innerHTML = `
+      <div class="activities-map-filters">
+        <label class="activities-team-filter" for="activitiesTeamSelect">
+          <span class="activities-team-filter-label">Team</span>
+          <select class="activities-team-select" id="activitiesTeamSelect">
+            <option value="">All teams</option>
+            ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="activities-team-filter" for="activitiesModeratorSelect">
+          <span class="activities-team-filter-label">Moderator</span>
+          <select class="activities-team-select" id="activitiesModeratorSelect">
+            <option value="">All moderators</option>
+            ${activityMods.map(m => `<option value="${escapeHTML(m.id)}">${escapeHTML(m.name)}</option>`).join('')}
+          </select>
+        </label>
+        ${isGeoDemoMode() ? `<button type="button" class="btn btn-ghost activities-demo-ping-btn" id="activitiesDemoPingBtn" title="Write a local demo ping for Blake">Simulate Blake ping</button>` : ''}
+      </div>`;
+    extraFilters.dataset.filterSig = signature;
+    const teamSel = document.getElementById('activitiesTeamSelect');
+    const modSel = document.getElementById('activitiesModeratorSelect');
+    if (teamSel) {
+      teamSel.addEventListener('change', e => {
+        adminState.activitiesTeamId = e.target.value || '';
+        adminState.activitiesModeratorId = '';
+        // Never re-render the hub on filter change — only sync + focus map.
+        paintActivitiesExtraFilters();
+        refreshActivitiesMapFocus();
+      });
+    }
+    if (modSel) {
+      modSel.addEventListener('change', e => {
+        adminState.activitiesModeratorId = e.target.value || '';
+        adminState.activitiesTeamId = '';
+        paintActivitiesExtraFilters();
+        refreshActivitiesMapFocus();
+      });
+    }
+    const demoBtn = document.getElementById('activitiesDemoPingBtn');
+    if (demoBtn) {
+      demoBtn.addEventListener('click', () => {
+        if (typeof simulateGeoDemoPing === 'function') simulateGeoDemoPing('demo-blake');
+      });
+    }
+  }
+
+  extraFilters.hidden = false;
+  const teamSel = document.getElementById('activitiesTeamSelect');
+  const modSel = document.getElementById('activitiesModeratorSelect');
+  if (teamSel && teamSel.value !== teamId) teamSel.value = teamId;
+  if (modSel) {
+    const match = activityMods.find(m => String(m.id).toLowerCase() === modId.toLowerCase());
+    const next = match ? match.id : '';
+    if (modSel.value !== next) modSel.value = next;
+  }
 }
 
 function getSelectedActivitiesTeam() {
@@ -9116,6 +9186,8 @@ const GEO_PINGS_KEY = 'centific_orbit_geo_pings_v1';
 const GEO_PING_STALE_MS = 15 * 60 * 1000;
 const GEO_FLOW_TICK_MS = 45000;
 const GEO_MOCK_LS_KEY = 'centific_orbit_mock_geo_v1';
+const GEO_BC_NAME = 'centific_orbit_geo_pings_bc_v1';
+const GEO_DEMO_FLAG_KEY = 'centific_orbit_geo_demo_v1';
 let _geoPingTimer = null;
 let _geoFlowBusy = false;
 let _geoPermissionDenied = false;
@@ -9123,6 +9195,177 @@ let _geoLastToastKey = '';
 let _geoLastToastAt = 0;
 let _lastGeoSyncAt = 0;
 let _activitiesFocusKey = '';
+let _geoPingBc = null;
+let _geoPingListenersReady = false;
+let _activitiesLocalPingPoll = null;
+let _sessionStateReadDisabled = false;
+let _sessionStateReadWarned = false;
+
+const GEO_DEMO_MODS = [
+  { orbitLoginId: 'demo-annie', firstName: 'Annie', lastName: 'Demo', LoginRole: 'Primary' },
+  { orbitLoginId: 'demo-blake', firstName: 'Blake', lastName: 'Demo', LoginRole: 'Backup' },
+  { orbitLoginId: 'demo-casey', firstName: 'Casey', lastName: 'Demo', LoginRole: 'Moderator' },
+];
+const GEO_DEMO_TEAMS = [
+  { id: 'demo-team-01', name: 'Team 01', primaryIds: ['demo-annie'], backupIds: ['demo-blake'] },
+  { id: 'demo-team-02', name: 'Team 02', primaryIds: ['demo-casey'], backupIds: [] },
+];
+
+function isGeoDemoMode() {
+  try {
+    const q = new URLSearchParams((location && location.search) || '');
+    if (q.get('geoDemo') === '1' || q.get('geoDemo') === 'true') return true;
+  } catch (_) {}
+  try {
+    if (localStorage.getItem(GEO_DEMO_FLAG_KEY) === '1') return true;
+  } catch (_) {}
+  return false;
+}
+
+function mergeGeoDemoRoster() {
+  if (!isGeoDemoMode()) return;
+  if (!Array.isArray(adminState.moderators)) adminState.moderators = [];
+  const seen = new Set(adminState.moderators.map(m =>
+    String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase()
+  ).filter(Boolean));
+  GEO_DEMO_MODS.forEach(m => {
+    const id = String(m.orbitLoginId).toLowerCase();
+    if (seen.has(id)) return;
+    adminState.moderators.push(Object.assign({}, m));
+    seen.add(id);
+  });
+  if (!Array.isArray(adminState.teams)) adminState.teams = [];
+  GEO_DEMO_TEAMS.forEach(dt => {
+    if (adminState.teams.some(t => String(t.id) === String(dt.id))) return;
+    adminState.teams.push(Object.assign({}, dt, {
+      primaryIds: [...(dt.primaryIds || [])],
+      backupIds: [...(dt.backupIds || [])],
+    }));
+  });
+  adminState._asgnLoaded = true;
+}
+
+function seedGeoDemoPings(force) {
+  if (!isGeoDemoMode()) return;
+  const map = loadGeoPings();
+  const now = Date.now();
+  const seeds = [
+    { orbitLoginId: 'demo-annie', name: 'Annie Demo', role: 'primary', lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng, accuracy: 12 },
+    { orbitLoginId: 'demo-blake', name: 'Blake Demo', role: 'backup', lat: 47.6502, lng: -122.1288, accuracy: 18 },
+    { orbitLoginId: 'demo-casey', name: 'Casey Demo', role: 'moderator', lat: 47.6388, lng: -122.1455, accuracy: 20 },
+  ];
+  let changed = false;
+  seeds.forEach(s => {
+    const id = s.orbitLoginId.toLowerCase();
+    if (!force && map[id] && Number.isFinite(map[id].lat)) return;
+    map[id] = Object.assign({}, map[id] || {}, s, { at: now, demo: true });
+    changed = true;
+  });
+  if (changed) saveGeoPings(map);
+}
+
+function simulateGeoDemoPing(orbitLoginId) {
+  const id = String(orbitLoginId || 'demo-blake').toLowerCase();
+  const nameMap = { 'demo-annie': 'Annie Demo', 'demo-blake': 'Blake Demo', 'demo-casey': 'Casey Demo' };
+  const roleMap = { 'demo-annie': 'primary', 'demo-blake': 'backup', 'demo-casey': 'moderator' };
+  // Nudge slightly east of HQ so the map move is obvious.
+  const jitter = (Math.random() - 0.5) * 0.006;
+  recordGeoPing({
+    orbitLoginId: id,
+    name: nameMap[id] || id,
+    role: roleMap[id] || 'moderator',
+    lat: GEO_HQ_CENTER.lat + 0.004 + jitter,
+    lng: GEO_HQ_CENTER.lng + 0.008 + jitter,
+    accuracy: 15,
+    demo: true,
+    at: Date.now(),
+  }, { skipSync: true });
+  if (adminState) {
+    adminState.activitiesModeratorId = id;
+    adminState.activitiesTeamId = '';
+  }
+  paintActivitiesExtraFilters();
+  refreshActivitiesMapFocus();
+  if (typeof showToast === 'function') showToast('Demo ping saved for ' + (nameMap[id] || id), 'success', 2500);
+}
+
+function applyGeoDemoMode() {
+  if (!isGeoDemoMode()) return;
+  try { localStorage.setItem(GEO_DEMO_FLAG_KEY, '1'); } catch (_) {}
+  mergeGeoDemoRoster();
+  seedGeoDemoPings(false);
+  ensureGeoPingBroadcast();
+  console.info('[Twilight] Geo demo mode on · seeded Team 01 / Team 02 and Annie / Blake / Casey pins. Cloud SessionState read is not required.');
+  try {
+    window.orbitSimulateGeoPing = simulateGeoDemoPing;
+  } catch (_) {}
+}
+
+function ensureGeoPingBroadcast() {
+  if (_geoPingListenersReady) return;
+  _geoPingListenersReady = true;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      _geoPingBc = new BroadcastChannel(GEO_BC_NAME);
+      _geoPingBc.onmessage = (ev) => {
+        if (!ev || !ev.data || ev.data.type !== 'geo-pings') return;
+        onRemoteGeoPingsUpdated(ev.data.map);
+      };
+    }
+  } catch (_) { _geoPingBc = null; }
+  window.addEventListener('storage', (e) => {
+    if (!e || e.key !== GEO_PINGS_KEY) return;
+    try {
+      const map = e.newValue ? JSON.parse(e.newValue) : {};
+      onRemoteGeoPingsUpdated(map && typeof map === 'object' ? map : {});
+    } catch (_) {}
+  });
+}
+
+function broadcastGeoPings(map) {
+  try {
+    if (_geoPingBc) _geoPingBc.postMessage({ type: 'geo-pings', map: map || loadGeoPings(), at: Date.now() });
+  } catch (_) {}
+}
+
+function onRemoteGeoPingsUpdated(incoming) {
+  if (!incoming || typeof incoming !== 'object') return;
+  // Merge newer remote pins into localStorage without re-broadcast loops.
+  const local = loadGeoPings();
+  let changed = false;
+  Object.keys(incoming).forEach(idRaw => {
+    const id = String(idRaw).toLowerCase();
+    const ping = incoming[idRaw];
+    if (!ping || !Number.isFinite(Number(ping.lat)) || !Number.isFinite(Number(ping.lng))) return;
+    const prev = local[id];
+    if (prev && prev.at && ping.at && prev.at >= ping.at) return;
+    local[id] = Object.assign({}, prev || {}, ping, { orbitLoginId: id });
+    changed = true;
+  });
+  if (changed) {
+    try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(local)); } catch (_) {}
+  }
+  if (_activitiesMap && adminState && adminState.modView === 'activities') {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    try { updateActivitiesMapCaption(); } catch (_) {}
+  }
+}
+
+function startActivitiesLocalPingPoll() {
+  if (_activitiesLocalPingPoll) return;
+  ensureGeoPingBroadcast();
+  _activitiesLocalPingPoll = setInterval(() => {
+    if (!_activitiesMap || !adminState || adminState.modView !== 'activities') return;
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }, 5000);
+}
+
+function stopActivitiesLocalPingPoll() {
+  if (_activitiesLocalPingPoll) {
+    clearInterval(_activitiesLocalPingPoll);
+    _activitiesLocalPingPoll = null;
+  }
+}
 
 function isGeofencePreviewHost() {
   const h = (location && location.hostname) || '';
@@ -9246,6 +9489,8 @@ function loadGeoPings() {
 }
 function saveGeoPings(map) {
   try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(map)); } catch (_) {}
+  ensureGeoPingBroadcast();
+  broadcastGeoPings(map);
 }
 function recordGeoPing(ping, opts) {
   opts = opts || {};
