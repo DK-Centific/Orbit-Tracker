@@ -10291,7 +10291,8 @@ function renderModActivitiesView() {
           <div class="activities-map-title">Redmond HQ</div>
           <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
           <div class="activities-map-legend">
-            <span><i class="role-fence"></i> Geo fence</span>
+            <span><i class="role-fence-hq"></i> Office fence</span>
+            <span><i class="role-fence"></i> Assignment fence</span>
             <span><i class="role-primary"></i> Primary</span>
             <span><i class="role-backup"></i> Backup</span>
             <span><i class="role-moderator"></i> Moderator</span>
