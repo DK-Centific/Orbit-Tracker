@@ -10,8 +10,6 @@
 <meta name="apple-mobile-web-app-title" content="Twilight">
 <title>Centific Data Collection · Project Twilight</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* =========================================================
@@ -21341,6 +21339,43 @@ const ACTIVITIES_STYLE_LIGHT_ALT = 'https://tiles.openfreemap.org/styles/liberty
 let _activitiesMap = null;
 let _activitiesMapThemeObs = null;
 let _activitiesMapStyleKey = null;
+let _activitiesMapApplyingTheme = false;
+let _mapLibreLoadPromise = null;
+const MAPLIBRE_JS_URL = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';
+const MAPLIBRE_CSS_URL = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
+
+// Load MapLibre only when Activities opens. Putting it in <head> blocked
+// login on a slow/blocked CDN and could OOM Chromium on this 4MB page.
+function loadMapLibreAssets() {
+  if (typeof maplibregl !== 'undefined') return Promise.resolve();
+  if (_mapLibreLoadPromise) return _mapLibreLoadPromise;
+  _mapLibreLoadPromise = new Promise((resolve, reject) => {
+    if (!document.getElementById('maplibre-css')) {
+      const link = document.createElement('link');
+      link.id = 'maplibre-css';
+      link.rel = 'stylesheet';
+      link.href = MAPLIBRE_CSS_URL;
+      document.head.appendChild(link);
+    }
+    const existing = document.getElementById('maplibre-js');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('MapLibre script failed')));
+      return;
+    }
+    const s = document.createElement('script');
+    s.id = 'maplibre-js';
+    s.src = MAPLIBRE_JS_URL;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('MapLibre script failed'));
+    document.head.appendChild(s);
+  }).catch(err => {
+    _mapLibreLoadPromise = null;
+    throw err;
+  });
+  return _mapLibreLoadPromise;
+}
 
 function activitiesMapStyleUrl() {
   const theme = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -21378,6 +21413,11 @@ function activitiesThemeColors() {
 
 function applyActivitiesMapTheme(map) {
   if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+  // setPaintProperty fires 'styledata'. Without this guard the listener
+  // re-enters forever and Chrome kills the tab (Aw Snap / error 5).
+  if (_activitiesMapApplyingTheme) return;
+  _activitiesMapApplyingTheme = true;
+  try {
   const c = activitiesThemeColors();
   const land = c.isDark ? '#1A1C1E' : c.bg;
   const water = c.isDark ? '#15191E' : '#D9E4EC';
@@ -21419,6 +21459,9 @@ function applyActivitiesMapTheme(map) {
   // Marker + well chrome follow brand tokens via CSS classes on the container.
   const wrap = document.getElementById('activitiesMapWell');
   if (wrap) wrap.setAttribute('data-map-theme', c.isDark ? 'dark' : 'light');
+  } finally {
+    _activitiesMapApplyingTheme = false;
+  }
 }
 
 function syncActivitiesMapTheme() {
@@ -21475,18 +21518,15 @@ function initActivitiesMap() {
   const el = document.getElementById('activitiesMap');
   if (!el) return;
   if (typeof maplibregl === 'undefined') {
-    // CDN script may still be loading · retry briefly before showing fallback.
-    if (!initActivitiesMap._retries) initActivitiesMap._retries = 0;
-    if (initActivitiesMap._retries < 40) {
-      initActivitiesMap._retries += 1;
-      setTimeout(initActivitiesMap, 100);
-      return;
-    }
-    const fallback = document.getElementById('activitiesMapFallback');
-    if (fallback) fallback.hidden = false;
+    loadMapLibreAssets().then(() => {
+      if (document.getElementById('activitiesMap')) initActivitiesMap();
+    }).catch(err => {
+      console.warn('[Twilight] MapLibre failed to load', err && err.message);
+      const fallback = document.getElementById('activitiesMapFallback');
+      if (fallback) fallback.hidden = false;
+    });
     return;
   }
-  initActivitiesMap._retries = 0;
   destroyActivitiesMap();
   const styleUrl = activitiesMapStyleUrl();
   _activitiesMapStyleKey = styleUrl;
@@ -21508,7 +21548,6 @@ function initActivitiesMap() {
   _activitiesMap.on('error', (e) => {
     console.warn('[Twilight] Activities map error:', e && (e.error || e));
   });
-  _activitiesMap.on('styledata', () => applyActivitiesMapTheme(_activitiesMap));
   ensureActivitiesMapThemeObserver();
   // Layout settle · map in a newly-inserted inset well needs a resize.
   requestAnimationFrame(() => {
