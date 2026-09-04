@@ -12742,6 +12742,106 @@ button.perf-stat-chip.scheduled.active {
               0 6px 16px rgba(0,0,0,0.28);
   border: 2px solid var(--bg, #fff);
 }
+.activities-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  justify-content: center;
+  margin-top: 10px;
+  pointer-events: none;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.activities-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.activities-map-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+}
+.activities-map-legend i.role-primary { background: var(--brand, #00F0FF); }
+.activities-map-legend i.role-backup { background: var(--amber, #F59E0B); }
+.activities-map-legend i.role-moderator { background: var(--blue, #3b82f6); }
+.activities-map-legend i.role-fence {
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+  border: 2px solid var(--brand, #00F0FF);
+  opacity: 0.85;
+}
+.geo-mod-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+}
+.geo-mod-marker.is-primary { background: var(--brand, #00F0FF); }
+.geo-mod-marker.is-backup { background: var(--amber, #F59E0B); }
+.geo-mod-marker.is-moderator { background: var(--blue, #3b82f6); }
+.geo-mod-marker.is-stale { opacity: 0.45; }
+.geo-fence-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(8,10,12,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.geo-fence-overlay[hidden] { display: none !important; }
+.geo-fence-modal {
+  width: min(440px, 100%);
+  background: var(--bg2, var(--bg));
+  color: var(--text);
+  border-radius: 18px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+}
+.geo-fence-modal h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.geo-fence-modal p {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text2);
+  margin: 0 0 16px;
+}
+.geo-fence-modal .geo-role-pill {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft, rgba(0,240,255,0.12));
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.geo-fence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.welcome-worklog-banner-sub .geo-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text3);
+}
 /* MapLibre chrome · blend with Helios tokens */
 .activities-viz-well .maplibregl-ctrl-group {
   background: var(--bg) !important;

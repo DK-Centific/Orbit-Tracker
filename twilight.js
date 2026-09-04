@@ -1131,7 +1131,7 @@ function renderWelcomeWorklogBannerHTML() {
       </div>
       <div class="welcome-worklog-banner-text">
         <div class="welcome-worklog-banner-title">Traveling to the assigned location</div>
-        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, please confirm your arrival.</div>
+        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, please confirm your arrival.<span class="geo-hint">Location check applies to primary, backup, and every other moderator role (${GEOFENCE_HOME_RADIUS_M} m).</span></div>
       </div>
       <button class="btn btn-primary welcome-worklog-action" id="welcomeArrivalBtn">
         Confirm Arrival
@@ -1219,12 +1219,7 @@ function bindWelcomeWorklogActions() {
   if (arrivalBtn) {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const asgn = (typeof getActiveOperatorAssignment === 'function')
-        ? getActiveOperatorAssignment()
-        : getOperatorAssignment();
-      if (asgn) pushWorklogStatus(asgn, 'arrived');
-      // Re-render welcome so the banner reflects the new state
-      renderApp();
+      if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
     });
   }
   const startBtn = document.getElementById('welcomeStartBtn');
@@ -1659,16 +1654,15 @@ function bindEntryFields() {
   if (arrivedBtn && !arrivedBtn.dataset.boundEntry) {
     arrivedBtn.dataset.boundEntry = '1';
     arrivedBtn.addEventListener('click', () => {
+      if (typeof confirmOperatorArrival === 'function') {
+        confirmOperatorArrival();
+        return;
+      }
       state.arrivedAt = new Date().toISOString();
-      state.remindersShown = []; // fresh start for this session
+      state.remindersShown = [];
       saveState();
       if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
-      // Re-render the entry bar to swap button → pill. Cheapest path:
-      // re-render the whole current view so the entry bar updates
-      // without us needing to know its container's ID. This is what
-      // every other entry-bar update does too.
-      if (typeof render === 'function') render();
-      // Kick the reminder loop now so the user can see it running.
+      if (typeof renderApp === 'function') renderApp();
       schedulePerHourReminder();
     });
   }
@@ -8900,6 +8894,9 @@ function renderModerators() {
       activitiesTeamSelect.addEventListener('change', e => {
         adminState.activitiesTeamId = e.target.value || '';
         updateActivitiesTeamContext();
+        if (_activitiesMap) {
+          try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+        }
       });
     }
   };
@@ -8973,6 +8970,460 @@ function updateActivitiesTeamContext() {
   if (!target) return;
   const team = getSelectedActivitiesTeam();
   target.textContent = team ? `Live map · ${team.name}` : 'Live map · All teams';
+}
+
+/* =====================================================================
+   GEO FENCE · every moderator role
+   Primary, backup, and any other non-admin LoginRole must be inside
+   the participant-home fence to confirm arrival. The Activities map
+   draws the Redmond HQ fence and live pins for all of those roles.
+   ===================================================================== */
+const GEOFENCE_HOME_RADIUS_M = 200;
+const GEOFENCE_HQ_RADIUS_M = 400;
+const GEOCODE_CACHE_KEY = 'centific_orbit_geocode_v1';
+const GEO_PINGS_KEY = 'centific_orbit_geo_pings_v1';
+const GEO_PING_STALE_MS = 15 * 60 * 1000;
+let _geoPingTimer = null;
+
+function isGeofencePreviewHost() {
+  const h = (location && location.hostname) || '';
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+function haversineMeters(aLat, aLng, bLat, bLng) {
+  const toRad = d => d * Math.PI / 180;
+  const R = 6371000;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function geofenceCirclePolygon(lng, lat, radiusM, steps) {
+  steps = steps || 64;
+  const coords = [];
+  const latRad = lat * Math.PI / 180;
+  const mPerDegLat = 110540;
+  const mPerDegLng = Math.max(1e-6, 111320 * Math.cos(latRad));
+  for (let i = 0; i <= steps; i++) {
+    const ang = (i / steps) * 2 * Math.PI;
+    coords.push([
+      lng + (radiusM * Math.sin(ang)) / mPerDegLng,
+      lat + (radiusM * Math.cos(ang)) / mPerDegLat,
+    ]);
+  }
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} };
+}
+
+function assignmentFenceAddress(asgn) {
+  if (!asgn || !asgn.participantData) return '';
+  const pd = asgn.participantData;
+  return [pd.address, pd.state, pd.zipCode].filter(Boolean).join(', ').trim();
+}
+
+function loadGeocodeCache() {
+  try {
+    const raw = localStorage.getItem(GEOCODE_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) { return {}; }
+}
+function saveGeocodeCache(cache) {
+  try { localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache)); } catch (_) {}
+}
+
+async function geocodeAddress(address) {
+  const q = String(address || '').trim();
+  if (!q) return null;
+  const cache = loadGeocodeCache();
+  const key = q.toLowerCase();
+  if (cache[key] && Number.isFinite(cache[key].lat) && Number.isFinite(cache[key].lng)) {
+    return cache[key];
+  }
+  const tryFetch = async (url) => {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('geocode ' + res.status);
+    return res.json();
+  };
+  let lat = null, lng = null;
+  try {
+    const photon = await tryFetch('https://photon.komoot.io/api/?limit=1&q=' + encodeURIComponent(q));
+    const feat = photon && photon.features && photon.features[0];
+    const c = feat && feat.geometry && feat.geometry.coordinates;
+    if (c && c.length >= 2) { lng = Number(c[0]); lat = Number(c[1]); }
+  } catch (_) { /* try nominatim */ }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    try {
+      const nom = await tryFetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+      if (Array.isArray(nom) && nom[0]) {
+        lat = Number(nom[0].lat);
+        lng = Number(nom[0].lon);
+      }
+    } catch (_) { /* leave null */ }
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const hit = { lat, lng, at: Date.now() };
+  cache[key] = hit;
+  saveGeocodeCache(cache);
+  return hit;
+}
+
+function getOperatorFenceRole() {
+  const myId = String((state.modProfile && state.modProfile.orbitLoginId) || state.username || '').toLowerCase();
+  if (!myId) return 'moderator';
+  const asgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment()
+    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+  const team = (typeof teamForAssignment === 'function')
+    ? teamForAssignment(asgn)
+    : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
+  if (team) {
+    if ((team.primaryIds || []).some(id => String(id).toLowerCase() === myId)) return 'primary';
+    const backups = (typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : (team.backupIds || []);
+    if ((backups || []).some(id => String(id).toLowerCase() === myId)) return 'backup';
+  }
+  const loginRole = directoryLoginRole(state.modProfile || {});
+  if (loginRole && !directoryRoleIsAdmin(state.modProfile)) {
+    const v = loginRole.toLowerCase();
+    if (v === 'backup') return 'backup';
+    if (v === 'primary' || v === 'mod' || v === 'moderator') return v === 'primary' ? 'primary' : 'moderator';
+  }
+  return 'moderator';
+}
+
+function fenceRoleLabel(role) {
+  if (role === 'primary') return 'Primary';
+  if (role === 'backup') return 'Backup';
+  return 'Moderator';
+}
+
+function loadGeoPings() {
+  try {
+    const raw = localStorage.getItem(GEO_PINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) { return {}; }
+}
+function saveGeoPings(map) {
+  try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(map)); } catch (_) {}
+}
+function recordGeoPing(ping) {
+  const id = String(ping.orbitLoginId || '').toLowerCase();
+  if (!id) return;
+  const map = loadGeoPings();
+  map[id] = Object.assign({}, map[id] || {}, ping, { at: Date.now() });
+  saveGeoPings(map);
+}
+
+function readCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(Object.assign(new Error('Location is not available on this device.'), { code: 0 }));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      }),
+      err => reject(err),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
+    );
+  });
+}
+
+async function pingModeratorLocation() {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  try {
+    const pos = await readCurrentPosition();
+    recordGeoPing({
+      orbitLoginId: state.modProfile.orbitLoginId,
+      name: state.modProfile.name || state.username,
+      role: getOperatorFenceRole(),
+      lat: pos.lat,
+      lng: pos.lng,
+      accuracy: pos.accuracy,
+    });
+  } catch (_) { /* permission denied · arrival click will explain */ }
+}
+
+function startModeratorGeofence() {
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  pingModeratorLocation();
+  if (_geoPingTimer) return;
+  _geoPingTimer = setInterval(pingModeratorLocation, 60000);
+}
+
+function stopModeratorGeofence() {
+  if (_geoPingTimer) {
+    clearInterval(_geoPingTimer);
+    _geoPingTimer = null;
+  }
+}
+
+function closeGeoFenceModal() {
+  const el = document.getElementById('geoFenceOverlay');
+  if (el) el.remove();
+}
+
+function showGeoFenceModal(opts) {
+  closeGeoFenceModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'geoFenceOverlay';
+  overlay.className = 'geo-fence-overlay';
+  overlay.innerHTML = `
+    <div class="geo-fence-modal" role="dialog" aria-modal="true" aria-labelledby="geoFenceTitle">
+      <div class="geo-role-pill">${escapeHTML(fenceRoleLabel(opts.role || 'moderator'))}</div>
+      <h2 id="geoFenceTitle">${escapeHTML(opts.title || 'Location check')}</h2>
+      <p>${escapeHTML(opts.body || '')}</p>
+      <div class="geo-fence-actions">
+        ${opts.preview ? '<button type="button" class="btn btn-ghost" id="geoFencePreviewBtn">Confirm from this preview</button>' : ''}
+        <button type="button" class="btn btn-secondary" id="geoFenceDismissBtn">${escapeHTML(opts.dismissLabel || 'OK')}</button>
+        ${opts.retry ? '<button type="button" class="btn btn-primary" id="geoFenceRetryBtn">Try again</button>' : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGeoFenceModal(); });
+  const dismiss = document.getElementById('geoFenceDismissBtn');
+  if (dismiss) dismiss.addEventListener('click', closeGeoFenceModal);
+  const retry = document.getElementById('geoFenceRetryBtn');
+  if (retry && typeof opts.onRetry === 'function') {
+    retry.addEventListener('click', () => { closeGeoFenceModal(); opts.onRetry(); });
+  }
+  const preview = document.getElementById('geoFencePreviewBtn');
+  if (preview && typeof opts.onPreview === 'function') {
+    preview.addEventListener('click', () => { closeGeoFenceModal(); opts.onPreview(); });
+  }
+}
+
+async function checkParticipantGeofence(asgn) {
+  const role = getOperatorFenceRole();
+  const address = assignmentFenceAddress(asgn);
+  if (!address) {
+    return { ok: true, skipped: true, role, reason: 'no-address' };
+  }
+  let pos;
+  try {
+    pos = await readCurrentPosition();
+  } catch (err) {
+    const denied = err && (err.code === 1);
+    return {
+      ok: false,
+      role,
+      reason: denied ? 'denied' : 'unavailable',
+      error: err,
+    };
+  }
+  const dest = await geocodeAddress(address);
+  if (!dest) {
+    return { ok: false, role, reason: 'geocode', pos };
+  }
+  const meters = haversineMeters(pos.lat, pos.lng, dest.lat, dest.lng);
+  recordGeoPing({
+    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
+    name: (state.modProfile && state.modProfile.name) || state.username,
+    role,
+    lat: pos.lat,
+    lng: pos.lng,
+    accuracy: pos.accuracy,
+    assignmentId: asgn && asgn.id,
+    inside: meters <= GEOFENCE_HOME_RADIUS_M,
+    meters: Math.round(meters),
+  });
+  return {
+    ok: meters <= GEOFENCE_HOME_RADIUS_M,
+    role,
+    meters: Math.round(meters),
+    pos,
+    dest,
+    address,
+    reason: meters <= GEOFENCE_HOME_RADIUS_M ? 'inside' : 'outside',
+  };
+}
+
+function applyOperatorArrival(asgn, geoNote) {
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'arrived', { notes: geoNote || '' });
+  }
+  state.arrivedAt = new Date().toISOString();
+  state.remindersShown = [];
+  saveState();
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  if (typeof schedulePerHourReminder === 'function') schedulePerHourReminder();
+  if (typeof renderApp === 'function') renderApp();
+  else if (typeof render === 'function') render();
+}
+
+async function confirmOperatorArrival() {
+  const asgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment()
+    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+  const role = getOperatorFenceRole();
+  const result = await checkParticipantGeofence(asgn);
+  if (result.ok) {
+    const note = result.skipped
+      ? `Geo fence skipped · no address · ${fenceRoleLabel(role)}`
+      : `Geo fence · inside ${result.meters} m · ${fenceRoleLabel(role)}`;
+    applyOperatorArrival(asgn, note);
+    toast('Arrival confirmed');
+    return;
+  }
+  const retry = () => confirmOperatorArrival();
+  const previewArrive = () => {
+    applyOperatorArrival(asgn, `Geo fence · preview confirm · ${fenceRoleLabel(role)}`);
+    toast('Arrival confirmed (preview)');
+  };
+  if (result.reason === 'denied') {
+    showGeoFenceModal({
+      role,
+      title: 'Turn on location',
+      body: 'This check is required for every moderator role. Allow location access, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  if (result.reason === 'unavailable') {
+    showGeoFenceModal({
+      role,
+      title: 'Location not available',
+      body: 'The app could not read your position. Move to an open area, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  if (result.reason === 'geocode') {
+    showGeoFenceModal({
+      role,
+      title: 'Could not find the address',
+      body: 'The participant address could not be placed on the map. Check the booking address, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  const meters = result.meters != null ? result.meters : '·';
+  showGeoFenceModal({
+    role,
+    title: 'You are not at the location yet',
+    body: `You are about ${meters} meters away. The check covers a ${GEOFENCE_HOME_RADIUS_M} meter circle around the participant home, for primary, backup, and every other moderator role.`,
+    retry: true,
+    onRetry: retry,
+    preview: isGeofencePreviewHost(),
+    onPreview: previewArrive,
+    dismissLabel: 'Keep traveling',
+  });
+}
+
+function activitiesFenceFeatures() {
+  const features = [
+    Object.assign(geofenceCirclePolygon(ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
+      properties: { kind: 'hq' },
+    }),
+  ];
+  const team = getSelectedActivitiesTeam();
+  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+  const asgns = (adminState.assignments || []).filter(a => {
+    if (a.status === 'Cancelled') return false;
+    if (todayStr && a.date !== todayStr) return false;
+    if (team && String(a.teamId) !== String(team.id)) return false;
+    return !!assignmentFenceAddress(a);
+  });
+  const cache = loadGeocodeCache();
+  asgns.forEach(a => {
+    const addr = assignmentFenceAddress(a);
+    const hit = cache[addr.toLowerCase()];
+    if (!hit) return;
+    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
+      properties: { kind: 'home' },
+    }));
+  });
+  return { type: 'FeatureCollection', features };
+}
+
+async function prefetchActivityHomeGeocodes() {
+  const team = getSelectedActivitiesTeam();
+  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+  const asgns = (adminState.assignments || []).filter(a => {
+    if (a.status === 'Cancelled') return false;
+    if (todayStr && a.date !== todayStr) return false;
+    if (team && String(a.teamId) !== String(team.id)) return false;
+    return !!assignmentFenceAddress(a);
+  });
+  for (const a of asgns) {
+    try { await geocodeAddress(assignmentFenceAddress(a)); } catch (_) {}
+  }
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+}
+
+function placeActivitiesGeofence(map) {
+  if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+  const data = activitiesFenceFeatures();
+  const src = map.getSource('twilight-geofence');
+  if (src) {
+    src.setData(data);
+  } else {
+    map.addSource('twilight-geofence', { type: 'geojson', data });
+    map.addLayer({
+      id: 'twilight-geofence-fill',
+      type: 'fill',
+      source: 'twilight-geofence',
+      paint: { 'fill-color': '#00F0FF', 'fill-opacity': 0.10 },
+    });
+    map.addLayer({
+      id: 'twilight-geofence-line',
+      type: 'line',
+      source: 'twilight-geofence',
+      paint: { 'line-color': '#00F0FF', 'line-width': 2, 'line-opacity': 0.7 },
+    });
+  }
+  document.querySelectorAll('.geo-mod-marker').forEach(el => {
+    try { if (el.__marker) el.__marker.remove(); } catch (_) {}
+  });
+  const team = getSelectedActivitiesTeam();
+  const allowed = new Map();
+  const collect = (ids, role) => {
+    (ids || []).forEach(id => allowed.set(String(id).toLowerCase(), role));
+  };
+  if (team) {
+    collect(team.primaryIds, 'primary');
+    collect((typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds, 'backup');
+  }
+  const pings = loadGeoPings();
+  const now = Date.now();
+  Object.keys(pings).forEach(id => {
+    const ping = pings[id];
+    if (!ping || !Number.isFinite(ping.lat) || !Number.isFinite(ping.lng)) return;
+    let role = ping.role || 'moderator';
+    if (team) {
+      const mapped = allowed.get(id);
+      if (!mapped) return;
+      role = mapped;
+    } else if (allowed.has(id)) {
+      role = allowed.get(id);
+    }
+    const el = document.createElement('div');
+    el.className = 'geo-mod-marker is-' + role + ((now - (ping.at || 0) > GEO_PING_STALE_MS) ? ' is-stale' : '');
+    const label = (ping.name || id) + ' · ' + fenceRoleLabel(role);
+    el.title = label;
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat([ping.lng, ping.lat])
+      .setPopup(new maplibregl.Popup({ offset: 14 }).setText(label))
+      .addTo(map);
+    el.__marker = marker;
+  });
 }
 
 /* ----------- Activities (live map) ----------- */
@@ -9124,6 +9575,7 @@ function syncActivitiesMapTheme() {
     _activitiesMap.setStyle(next);
     _activitiesMap.once('load', () => {
       try { placeActivitiesMapMarker(_activitiesMap); } catch (_) {}
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
       applyActivitiesMapTheme(_activitiesMap);
       try { _activitiesMap.resize(); } catch (_) {}
     });
@@ -9188,6 +9640,7 @@ function initActivitiesMap() {
   _activitiesMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
   _activitiesMap.on('load', () => {
     placeActivitiesMapMarker(_activitiesMap);
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
     applyActivitiesMapTheme(_activitiesMap);
     try { _activitiesMap.resize(); } catch (_) {}
     const fallback = document.getElementById('activitiesMapFallback');
@@ -9221,11 +9674,18 @@ function renderModActivitiesView() {
           <div class="activities-map-eyebrow" id="activitiesTeamContext">${getSelectedActivitiesTeam() ? `Live map · ${escapeHTML(getSelectedActivitiesTeam().name || 'Unnamed team')}` : 'Live map · All teams'}</div>
           <div class="activities-map-title">Redmond HQ</div>
           <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
+          <div class="activities-map-legend">
+            <span><i class="role-fence"></i> Geo fence</span>
+            <span><i class="role-primary"></i> Primary</span>
+            <span><i class="role-backup"></i> Backup</span>
+            <span><i class="role-moderator"></i> Moderator</span>
+          </div>
         </div>
       </div>
     </div>`;
   // Defer so the inset well has layout before MapLibre measures it.
   requestAnimationFrame(() => initActivitiesMap());
+  prefetchActivityHomeGeocodes();
 }
 
 function renderModListView() {
@@ -21774,6 +22234,7 @@ function exportAssignments() {
 }
 /* ----------- Admin entry / exit ----------- */
 function startAdminApp() {
+  if (typeof stopModeratorGeofence === 'function') stopModeratorGeofence();
   if (typeof startWorklogPolling === 'function') startWorklogPolling();
     document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
@@ -27574,6 +28035,7 @@ function startApp() {
   // and admin edits without needing to log out / refresh / use the
   // nav refresh button.
   if (typeof startModAssignmentRefresh === 'function') startModAssignmentRefresh();
+  if (typeof startModeratorGeofence === 'function') startModeratorGeofence();
   // Expose the initial-fetch promise so the welcome-modal trigger
   // (registered in doLogin) can await it before deciding which
   // variant to show. Stored on window so it's reachable from the
