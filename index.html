@@ -21365,11 +21365,20 @@ function ensureActivitiesMapThemeObserver() {
 
 function initActivitiesMap() {
   const el = document.getElementById('activitiesMap');
-  if (!el || typeof maplibregl === 'undefined') {
+  if (!el) return;
+  if (typeof maplibregl === 'undefined') {
+    // CDN script may still be loading — retry briefly before showing fallback.
+    if (!initActivitiesMap._retries) initActivitiesMap._retries = 0;
+    if (initActivitiesMap._retries < 40) {
+      initActivitiesMap._retries += 1;
+      setTimeout(initActivitiesMap, 100);
+      return;
+    }
     const fallback = document.getElementById('activitiesMapFallback');
     if (fallback) fallback.hidden = false;
     return;
   }
+  initActivitiesMap._retries = 0;
   destroyActivitiesMap();
   _activitiesMap = new maplibregl.Map({
     container: el,
@@ -21388,6 +21397,11 @@ function initActivitiesMap() {
   _activitiesMap.on('load', () => {
     applyActivitiesMapTheme(_activitiesMap);
     try { _activitiesMap.resize(); } catch (_) {}
+    const fallback = document.getElementById('activitiesMapFallback');
+    if (fallback) fallback.hidden = true;
+  });
+  _activitiesMap.on('error', (e) => {
+    console.warn('[Twilight] Activities map error:', e && (e.error || e));
   });
   _activitiesMap.on('styledata', () => applyActivitiesMapTheme(_activitiesMap));
   ensureActivitiesMapThemeObserver();
@@ -41451,6 +41465,10 @@ document.addEventListener('DOMContentLoaded', init);
   color: var(--text2);
   background: var(--well-bg, var(--bg3));
   z-index: 2;
+}
+/* `hidden` must win over display:flex above, or the fallback covers the live map. */
+.activities-map-fallback[hidden] {
+  display: none !important;
 }
 .activities-map-caption {
   position: relative;
