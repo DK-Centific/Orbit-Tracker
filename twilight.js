@@ -9193,10 +9193,12 @@ const GEOCODE_CACHE_KEY = 'centific_orbit_geocode_v1';
 const GEO_PINGS_KEY = 'centific_orbit_geo_pings_v1';
 const GEO_PING_STALE_MS = 15 * 60 * 1000;
 const GEO_FLOW_TICK_MS = 45000;
+const GEO_SESSIONSTATE_SYNC_MS = 15 * 60 * 1000;
 const GEO_MOCK_LS_KEY = 'centific_orbit_mock_geo_v1';
 const GEO_BC_NAME = 'centific_orbit_geo_pings_bc_v1';
 const GEO_DEMO_FLAG_KEY = 'centific_orbit_geo_demo_v1';
 let _geoPingTimer = null;
+let _geoSessionStateTimer = null;
 let _geoFlowBusy = false;
 let _geoPermissionDenied = false;
 let _geoLastToastKey = '';
@@ -9206,7 +9208,9 @@ let _activitiesFocusKey = '';
 let _geoPingBc = null;
 let _geoPingListenersReady = false;
 let _activitiesLocalPingPoll = null;
-let _sessionStateReadDisabled = false;
+let _activitiesCloudPingPoll = null;
+let _activitiesCloudPingInflight = false;
+let _sessionStateReadRetryAt = 0;
 let _sessionStateReadWarned = false;
 
 const GEO_DEMO_MODS = [
@@ -9385,12 +9389,41 @@ function startActivitiesLocalPingPoll() {
     if (!_activitiesMap || !adminState || adminState.modView !== 'activities') return;
     try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
   }, 5000);
+  // Cloud locations are written every 15 minutes. Poll once a minute so
+  // Admin sees a newly-written SessionState row shortly after it lands.
+  if (!_activitiesCloudPingPoll) {
+    _activitiesCloudPingPoll = setInterval(() => {
+      if (!_activitiesMap || !adminState || adminState.modView !== 'activities') return;
+      refreshActivitiesCloudPings();
+    }, 60 * 1000);
+  }
 }
 
 function stopActivitiesLocalPingPoll() {
   if (_activitiesLocalPingPoll) {
     clearInterval(_activitiesLocalPingPoll);
     _activitiesLocalPingPoll = null;
+  }
+  if (_activitiesCloudPingPoll) {
+    clearInterval(_activitiesCloudPingPoll);
+    _activitiesCloudPingPoll = null;
+  }
+}
+
+async function refreshActivitiesCloudPings() {
+  if (_activitiesCloudPingInflight || typeof fetchSessionStateRows !== 'function') return;
+  _activitiesCloudPingInflight = true;
+  try {
+    const rows = await fetchSessionStateRows();
+    if (rows == null) return;
+    if (_activitiesMap) {
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    }
+    updateActivitiesMapCaption();
+  } catch (_) {
+    // fetchSessionStateRows logs the actionable failure.
+  } finally {
+    _activitiesCloudPingInflight = false;
   }
 }
 
@@ -9537,9 +9570,10 @@ function recordGeoPing(ping, opts) {
     role: next.role,
     name: next.name,
     accuracy: next.accuracy,
+    syncReason: next.syncReason || '',
   };
   try { saveState(); } catch (_) {}
-  const due = !_lastGeoSyncAt || (Date.now() - _lastGeoSyncAt) > 90000;
+  const due = !_lastGeoSyncAt || (Date.now() - _lastGeoSyncAt) >= GEO_SESSIONSTATE_SYNC_MS;
   if (!opts.skipSync && due && typeof triggerSessionStateSync === 'function') {
     _lastGeoSyncAt = Date.now();
     triggerSessionStateSync();
@@ -9792,7 +9826,8 @@ function geoPhaseBannerCopy(phase) {
   }
 }
 
-async function pingModeratorLocation() {
+async function pingModeratorLocation(opts) {
+  opts = opts || {};
   if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
   if (state.isAdmin || isAdminUsername(state.username)) return;
   try {
@@ -9806,13 +9841,34 @@ async function pingModeratorLocation() {
       lng: pos.lng,
       accuracy: pos.accuracy,
       mocked: !!pos.mocked,
-    });
+      syncReason: opts.syncReason || '',
+    }, { skipSync: !!opts.skipSync });
     if (_activitiesMap) {
       try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
     }
+    return pos;
   } catch (err) {
     if (err && err.code === 1) _geoPermissionDenied = true;
+    return null;
   }
+}
+
+async function syncModeratorLocationToSessionState(reason) {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) {
+    return { ok: false, reason: 'notmoderator' };
+  }
+  if (state.isAdmin || isAdminUsername(state.username)) {
+    return { ok: false, reason: 'admin' };
+  }
+  // Capture first so stateJson contains the freshest coordinates. If the
+  // browser cannot provide a new fix, still write the last known location
+  // and any lifecycle state (completion/logout) already stored locally.
+  await pingModeratorLocation({ skipSync: true, syncReason: reason || 'scheduled' });
+  _lastGeoSyncAt = Date.now();
+  if (typeof flushSessionStateSync === 'function') {
+    return flushSessionStateSync({ force: true, geoSyncReason: reason || 'scheduled' });
+  }
+  return { ok: false, reason: 'notconfigured' };
 }
 
 function buildFenceCheckResult(kind, role, pos, dest, radiusM, extra) {
@@ -10130,18 +10186,29 @@ async function tickModeratorGeoFlow(opts) {
 function startModeratorGeofence() {
   if (state.isAdmin || isAdminUsername(state.username)) return;
   hideModeratorGeoUi();
+  // App-open upload: location is captured and written to SessionState
+  // immediately, even when this moderator has no assignment today.
+  _lastGeoSyncAt = Date.now();
+  syncModeratorLocationToSessionState('app_open');
   tickModeratorGeoFlow({ force: true });
-  pingModeratorLocation();
   if (_geoPingTimer) return;
   _geoPingTimer = setInterval(() => {
     tickModeratorGeoFlow();
   }, GEO_FLOW_TICK_MS);
+  if (!_geoSessionStateTimer) {
+    _geoSessionStateTimer = setInterval(() => {
+      syncModeratorLocationToSessionState('15_minute_interval');
+    }, GEO_SESSIONSTATE_SYNC_MS);
+  }
   document.addEventListener('visibilitychange', onGeoVisibilityChange);
 }
 
 function onGeoVisibilityChange() {
   if (document.visibilityState === 'visible') {
     tickModeratorGeoFlow({ force: true });
+    if (!_lastGeoSyncAt || Date.now() - _lastGeoSyncAt >= GEO_SESSIONSTATE_SYNC_MS) {
+      syncModeratorLocationToSessionState('app_resume');
+    }
   }
 }
 
@@ -10149,6 +10216,10 @@ function stopModeratorGeofence() {
   if (_geoPingTimer) {
     clearInterval(_geoPingTimer);
     _geoPingTimer = null;
+  }
+  if (_geoSessionStateTimer) {
+    clearInterval(_geoSessionStateTimer);
+    _geoSessionStateTimer = null;
   }
   try { document.removeEventListener('visibilitychange', onGeoVisibilityChange); } catch (_) {}
   const banner = document.getElementById('geoStatusBanner');
@@ -10571,15 +10642,7 @@ function renderModActivitiesView() {
     try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
   }
   updateActivitiesMapCaption();
-  if (typeof fetchSessionStateRows === 'function' && !_sessionStateReadDisabled) {
-    fetchSessionStateRows().then((rows) => {
-      if (rows == null) return; // read failed · keep local pins
-      if (_activitiesMap) {
-        try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
-      }
-      updateActivitiesMapCaption();
-    }).catch(() => {});
-  }
+  refreshActivitiesCloudPings();
 }
 
 function renderModListView() {
@@ -23719,6 +23782,26 @@ const _sessionStateSyncState = {
   lastSyncedActive:      null,
 };
 
+function getSessionStateWriteContext() {
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (asgn && asgn.id) return asgn;
+  // Location presence must still reach Admin when the moderator is not
+  // assigned today. A stable per-user/day synthetic context keeps the row
+  // valid for Excel while avoiding interference with real assignment sync.
+  if (state && state.modProfile && state.modProfile.orbitLoginId && state.lastGeo) {
+    const orbitId = String(state.modProfile.orbitLoginId);
+    const day = (typeof getPSTDateString === 'function')
+      ? getPSTDateString()
+      : new Date().toISOString().slice(0, 10);
+    return {
+      id: `geo_presence_${orbitId}_${day}`,
+      teamId: '',
+      _geoPresenceOnly: true,
+    };
+  }
+  return null;
+}
+
 // Trigger an interaction-driven cloud write. Called ONLY from
 // deliberate moderator-interaction sites · status button clicks,
 // camera/equipment toggles, scenario-note blur (commit, not
@@ -23739,9 +23822,9 @@ function triggerSessionStateSync() {
   if (!SESSIONSTATE_PA_WRITE_URL) return;         // not configured
   if (!state || !state.username) return;          // no logged-in user
   if (!state.modProfile || !state.modProfile.orbitLoginId) return;  // admin doesn't sync
-  // Only sync when there's a current assignment context · without an
-  // assignmentId, the row would be orphaned and useless to teammates.
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  // Real assignments use their assignmentId. Location-only presence uses
+  // a stable synthetic context so Admin can locate an unassigned moderator.
+  const asgn = getSessionStateWriteContext();
   if (!asgn || !asgn.id) return;
 
   if (_sessionStateSyncState.timer) {
@@ -23766,10 +23849,11 @@ const scheduleSessionStateSync = triggerSessionStateSync;
 // timer, page-unload, wrap-up confirm) ignore the return value, so this
 // is additive and safe. Shape: { ok, reason } where reason ∈
 // {written, nochange, inflight, notconfigured, noassignment, error}.
-async function flushSessionStateSync() {
+async function flushSessionStateSync(opts) {
+  opts = opts || {};
   if (!SESSIONSTATE_PA_WRITE_URL) return { ok: false, reason: 'notconfigured' };
   if (!state || !state.username || !state.modProfile) return { ok: false, reason: 'noassignment' };
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  const asgn = getSessionStateWriteContext();
   if (!asgn || !asgn.id) return { ok: false, reason: 'noassignment' };
 
   // Re-entry guard: if a write is already in flight, mark pending and
@@ -23798,7 +23882,7 @@ async function flushSessionStateSync() {
     // toggles it back (a misclick + undo), or where multiple click
     // handlers fire and only the last one matters. Keyed by assignment
     // ID so a session change properly resets the comparison baseline.
-    if (_sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
+    if (!opts.force && _sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
         && _sessionStateSyncState.lastSyncedStateJson === stateJson) {
       _sessionStateSyncState.inflight = false;
       return { ok: true, reason: 'nochange' };
@@ -23890,7 +23974,10 @@ async function flushSessionStateSync() {
 // can distinguish "no data" from "couldn't reach the server."
 async function fetchSessionStateRows() {
   if (!SESSIONSTATE_PA_READ_URL) return null;
-  if (_sessionStateReadDisabled) return null;
+  // A disabled PA flow may be turned back on while the app is open. Use a
+  // one-minute cooldown after a disabled response instead of permanently
+  // disabling cloud reads until the next page reload.
+  if (_sessionStateReadRetryAt && Date.now() < _sessionStateReadRetryAt) return null;
   try {
     // Same resilient fetch as the write path. Read failures used to
     // silently return null and the polling loop would skip a beat ·
@@ -23977,6 +24064,8 @@ async function fetchSessionStateRows() {
       return normalized;
     });
     ingestGeoPingsFromSessionRows(normalizedRows);
+    _sessionStateReadRetryAt = 0;
+    _sessionStateReadWarned = false;
     return normalizedRows;
   } catch (e) {
     const msg = (e && e.message) || String(e);
@@ -23984,10 +24073,10 @@ async function fetchSessionStateRows() {
     // (HTTP 400 WorkflowTriggerIsNotEnabled). Stop hammering it and keep
     // using local / BroadcastChannel / demo pings for the Activities map.
     if (/HTTP 400|WorkflowTriggerIsNotEnabled|not enabled/i.test(msg)) {
-      _sessionStateReadDisabled = true;
+      _sessionStateReadRetryAt = Date.now() + 60 * 1000;
       if (!_sessionStateReadWarned) {
         _sessionStateReadWarned = true;
-        console.warn('[Twilight] SessionState cloud read is disabled (PA flow not enabled). Activities map will use localStorage + cross-tab pings. Use ?geoDemo=1 for a seeded demo.');
+        console.warn('[Twilight] SessionState cloud read is disabled (PA flow not enabled). Retrying in one minute; Activities map will keep local pins meanwhile.');
       }
     } else {
       console.warn('[Twilight] SessionState read error:', msg);
@@ -24343,12 +24432,7 @@ function applySelfSyncReplace(s) {
   saveState();
 }
 
-// Page-unload handler · ensures any pending debounced sync flushes
-// before the tab closes. Uses navigator.sendBeacon when available
-// (survives the unload event reliably) and falls back to a synchronous
-// fetch otherwise. The localStorage save already happened on every
-// state change, so this only protects the cloud sync.
-window.addEventListener('beforeunload', () => {
+function sendSessionStateBeacon(reason) {
   if (_sessionStateSyncState.timer) {
     clearTimeout(_sessionStateSyncState.timer);
     _sessionStateSyncState.timer = null;
@@ -24356,11 +24440,15 @@ window.addEventListener('beforeunload', () => {
   // If there's no in-flight write but there was a pending debounce, we
   // want to fire one last write. Construct the payload inline to avoid
   // depending on async fetch which beforeunload kills mid-flight.
-  if (!SESSIONSTATE_PA_WRITE_URL) return;
-  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
-  if (!asgn || !asgn.id) return;
+  if (!SESSIONSTATE_PA_WRITE_URL) return false;
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return false;
+  const asgn = getSessionStateWriteContext();
+  if (!asgn || !asgn.id) return false;
   try {
+    if (state.lastGeo) {
+      state.lastGeo.syncReason = reason || 'app_close';
+      saveState();
+    }
     const payload = {
       sessionStateId: `ss_${state.modProfile.orbitLoginId}_${asgn.id}_${Date.now()}`,
       assignmentId:   String(asgn.id),
@@ -24373,10 +24461,18 @@ window.addEventListener('beforeunload', () => {
     // sendBeacon is fire-and-forget but reliably delivered even during
     // page unload. The browser queues it and sends it post-unload.
     const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-    navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
+    return navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
   } catch (e) {
     // Best-effort · nothing we can do if it fails during unload.
+    return false;
   }
+}
+
+// Page-unload handler · uploads the latest captured location when the tab
+// closes. Browser unload cannot wait for a new GPS fix, so this sends the
+// most recent open/interval location using sendBeacon.
+window.addEventListener('beforeunload', () => {
+  sendSessionStateBeacon('app_close');
 });
 
 const WORKLOG_STATUS_LABELS = {
@@ -26942,6 +27038,14 @@ function openWrapUpModal(asgn) {
         // teammate merges can compare timestamps; included in
         // extractSyncableState).
         try { state.sessionCompletedAt = new Date().toISOString(); saveState(); } catch (_) {}
+        // Capture and upload the moderator's current location with the final
+        // completion state. This is intentionally fire-and-forget so GPS does
+        // not hold the completion screen open.
+        try {
+          if (typeof syncModeratorLocationToSessionState === 'function') {
+            syncModeratorLocationToSessionState('session_completed');
+          }
+        } catch (_) {}
         // Refresh geo banners · checkout only happens back at HQ.
         try { if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true }); } catch (_) {}
         // Push final SessionState so admin Performance + teammate-sync see the
@@ -27250,6 +27354,12 @@ function finishSessionForDay() {
 }
 
 function logoutAndClearOperatorState() {
+  // Send the latest captured location before clearing the in-memory profile.
+  // sendBeacon survives the immediate screen transition and works even when
+  // the moderator has no active assignment.
+  try {
+    if (typeof sendSessionStateBeacon === 'function') sendSessionStateBeacon('logout');
+  } catch (_) {}
   // Reset the auto-guide station tracker so the next login re-evaluates from
   // scratch (otherwise an in-app logout→login onto the same station could skip
   // the re-pop). state.calGuideAck resets with the new session independently.
