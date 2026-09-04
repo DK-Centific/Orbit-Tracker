@@ -8686,6 +8686,7 @@ function renderAdminTabBody() {
         </div>
       </div>
     </div>
+    <div id="modviewExtraFilters" class="modview-extra-filters" hidden></div>
     <div id="subtabBody"></div>
   `;
   const setModviewSlideOpen = (open) => {
@@ -8894,7 +8895,8 @@ function renderModerators() {
           Activities
         </button>
       </div>
-      ${view === 'activities' ? `
+  `;
+  const activitiesFiltersHtml = view === 'activities' ? `
         <div class="activities-map-filters">
         <label class="activities-team-filter" for="activitiesTeamSelect">
           <span class="activities-team-filter-label">Team</span>
@@ -8911,8 +8913,7 @@ function renderModerators() {
           </select>
         </label>
         </div>
-      ` : ''}
-  `;
+      ` : '';
 
   const toolbarHost = document.getElementById('modviewToolbar');
   const bindModviewControls = (root) => {
@@ -8924,19 +8925,19 @@ function renderModerators() {
         renderModerators();
       });
     });
-    const activitiesTeamSelect = root.querySelector('#activitiesTeamSelect') || document.getElementById('activitiesTeamSelect');
+    const activitiesTeamSelect = root.querySelector('#activitiesTeamSelect');
     if (activitiesTeamSelect) {
       activitiesTeamSelect.addEventListener('change', e => {
         adminState.activitiesTeamId = e.target.value || '';
-        if (adminState.activitiesTeamId) adminState.activitiesModeratorId = '';
+        adminState.activitiesModeratorId = '';
         refreshActivitiesMapFocus();
       });
     }
-    const activitiesModeratorSelect = root.querySelector('#activitiesModeratorSelect') || document.getElementById('activitiesModeratorSelect');
+    const activitiesModeratorSelect = root.querySelector('#activitiesModeratorSelect');
     if (activitiesModeratorSelect) {
       activitiesModeratorSelect.addEventListener('change', e => {
         adminState.activitiesModeratorId = e.target.value || '';
-        if (adminState.activitiesModeratorId) adminState.activitiesTeamId = '';
+        adminState.activitiesTeamId = '';
         refreshActivitiesMapFocus();
       });
     }
@@ -8945,6 +8946,12 @@ function renderModerators() {
   if (toolbarHost) {
     toolbarHost.innerHTML = toolbarHtml;
     bindModviewControls(toolbarHost);
+  }
+  const extraFilters = document.getElementById('modviewExtraFilters');
+  if (extraFilters) {
+    extraFilters.hidden = view !== 'activities';
+    extraFilters.innerHTML = activitiesFiltersHtml;
+    if (view === 'activities') bindModviewControls(extraFilters);
   }
 
   if (adminState.modLoading) {
@@ -9067,7 +9074,7 @@ function activitiesViewAddrLine() {
 }
 
 function updateActivitiesMapCaption() {
-  const title = document.querySelector('.activities-map-title');
+  const title = document.getElementById('activities-map-title') || document.querySelector('.activities-map-title');
   if (title) title.textContent = activitiesViewTitle();
   const eyebrow = document.getElementById('activitiesTeamContext');
   if (eyebrow) eyebrow.textContent = activitiesViewEyebrow();
@@ -9719,33 +9726,8 @@ function closeGeoFenceModal() {
 }
 
 function showGeoFenceModal(opts) {
+  // Operator screens stay silent; location / fence copy is admin-only.
   closeGeoFenceModal();
-  const overlay = document.createElement('div');
-  overlay.id = 'geoFenceOverlay';
-  overlay.className = 'geo-fence-overlay';
-  overlay.innerHTML = `
-    <div class="geo-fence-modal" role="dialog" aria-modal="true" aria-labelledby="geoFenceTitle">
-      <div class="geo-role-pill">${escapeHTML(fenceRoleLabel(opts.role || 'moderator'))}</div>
-      <h2 id="geoFenceTitle">${escapeHTML(opts.title || 'Location check')}</h2>
-      <p>${escapeHTML(opts.body || '')}</p>
-      <div class="geo-fence-actions">
-        ${opts.preview ? '<button type="button" class="btn btn-ghost" id="geoFencePreviewBtn">Confirm from this preview</button>' : ''}
-        <button type="button" class="btn btn-secondary" id="geoFenceDismissBtn">${escapeHTML(opts.dismissLabel || 'OK')}</button>
-        ${opts.retry ? '<button type="button" class="btn btn-primary" id="geoFenceRetryBtn">Try again</button>' : ''}
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGeoFenceModal(); });
-  const dismiss = document.getElementById('geoFenceDismissBtn');
-  if (dismiss) dismiss.addEventListener('click', closeGeoFenceModal);
-  const retry = document.getElementById('geoFenceRetryBtn');
-  if (retry && typeof opts.onRetry === 'function') {
-    retry.addEventListener('click', () => { closeGeoFenceModal(); opts.onRetry(); });
-  }
-  const preview = document.getElementById('geoFencePreviewBtn');
-  if (preview && typeof opts.onPreview === 'function') {
-    preview.addEventListener('click', () => { closeGeoFenceModal(); opts.onPreview(); });
-  }
 }
 
 function showArrivalFenceFailure(result, asgn, retryFn) {
@@ -10014,8 +9996,9 @@ function placeActivitiesGeofence(map) {
   const pings = loadGeoPings();
   const now = Date.now();
   let focusPing = null;
-  Object.keys(pings).forEach(id => {
-    const ping = pings[id];
+  Object.keys(pings).forEach(idRaw => {
+    const id = String(idRaw).toLowerCase();
+    const ping = pings[idRaw];
     if (!ping || !Number.isFinite(ping.lat) || !Number.isFinite(ping.lng)) return;
     if (focusMod && id !== focusMod) return;
     let role = ping.role || 'moderator';
@@ -10040,6 +10023,8 @@ function placeActivitiesGeofence(map) {
   updateActivitiesMapCaption();
   if (focusPing) {
     try { map.easeTo({ center: [focusPing.lng, focusPing.lat], zoom: 14, duration: 500 }); } catch (_) {}
+  } else {
+    try { map.easeTo({ center: [GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat], zoom: ACTIVITIES_MAP_ZOOM, duration: 500 }); } catch (_) {}
   }
 }
 
@@ -10289,7 +10274,7 @@ function renderModActivitiesView() {
         </div>
         <div class="activities-map-caption">
           <div class="activities-map-eyebrow" id="activitiesTeamContext">${escapeHTML(activitiesViewEyebrow())}</div>
-          <div class="activities-map-title">${escapeHTML(activitiesViewTitle())}</div>
+          <div class="activities-map-title" id="activities-map-title">${escapeHTML(activitiesViewTitle())}</div>
           <div class="activities-map-addr">${escapeHTML(activitiesViewAddrLine())}</div>
           <div class="activities-map-legend">
             <span><i class="role-fence-hq"></i> Office fence</span>
@@ -10781,6 +10766,11 @@ async function loadParticipants(force = false) {
 }
 
 function renderParticipants() {
+  const extraFilters = document.getElementById('modviewExtraFilters');
+  if (extraFilters) {
+    extraFilters.hidden = true;
+    extraFilters.innerHTML = '';
+  }
   const partCountEl = document.getElementById('partCount');
   if (partCountEl) {
     partCountEl.textContent = adminState.participants ? adminState.participants.length : '··';
