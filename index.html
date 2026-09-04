@@ -10302,6 +10302,12 @@ button.perf-stat-chip.scheduled.active {
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 [data-theme="dark"] .modview-btn.active { background: var(--bg4); }
+.activities-map-filters {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
 .activities-team-filter {
   display: inline-flex; align-items: center; gap: 8px;
   animation: activitiesFilterIn 0.18s ease both;
@@ -10331,6 +10337,7 @@ button.perf-stat-chip.scheduled.active {
   to { opacity: 1; transform: translateX(0); }
 }
 @media (max-width: 600px) {
+  .activities-map-filters { width: 100%; }
   .activities-team-filter { width: 100%; }
   .activities-team-select { flex: 1; min-width: 0; }
 }

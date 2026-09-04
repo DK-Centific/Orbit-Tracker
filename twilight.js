@@ -378,6 +378,7 @@ function defaultState() {
     officeCheckinGeo: null,
     officeCheckoutGeo: null,
     arrivalGeo: null,
+    lastGeo: null,
     // Change-detection key used by syncBookedParticipantName to decide
     // when to prefill the Participant Name field. Null on fresh state
     // means "no booking seen yet" · the first time the mod lands on
@@ -656,6 +657,7 @@ function migrateState(loaded) {
   if (!loaded.officeCheckinGeo || typeof loaded.officeCheckinGeo !== 'object') loaded.officeCheckinGeo = null;
   if (!loaded.officeCheckoutGeo || typeof loaded.officeCheckoutGeo !== 'object') loaded.officeCheckoutGeo = null;
   if (!loaded.arrivalGeo || typeof loaded.arrivalGeo !== 'object') loaded.arrivalGeo = null;
+  if (!loaded.lastGeo || typeof loaded.lastGeo !== 'object') loaded.lastGeo = null;
   // Hour-marks already acknowledged (array of integers 1, 2, 3, ...).
   // Stored as an array (not a Set) because state is JSON-serialized to
   // localStorage and Sets don't survive JSON.stringify. Idempotent
@@ -1111,25 +1113,9 @@ function renderWelcomeWorklogBannerHTML() {
     ? WORKLOG_STATION_DOT_STATUSES
     : WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
-  // ---- Session complete: prompt return-to-office OR show locked/checked-out ----
+  // ---- Session complete (office check-in/out is admin-only; no location copy here) ----
   if (displayStatus === 'session_done' || displayStatus === 'office_checkout' ||
       (statusOrderIdx(displayStatus) >= statusOrderIdx('session_done') && statusOrderIdx(displayStatus) >= 0)) {
-    if (phase === 'stations_complete') {
-      return `<div class="welcome-worklog-banner ready">
-        <div class="welcome-worklog-banner-icon">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
-            <path d="M8 14c3-3.5 5-6 5-8a5 5 0 0 0-10 0c0 2 2 4.5 5 8z" stroke="currentColor" stroke-width="1.6"/>
-            <circle cx="8" cy="6" r="1.7" stroke="currentColor" stroke-width="1.6"/>
-          </svg>
-        </div>
-        <div class="welcome-worklog-banner-text">
-          <div class="welcome-worklog-banner-title">Session done · return to the office</div>
-          <div class="welcome-worklog-banner-sub">Do not check out at the house. Go back to the Redmond office. When you are inside the office area, the app checks you out automatically.<span class="geo-hint">Office area is about ${GEOFENCE_HQ_RADIUS_M} m around the Redmond office.</span></div>
-        </div>
-        <button class="btn btn-secondary welcome-worklog-action" id="welcomeGeoCheckBtn">Check location</button>
-      </div>`;
-    }
-    const checkedOut = phase === 'office_checkout' || displayStatus === 'office_checkout';
     return `<div class="welcome-worklog-banner done">
       <div class="welcome-worklog-banner-icon">
         <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
@@ -1137,28 +1123,9 @@ function renderWelcomeWorklogBannerHTML() {
         </svg>
       </div>
       <div class="welcome-worklog-banner-text">
-        <div class="welcome-worklog-banner-title">${checkedOut ? 'Checked out for the day' : 'Session locked'}</div>
-        <div class="welcome-worklog-banner-sub">${checkedOut
-          ? 'Office check-out is complete. Stations and equipment are read-only.'
-          : 'This session is complete. Stations and equipment are now read-only.'}</div>
+        <div class="welcome-worklog-banner-title">Session locked</div>
+        <div class="welcome-worklog-banner-sub">This session is complete. Stations and equipment are now read-only.</div>
       </div>
-    </div>`;
-  }
-
-  // ---- Need office check-in first ----
-  if (phase === 'need_office_checkin' || (!officeIn && myIdx < arrivedIdx)) {
-    return `<div class="welcome-worklog-banner waiting">
-      <div class="welcome-worklog-banner-icon">
-        <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
-          <path d="M3 13V5l5-3 5 3v8" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M6 13v-4h4v4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div class="welcome-worklog-banner-text">
-        <div class="welcome-worklog-banner-title">Check in at the Redmond office</div>
-        <div class="welcome-worklog-banner-sub">Open the app at the office. When you are inside the office area, the app checks you in automatically.<span class="geo-hint">Then pack equipment and travel to the assigned location. Applies to every moderator role.</span></div>
-      </div>
-      <button class="btn btn-secondary welcome-worklog-action" id="welcomeGeoCheckBtn">Check location</button>
     </div>`;
   }
 
@@ -1169,7 +1136,7 @@ function renderWelcomeWorklogBannerHTML() {
         <div class="welcome-worklog-banner-icon"><svg width="20" height="20" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6 8l1.5 1.5L11 6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="welcome-worklog-banner-text">
           <div class="welcome-worklog-banner-title">Pack your equipment first</div>
-          <div class="welcome-worklog-banner-sub">You are checked in at the office. Once all required items below are checked off, you can confirm your arrival.</div>
+          <div class="welcome-worklog-banner-sub">Once all required items below are checked off, you can confirm your arrival.</div>
         </div>
       </div>`;
     }
@@ -1181,8 +1148,8 @@ function renderWelcomeWorklogBannerHTML() {
         </svg>
       </div>
       <div class="welcome-worklog-banner-text">
-        <div class="welcome-worklog-banner-title">On the way to the assigned location</div>
-        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, confirm arrival. The app only accepts it inside the location area.<span class="geo-hint">Location check · ${GEOFENCE_HOME_RADIUS_M} m · every moderator role.</span></div>
+        <div class="welcome-worklog-banner-title">Traveling to the assigned location</div>
+        <div class="welcome-worklog-banner-sub">When you arrive at ${escapeHTML((asgn.participantData && asgn.participantData.address) || 'the participant location')}, please confirm your arrival.</div>
       </div>
       <button class="btn btn-primary welcome-worklog-action" id="welcomeArrivalBtn">
         Confirm Arrival
@@ -1201,7 +1168,7 @@ function renderWelcomeWorklogBannerHTML() {
       </div>
       <div class="welcome-worklog-banner-text">
         <div class="welcome-worklog-banner-title">Ready to begin</div>
-        <div class="welcome-worklog-banner-sub">Please check in with the participant and complete rig setup before you start. Check out only when you return to the office later.</div>
+        <div class="welcome-worklog-banner-sub">Please check in with the participant and complete rig setup before you start.</div>
       </div>
       <button class="btn btn-primary welcome-worklog-action" id="welcomeStartBtn">
         Start with first station
@@ -1228,7 +1195,7 @@ function renderWelcomeWorklogBannerHTML() {
     </div>
     <div class="welcome-worklog-banner-text">
       <div class="welcome-worklog-banner-title">${escapeHTML(stageLabel)}</div>
-      <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar. When everything is done, return to the office to check out.</div>
+      <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar.</div>
     </div>
     <div class="welcome-worklog-step-bar">
       ${stationDots.slice(0, 6).map(step => {
@@ -1271,14 +1238,6 @@ function bindWelcomeWorklogActions() {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
-    });
-  }
-  const geoCheckBtn = document.getElementById('welcomeGeoCheckBtn');
-  if (geoCheckBtn) {
-    geoCheckBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
-      if (typeof toast === 'function') toast('Checking your location…');
     });
   }
   const startBtn = document.getElementById('welcomeStartBtn');
@@ -4588,6 +4547,7 @@ const adminState = {
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
   activitiesTeamId: '',      // selected team context in the Activities map
+  activitiesModeratorId: '', // selected moderator on the Activities map (mutually exclusive with team)
   // Assignment state
   teams: [],                 // [{ id, name, primaryIds: [orbitLoginId,...], backupIds: [orbitLoginId,...] }]
   assignments: [],           // [{ id, teamId, date (YYYY-MM-DD), startMin, endMin, participantOrbitId, participantData, modSnapshots, savedAt }]
@@ -8895,6 +8855,11 @@ function renderModerators() {
   if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
     adminState.activitiesTeamId = '';
   }
+  if (adminState.activitiesModeratorId == null) adminState.activitiesModeratorId = '';
+  const activityMods = listActivitiesModeratorOptions();
+  if (adminState.activitiesModeratorId && !activityMods.some(m => String(m.id).toLowerCase() === String(adminState.activitiesModeratorId).toLowerCase())) {
+    adminState.activitiesModeratorId = '';
+  }
   // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
   // hidden attr). Un-hide the button + set this true to restore the tab.
   // Prior sessions that still have modView === 'availability' fall back to
@@ -8930,6 +8895,7 @@ function renderModerators() {
         </button>
       </div>
       ${view === 'activities' ? `
+        <div class="activities-map-filters">
         <label class="activities-team-filter" for="activitiesTeamSelect">
           <span class="activities-team-filter-label">Team</span>
           <select class="activities-team-select" id="activitiesTeamSelect">
@@ -8937,6 +8903,14 @@ function renderModerators() {
             ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(adminState.activitiesTeamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
           </select>
         </label>
+        <label class="activities-team-filter" for="activitiesModeratorSelect">
+          <span class="activities-team-filter-label">Moderator</span>
+          <select class="activities-team-select" id="activitiesModeratorSelect">
+            <option value="">All moderators</option>
+            ${listActivitiesModeratorOptions().map(m => `<option value="${escapeHTML(m.id)}" ${String(adminState.activitiesModeratorId || '').toLowerCase() === String(m.id).toLowerCase() ? 'selected' : ''}>${escapeHTML(m.name)}</option>`).join('')}
+          </select>
+        </label>
+        </div>
       ` : ''}
   `;
 
@@ -8954,10 +8928,16 @@ function renderModerators() {
     if (activitiesTeamSelect) {
       activitiesTeamSelect.addEventListener('change', e => {
         adminState.activitiesTeamId = e.target.value || '';
-        updateActivitiesTeamContext();
-        if (_activitiesMap) {
-          try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
-        }
+        if (adminState.activitiesTeamId) adminState.activitiesModeratorId = '';
+        refreshActivitiesMapFocus();
+      });
+    }
+    const activitiesModeratorSelect = root.querySelector('#activitiesModeratorSelect') || document.getElementById('activitiesModeratorSelect');
+    if (activitiesModeratorSelect) {
+      activitiesModeratorSelect.addEventListener('change', e => {
+        adminState.activitiesModeratorId = e.target.value || '';
+        if (adminState.activitiesModeratorId) adminState.activitiesTeamId = '';
+        refreshActivitiesMapFocus();
       });
     }
   };
@@ -9026,11 +9006,90 @@ function getSelectedActivitiesTeam() {
   return (adminState.teams || []).find(t => String(t.id) === String(id)) || null;
 }
 
-function updateActivitiesTeamContext() {
-  const target = document.getElementById('activitiesTeamContext');
-  if (!target) return;
+function listActivitiesModeratorOptions() {
+  const rows = adminState.moderators || [];
+  const seen = new Set();
+  const out = [];
+  rows.forEach(m => {
+    const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+    const key = String(id || '').trim();
+    if (!key) return;
+    const lower = key.toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    const name = (typeof getModeratorDisplayName === 'function')
+      ? getModeratorDisplayName(key)
+      : ([pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name'),
+          pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name')].filter(Boolean).join(' ').trim() || key);
+    out.push({ id: key, name });
+  });
+  out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
+function getSelectedActivitiesModeratorId() {
+  return String(adminState.activitiesModeratorId || '').trim();
+}
+
+function activitiesViewTitle() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) {
+    const name = (typeof getModeratorDisplayName === 'function') ? getModeratorDisplayName(modId) : modId;
+    return name || modId;
+  }
   const team = getSelectedActivitiesTeam();
-  target.textContent = team ? `Live map · ${team.name}` : 'Live map · All teams';
+  if (team) return team.name || 'Unnamed team';
+  return 'All teams';
+}
+
+function activitiesViewEyebrow() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) return 'Live map · Moderator';
+  const team = getSelectedActivitiesTeam();
+  if (team) return 'Live map · Team';
+  return 'Live map · All teams';
+}
+
+function activitiesViewAddrLine() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) {
+    const ping = (loadGeoPings() || {})[modId.toLowerCase()];
+    if (ping && Number.isFinite(ping.lat) && Number.isFinite(ping.lng)) {
+      const when = ping.at ? new Date(ping.at) : null;
+      const whenLabel = (when && !isNaN(when.getTime()))
+        ? when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : '';
+      return whenLabel ? ('Last location · ' + whenLabel) : 'Last known location';
+    }
+    return 'No location reported yet';
+  }
+  return GEO_HQ_ADDRESS;
+}
+
+function updateActivitiesMapCaption() {
+  const title = document.querySelector('.activities-map-title');
+  if (title) title.textContent = activitiesViewTitle();
+  const eyebrow = document.getElementById('activitiesTeamContext');
+  if (eyebrow) eyebrow.textContent = activitiesViewEyebrow();
+  const addr = document.querySelector('.activities-map-addr');
+  if (addr) addr.textContent = activitiesViewAddrLine();
+}
+
+function updateActivitiesTeamContext() {
+  updateActivitiesMapCaption();
+}
+
+function refreshActivitiesMapFocus() {
+  const teamSel = document.getElementById('activitiesTeamSelect');
+  const modSel = document.getElementById('activitiesModeratorSelect');
+  if (teamSel) teamSel.value = adminState.activitiesTeamId || '';
+  if (modSel) modSel.value = adminState.activitiesModeratorId || '';
+  updateActivitiesMapCaption();
+  _activitiesFocusKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+  prefetchActivityHomeGeocodes();
 }
 
 /* =====================================================================
@@ -9055,6 +9114,8 @@ let _geoFlowBusy = false;
 let _geoPermissionDenied = false;
 let _geoLastToastKey = '';
 let _geoLastToastAt = 0;
+let _lastGeoSyncAt = 0;
+let _activitiesFocusKey = '';
 
 function isGeofencePreviewHost() {
   const h = (location && location.hostname) || '';
@@ -9179,12 +9240,31 @@ function loadGeoPings() {
 function saveGeoPings(map) {
   try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(map)); } catch (_) {}
 }
-function recordGeoPing(ping) {
+function recordGeoPing(ping, opts) {
+  opts = opts || {};
   const id = String(ping.orbitLoginId || '').toLowerCase();
   if (!id) return;
   const map = loadGeoPings();
-  map[id] = Object.assign({}, map[id] || {}, ping, { at: Date.now() });
+  const next = Object.assign({}, map[id] || {}, ping, { at: ping.at || Date.now() });
+  map[id] = next;
   saveGeoPings(map);
+  if (opts.fromCloud) return;
+  if (!state || !state.modProfile) return;
+  if (String(state.modProfile.orbitLoginId || '').toLowerCase() !== id) return;
+  state.lastGeo = {
+    lat: next.lat,
+    lng: next.lng,
+    at: next.at,
+    role: next.role,
+    name: next.name,
+    accuracy: next.accuracy,
+  };
+  try { saveState(); } catch (_) {}
+  const due = !_lastGeoSyncAt || (Date.now() - _lastGeoSyncAt) > 90000;
+  if (!opts.skipSync && due && typeof triggerSessionStateSync === 'function') {
+    _lastGeoSyncAt = Date.now();
+    triggerSessionStateSync();
+  }
 }
 
 /* ---- Mock geolocation (localhost / QA) ---- */
@@ -9318,12 +9398,8 @@ function formatGeoWorklogNote(kind, result) {
 }
 
 function geoToastOnce(key, message, cooldownMs) {
-  const now = Date.now();
-  const cool = cooldownMs != null ? cooldownMs : 20000;
-  if (_geoLastToastKey === key && (now - _geoLastToastAt) < cool) return;
-  _geoLastToastKey = key;
-  _geoLastToastAt = now;
-  if (typeof toast === 'function') toast(message);
+  // Location / check-in copy is admin-only. Operator flow stays silent.
+  return;
 }
 
 function activeOperatorAssignmentForGeo() {
@@ -9733,19 +9809,11 @@ function showArrivalFenceFailure(result, asgn, retryFn) {
 
 async function confirmOperatorArrival() {
   const asgn = activeOperatorAssignmentForGeo();
-  if (!hasOfficeCheckin(asgn) && !(isGeofencePreviewHost() && getOrbitMockGeo())) {
-    // Soft gate: still allow preview hosts; otherwise ask them to check in at HQ first.
-    // Auto flow may still catch HQ if they are there.
-    geoToastOnce('need_hq_first', 'Check in at the Redmond office first, then travel to the assignment.');
-  }
-  const role = getOperatorFenceRole();
   const result = await checkParticipantGeofence(asgn);
   if (result.ok) {
     applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', result), result);
-    geoToastOnce('arrival_ok', 'Arrival confirmed');
     return true;
   }
-  showArrivalFenceFailure(result, asgn, () => confirmOperatorArrival());
   return false;
 }
 
@@ -9765,14 +9833,11 @@ async function tickModeratorGeoFlow(opts) {
   try {
     const asgn = activeOperatorAssignmentForGeo();
     const phase = getModeratorGeoPhase(asgn);
-    ensureGeoStatusBanner();
-    ensureGeoQaPanel();
 
     // 1) Office check-in
     if (!hasOfficeCheckin(asgn)) {
       const hq = await checkHqGeofence();
       if (hq.reason === 'denied') {
-        ensureGeoStatusBanner();
         return;
       }
       if (hq.ok) {
@@ -9786,7 +9851,6 @@ async function tickModeratorGeoFlow(opts) {
       const home = await checkParticipantGeofence(asgn);
       if (home.ok && !home.skipped) {
         applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', home), home);
-        geoToastOnce('arrival_auto', 'Arrival confirmed — you are at the assignment');
       }
       return;
     }
@@ -9796,9 +9860,6 @@ async function tickModeratorGeoFlow(opts) {
       const hq = await checkHqGeofence();
       if (hq.ok) {
         applyOfficeCheckout(asgn, hq);
-      } else if (hq.reason !== 'denied' && hq.reason !== 'unavailable') {
-        // Still at house / en route back — quiet banner only
-        ensureGeoStatusBanner();
       }
       return;
     }
@@ -9809,14 +9870,12 @@ async function tickModeratorGeoFlow(opts) {
     console.warn('[Twilight] geo flow tick failed', err);
   } finally {
     _geoFlowBusy = false;
-    ensureGeoStatusBanner();
   }
 }
 
 function startModeratorGeofence() {
   if (state.isAdmin || isAdminUsername(state.username)) return;
-  ensureGeoStatusBanner();
-  ensureGeoQaPanel();
+  hideModeratorGeoUi();
   tickModeratorGeoFlow({ force: true });
   pingModeratorLocation();
   if (_geoPingTimer) return;
@@ -9845,83 +9904,31 @@ function stopModeratorGeofence() {
   closeGeoFenceModal();
 }
 
-function ensureGeoStatusBanner() {
-  if (!state || !state.modProfile || state.isAdmin || isAdminUsername(state.username)) {
-    const stale = document.getElementById('geoStatusBanner');
-    if (stale) stale.remove();
-    return;
-  }
-  let el = document.getElementById('geoStatusBanner');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'geoStatusBanner';
-    el.className = 'geo-status-banner';
-    document.body.appendChild(el);
-  }
-  const asgn = activeOperatorAssignmentForGeo();
-  const phase = getModeratorGeoPhase(asgn);
-  const copy = geoPhaseBannerCopy(phase);
-  const mock = getOrbitMockGeo();
-  let extra = '';
-  if (_geoPermissionDenied && !mock) {
-    extra = '<div class="geo-status-banner-extra">Location is off. Turn it on in your browser settings so the app can check you in and out.</div>';
-  } else if (mock) {
-    extra = `<div class="geo-status-banner-extra">Preview location: ${escapeHTML(mock.label || mock.preset || 'mock')}</div>`;
-  }
-  el.dataset.phase = phase;
-  el.innerHTML = `
-    <div class="geo-status-banner-inner">
-      <div class="geo-status-banner-text">
-        <div class="geo-status-banner-title">${escapeHTML(copy.title)}</div>
-        <div class="geo-status-banner-sub">${escapeHTML(copy.sub)}</div>
-        ${extra}
-      </div>
-      <button type="button" class="btn btn-ghost geo-status-refresh" id="geoStatusRefreshBtn">Check location</button>
-    </div>`;
-  const btn = document.getElementById('geoStatusRefreshBtn');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      tickModeratorGeoFlow({ force: true });
-      geoToastOnce('manual_check', 'Checking your location…', 4000);
-    });
-  }
+function hideModeratorGeoUi() {
+  const banner = document.getElementById('geoStatusBanner');
+  if (banner) banner.remove();
+  const qa = document.getElementById('geoQaPanel');
+  if (qa) qa.remove();
+  closeGeoFenceModal();
 }
+function ensureGeoStatusBanner() { hideModeratorGeoUi(); }
+function ensureGeoQaPanel() { hideModeratorGeoUi(); }
 
-function ensureGeoQaPanel() {
-  if (!isGeofencePreviewHost()) {
-    const stale = document.getElementById('geoQaPanel');
-    if (stale) stale.remove();
-    return;
+function assignmentMatchesActivitiesFocus(a) {
+  if (!a || a.status === 'Cancelled') return false;
+  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+  if (todayStr && a.date !== todayStr) return false;
+  const focusMod = getSelectedActivitiesModeratorId().toLowerCase();
+  const team = getSelectedActivitiesTeam();
+  if (focusMod) {
+    if ((a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === focusMod)) return true;
+    const t = (adminState.teams || []).find(x => String(x.id) === String(a.teamId));
+    if (!t) return false;
+    const ids = [...(t.primaryIds || []), ...((typeof getTeamBackupIds === 'function') ? getTeamBackupIds(t) : (t.backupIds || []))];
+    return ids.some(id => String(id).toLowerCase() === focusMod);
   }
-  if (!state || !state.modProfile || state.isAdmin || isAdminUsername(state.username)) {
-    const stale = document.getElementById('geoQaPanel');
-    if (stale) stale.remove();
-    return;
-  }
-  let el = document.getElementById('geoQaPanel');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'geoQaPanel';
-    el.className = 'geo-qa-panel';
-    document.body.appendChild(el);
-  }
-  const mock = getOrbitMockGeo();
-  el.innerHTML = `
-    <div class="geo-qa-title">Location preview (QA)</div>
-    <div class="geo-qa-actions">
-      <button type="button" data-geo="hq" class="btn btn-secondary">At office</button>
-      <button type="button" data-geo="assignment" class="btn btn-secondary">At assignment</button>
-      <button type="button" data-geo="far" class="btn btn-secondary">Far away</button>
-      <button type="button" data-geo="off" class="btn btn-ghost">Clear</button>
-    </div>
-    <div class="geo-qa-current">${mock ? ('Using: ' + escapeHTML(mock.label || mock.preset)) : 'Using real GPS'}</div>`;
-  el.querySelectorAll('[data-geo]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const v = btn.getAttribute('data-geo');
-      setOrbitMockGeo(v === 'off' ? null : v);
-      geoToastOnce('mock_' + v, v === 'off' ? 'Using real GPS' : ('Preview: ' + v), 3000);
-    });
-  });
+  if (team && String(a.teamId) !== String(team.id)) return false;
+  return true;
 }
 
 function activitiesFenceFeatures() {
@@ -9930,14 +9937,7 @@ function activitiesFenceFeatures() {
       properties: { kind: 'hq' },
     }),
   ];
-  const team = getSelectedActivitiesTeam();
-  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
-  const asgns = (adminState.assignments || []).filter(a => {
-    if (a.status === 'Cancelled') return false;
-    if (todayStr && a.date !== todayStr) return false;
-    if (team && String(a.teamId) !== String(team.id)) return false;
-    return !!assignmentFenceAddress(a);
-  });
+  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
   const cache = loadGeocodeCache();
   asgns.forEach(a => {
     const addr = assignmentFenceAddress(a);
@@ -9951,14 +9951,7 @@ function activitiesFenceFeatures() {
 }
 
 async function prefetchActivityHomeGeocodes() {
-  const team = getSelectedActivitiesTeam();
-  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
-  const asgns = (adminState.assignments || []).filter(a => {
-    if (a.status === 'Cancelled') return false;
-    if (todayStr && a.date !== todayStr) return false;
-    if (team && String(a.teamId) !== String(team.id)) return false;
-    return !!assignmentFenceAddress(a);
-  });
+  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
   for (const a of asgns) {
     try { await geocodeAddress(assignmentFenceAddress(a)); } catch (_) {}
   }
@@ -10009,6 +10002,7 @@ function placeActivitiesGeofence(map) {
     try { if (el.__marker) el.__marker.remove(); } catch (_) {}
   });
   const team = getSelectedActivitiesTeam();
+  const focusMod = getSelectedActivitiesModeratorId().toLowerCase();
   const allowed = new Map();
   const collect = (ids, role) => {
     (ids || []).forEach(id => allowed.set(String(id).toLowerCase(), role));
@@ -10019,15 +10013,17 @@ function placeActivitiesGeofence(map) {
   }
   const pings = loadGeoPings();
   const now = Date.now();
+  let focusPing = null;
   Object.keys(pings).forEach(id => {
     const ping = pings[id];
     if (!ping || !Number.isFinite(ping.lat) || !Number.isFinite(ping.lng)) return;
+    if (focusMod && id !== focusMod) return;
     let role = ping.role || 'moderator';
-    if (team) {
+    if (!focusMod && team) {
       const mapped = allowed.get(id);
       if (!mapped) return;
       role = mapped;
-    } else if (allowed.has(id)) {
+    } else if (!focusMod && allowed.has(id)) {
       role = allowed.get(id);
     }
     const el = document.createElement('div');
@@ -10039,7 +10035,12 @@ function placeActivitiesGeofence(map) {
       .setPopup(new maplibregl.Popup({ offset: 14 }).setText(label))
       .addTo(map);
     el.__marker = marker;
+    if (focusMod && id === focusMod) focusPing = ping;
   });
+  updateActivitiesMapCaption();
+  if (focusPing) {
+    try { map.easeTo({ center: [focusPing.lng, focusPing.lat], zoom: 14, duration: 500 }); } catch (_) {}
+  }
 }
 
 /* ----------- Activities (live map) ----------- */
@@ -10281,15 +10282,15 @@ function renderModActivitiesView() {
     <div class="activities-viz-outer" id="activitiesVizContainer">
       <div class="activities-viz-well" id="activitiesMapWell">
         <div class="activities-map-slot">
-          <div id="activitiesMap" class="activities-map" role="img" aria-label="Live map of Redmond office"></div>
+          <div id="activitiesMap" class="activities-map" role="img" aria-label="Live map"></div>
           <div id="activitiesMapFallback" class="activities-map-fallback" hidden>
             Map could not load. Check your network connection and refresh.
           </div>
         </div>
         <div class="activities-map-caption">
-          <div class="activities-map-eyebrow" id="activitiesTeamContext">${getSelectedActivitiesTeam() ? `Live map · ${escapeHTML(getSelectedActivitiesTeam().name || 'Unnamed team')}` : 'Live map · All teams'}</div>
-          <div class="activities-map-title">Redmond HQ</div>
-          <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
+          <div class="activities-map-eyebrow" id="activitiesTeamContext">${escapeHTML(activitiesViewEyebrow())}</div>
+          <div class="activities-map-title">${escapeHTML(activitiesViewTitle())}</div>
+          <div class="activities-map-addr">${escapeHTML(activitiesViewAddrLine())}</div>
           <div class="activities-map-legend">
             <span><i class="role-fence-hq"></i> Office fence</span>
             <span><i class="role-fence"></i> Assignment fence</span>
@@ -10303,6 +10304,14 @@ function renderModActivitiesView() {
   // Defer so the inset well has layout before MapLibre measures it.
   requestAnimationFrame(() => initActivitiesMap());
   prefetchActivityHomeGeocodes();
+  if (typeof fetchSessionStateRows === 'function') {
+    fetchSessionStateRows().then(() => {
+      if (_activitiesMap) {
+        try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+      }
+      updateActivitiesMapCaption();
+    }).catch(() => {});
+  }
 }
 
 function renderModListView() {
@@ -23385,6 +23394,7 @@ function extractSyncableState(s) {
     arrivedAt:          s.arrivedAt          || '',
     officeCheckedInAt:  s.officeCheckedInAt  || '',
     officeCheckedOutAt: s.officeCheckedOutAt || '',
+    lastGeo:            s.lastGeo            || null,
     // Workflow / calibration guide acknowledgment. Object or null.
     // Synced so teammates can see "yes, the lead has acknowledged
     // the guide" without re-prompting, AND so admin pulling the
@@ -23656,7 +23666,7 @@ async function fetchSessionStateRows() {
     const canonicalLookup = {};
     for (const ck of CANONICAL_KEYS) canonicalLookup[normalize(ck)] = ck;
 
-    return rows.map(rawRow => {
+    const normalizedRows = rows.map(rawRow => {
       if (!rawRow || typeof rawRow !== 'object') return rawRow;
       const normalized = { ...rawRow };  // keep original keys for backwards-compat
       for (const k of Object.keys(rawRow)) {
@@ -23671,10 +23681,39 @@ async function fetchSessionStateRows() {
       }
       return normalized;
     });
+    ingestGeoPingsFromSessionRows(normalizedRows);
+    return normalizedRows;
   } catch (e) {
     console.warn('[Twilight] SessionState read error:', e && e.message);
     return null;
   }
+}
+
+function ingestGeoPingsFromSessionRows(rows) {
+  if (!Array.isArray(rows)) return;
+  rows.forEach(r => {
+    let parsed = null;
+    try {
+      parsed = typeof r.stateJson === 'string' ? JSON.parse(r.stateJson) : r.stateJson;
+    } catch (_) { parsed = null; }
+    const g = parsed && parsed.lastGeo;
+    if (!g || !Number.isFinite(Number(g.lat)) || !Number.isFinite(Number(g.lng))) return;
+    const id = String(r.orbitLoginId || '').toLowerCase();
+    if (!id) return;
+    const existing = (loadGeoPings() || {})[id];
+    const at = Number(g.at) || Date.parse(r.lastActive) || Date.now();
+    if (existing && existing.at && existing.at > at) return;
+    const name = (typeof getModeratorDisplayName === 'function') ? getModeratorDisplayName(id) : id;
+    recordGeoPing({
+      orbitLoginId: id,
+      name: g.name || name,
+      role: g.role || 'moderator',
+      lat: Number(g.lat),
+      lng: Number(g.lng),
+      accuracy: g.accuracy,
+      at,
+    }, { fromCloud: true });
+  });
 }
 
 // Return the newest SessionState row per (orbitLoginId, assignmentId)
@@ -23989,6 +24028,7 @@ function applySelfSyncReplace(s) {
   state.arrivedAt          = s.arrivedAt          || '';
   state.officeCheckedInAt  = s.officeCheckedInAt  || '';
   state.officeCheckedOutAt = s.officeCheckedOutAt || '';
+  state.lastGeo            = s.lastGeo            || null;
   state.calGuideAck        = s.calGuideAck         || null;
   // Personal per-device reminder tracking is re-derived from the
   // adopted arrival anchor (same rationale as mergeTeammateState).
@@ -26281,14 +26321,6 @@ function renderMySessionSection() {
       else pushWorklogStatus(asgn, 'arrived');
     });
   }
-  const geoCheckBtn = el.querySelector('.worklog-btn-geo-check');
-  if (geoCheckBtn) {
-    geoCheckBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
-      if (typeof toast === 'function') toast('Checking your location…');
-    });
-  }
   const startBtn = el.querySelector('.worklog-btn-start');
   if (startBtn) {
     startBtn.addEventListener('click', (e) => {
@@ -26358,37 +26390,13 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
   if (myStatus === 'session_done' || teamStatus === 'session_done' ||
       myStatus === 'office_checkout' || teamStatus === 'office_checkout' ||
       statusOrderIdx(displayStatus) >= statusOrderIdx('session_done')) {
-    if (phase === 'stations_complete') {
-      return `<div class="worklog-row">
-        <div class="worklog-copy">
-          <strong>Session complete.</strong> Return to the Redmond office to check out. Do not check out at the house.
-        </div>
-        <button class="worklog-btn worklog-btn-geo-check worklog-btn-primary">
-          Check location
-        </button>
-      </div>`;
-    }
-    const teammateCompleted = (teamStatus === 'session_done' || teamStatus === 'office_checkout') &&
-      myStatus !== 'session_done' && myStatus !== 'office_checkout';
-    const checkedOut = phase === 'office_checkout' || myStatus === 'office_checkout' || displayStatus === 'office_checkout';
     return `<div class="worklog-summary done">
       <div class="worklog-summary-head">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
           <path d="M3 8l3 3 7-7" stroke="var(--green-text)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>${checkedOut ? 'Checked out' : 'Session complete'}${teammateCompleted ? ' (by teammate)' : ''}</span>
+        <span>Session complete</span>
       </div>
-    </div>`;
-  }
-
-  if (phase === 'need_office_checkin' || (!officeIn && myIdx < arrivedIdx && teamIdx < arrivedIdx)) {
-    return `<div class="worklog-row">
-      <div class="worklog-copy">
-        <strong>Check in at the Redmond office first.</strong> Open the app there — check-in is automatic inside the office area.
-      </div>
-      <button class="worklog-btn worklog-btn-geo-check worklog-btn-primary">
-        Check location
-      </button>
     </div>`;
   }
 
@@ -26405,7 +26413,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     }
     return `<div class="worklog-row">
       <div class="worklog-copy">
-        Checked in at the office. When you arrive at the assigned location, confirm arrival.
+        When you arrive at the assigned location, confirm arrival.
       </div>
       <button class="worklog-btn worklog-btn-arrival worklog-btn-primary">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -26628,10 +26636,7 @@ function openWrapUpModal(asgn) {
         // extractSyncableState).
         try { state.sessionCompletedAt = new Date().toISOString(); saveState(); } catch (_) {}
         // Refresh geo banners · checkout only happens back at HQ.
-        try {
-          if (typeof ensureGeoStatusBanner === 'function') ensureGeoStatusBanner();
-          if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
-        } catch (_) {}
+        try { if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true }); } catch (_) {}
         // Push final SessionState so admin Performance + teammate-sync see the
         // completion marker, then flush immediately (terminal action · worth
         // the round trip).
