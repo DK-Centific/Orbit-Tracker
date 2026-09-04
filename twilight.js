@@ -11010,6 +11010,35 @@ function validateModUserForm(values, mode, originalOrbitLoginId) {
   return '';
 }
 
+function applyModeratorWriteLocally(values, mode, originalOrbitLoginId) {
+  const rows = Array.isArray(adminState.moderators) ? adminState.moderators.slice() : [];
+  const lookupId = String(originalOrbitLoginId || values.orbitLoginId || '').toLowerCase();
+  const idx = rows.findIndex(m => {
+    const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+    return String(id || '').toLowerCase() === lookupId;
+  });
+  const next = Object.assign({}, idx >= 0 ? rows[idx] : {}, values);
+  if (idx >= 0) rows[idx] = next;
+  else rows.push(next);
+  adminState.moderators = rows;
+}
+
+async function refreshModeratorDirectoryInBackground() {
+  try {
+    const data = await fetchModeratorDirectory();
+    adminState.moderators = extractArray(data);
+    adminState.modError = null;
+    if (adminState.tab === 'moderators' && adminState.subtab === 'moderators') {
+      renderModerators();
+    }
+  } catch (e) {
+    // The write already succeeded and the optimistic row is visible. Keep it
+    // instead of replacing the screen with an error if this confirmation read
+    // encounters a transient Power Automate / Excel delay.
+    console.warn('[Twilight] Moderator confirmation refresh failed:', e && e.message);
+  }
+}
+
 async function submitModUserModal() {
   const state = adminState.modUserModal;
   if (!state || state.saving) return;
@@ -11057,9 +11086,15 @@ async function submitModUserModal() {
       timeoutMs: 45000,
       maxAttempts: 2,
     });
+    const savedMode = state.mode;
+    const originalOrbitLoginId = state.originalOrbitLoginId;
+    applyModeratorWriteLocally(values, savedMode, originalOrbitLoginId);
     toast(state.mode === 'edit' ? 'User updated' : 'User created');
     closeModUserModal();
-    await loadModerators(true);
+    renderModerators();
+    // Confirm against Excel without showing another loading spinner or making
+    // the admin wait for a second sequential PA request.
+    refreshModeratorDirectoryInBackground();
   } catch (e) {
     state.saving = false;
     state.error = (e && e.message) ? e.message : String(e);
