@@ -4374,15 +4374,10 @@ input#ent_lakitu.lakitu-invalid {
    ASSIGNMENT · Teams + Calendar
    ========================================================= */
 
-/* Two-pane layout: teams left, calendar right */
+/* Assignment tab is calendar-only. Team management lives in Moderator Hub. */
 .asgn-shell {
   display: grid;
-  /* Teams panel scales from 280px on narrower desktops to 360px on
-     wide ones, giving the team list room to breathe without
-     stealing too much from the calendar. clamp() lets the column
-     grow proportionally with viewport · Apple-style fluid rather
-     than fixed-then-jump-at-breakpoint. */
-  grid-template-columns: clamp(280px, 22vw, 360px) 1fr;
+  grid-template-columns: 1fr;
   gap: clamp(12px, 1.2vw, 22px);
   align-items: start;
 }
@@ -25333,6 +25328,17 @@ async function fetchAssignmentsFromPA() {
         info.teamCount = mergedTeams.length;
       } else if (tl.error) {
         console.warn('[Twilight] TeamLog fetch errored; using assignment-row fallback for teams:', tl.error);
+      } else if (!tl.error && Array.isArray(tl.teams) && tl.teams.length === 0) {
+        // TeamLog read succeeded and Excel has no active teams. Drop the
+        // browser cache so wiped tables do not keep showing old teams.
+        const pending = (typeof adminState !== 'undefined' && Array.isArray(adminState.teams))
+          ? adminState.teams.filter(t => t._pending)
+          : [];
+        const dropped = mergedTeams.filter(t => !t._pending).length;
+        mergedTeams = pending;
+        if (dropped > 0) {
+          console.log(`[Twilight] TeamLog empty · dropped ${dropped} cached team${dropped === 1 ? '' : 's'} (Excel is empty)`);
+        }
       } else if (tl.deletedIds && tl.deletedIds.size > 0) {
         // Edge case: TeamLog has only deleted teams (every team was
         // removed). Still apply the tombstones so the assignment-row
@@ -26037,7 +26043,6 @@ function renderAssignment() {
       </div>
     ` : ''}
     <div class="asgn-shell">
-      ${renderTeamsPanelHTML()}
       ${renderCalendarPanelHTML()}
     </div>
     <div class="asgn-modal-overlay" id="asgnModalOverlay"></div>
