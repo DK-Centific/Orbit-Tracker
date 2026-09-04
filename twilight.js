@@ -4460,8 +4460,45 @@ function directoryRoleIsAdmin(row) {
   const v = directoryLoginRole(row).toLowerCase();
   return v === 'admin' || v === 'administrator';
 }
+// Canonical LoginRole values written to Excel / accepted by the create-user
+// form. Excel historically stores moderators as "Mod"; the UI label is
+// "Moderator". Reviewer and Admin are stored as-is. Login still routes only
+// LoginRole=Admin to the admin app (see doLogin); the hardcoded ADMIN_USERNAMES
+// allowlist is unchanged — passwordless admin via allowlist stays as-is.
+const DIRECTORY_LOGIN_ROLE_OPTIONS = [
+  { value: 'Mod', label: 'Moderator' },
+  { value: 'Reviewer', label: 'Reviewer' },
+  { value: 'Admin', label: 'Admin' },
+];
+function canonicalizeDirectoryLoginRole(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v === 'admin' || v === 'administrator') return 'Admin';
+  if (v === 'reviewer' || v === 'review') return 'Reviewer';
+  if (v === 'mod' || v === 'moderator' || v === 'primary' || v === 'backup') return 'Mod';
+  // Preserve unknown non-empty values for display, but form select only
+  // offers the three canonical options above.
+  return String(raw).trim();
+}
+function directoryLoginRoleLabel(raw) {
+  const c = canonicalizeDirectoryLoginRole(raw);
+  const opt = DIRECTORY_LOGIN_ROLE_OPTIONS.find(o => o.value === c);
+  if (opt) return opt.label;
+  return c || '—';
+}
+function isValidDirectoryLoginRole(raw) {
+  const c = canonicalizeDirectoryLoginRole(raw);
+  return DIRECTORY_LOGIN_ROLE_OPTIONS.some(o => o.value === c);
+}
+
 const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
+
+// Moderator directory write/upsert · paste the HTTP POST URL from the
+// "Orbit App Mod Info Write" Power Automate flow (see
+// docs/power-automate-moderator-write.md). Empty = feature shows a
+// configure message and keeps the form draft (no silent local-only save).
+const ADMIN_PA_MODERATOR_WRITE_URL = '';
 
 // Participant column schema · single source of truth for headers,
 // field keys, default visibility, and rendering style.
@@ -4546,6 +4583,8 @@ const adminState = {
   partPage: 1,               // 1-indexed current page in the participant table
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
+  modListLayout: 'grid',     // 'grid' | 'list' · All-view card grid vs table list
+  modUserModal: null,        // { mode:'create'|'edit', values:{}, error:'', saving:false } | null
   activitiesTeamId: '',      // selected team context in the Activities map
   activitiesModeratorId: '', // selected moderator on the Activities map (mutually exclusive with team)
   // Assignment state
@@ -10647,12 +10686,52 @@ function renderModActivitiesView() {
 
 function renderModListView() {
   const wrap = document.getElementById('modviewBody');
-  wrap.innerHTML = `
-    <div class="mod-grid">
-      ${adminState.moderators.map((m, i) => modCardHTML(m, i)).join('')}
+  if (!wrap) return;
+  const layout = adminState.modListLayout === 'list' ? 'list' : 'grid';
+  const mods = adminState.moderators || [];
+
+  const toolbar = `
+    <div class="mod-all-toolbar">
+      <div class="mod-layout-toggle" role="group" aria-label="Moderator layout">
+        <button type="button" class="mod-layout-btn ${layout === 'grid' ? 'active' : ''}" data-mod-layout="grid" title="Card grid">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+          Grid
+        </button>
+        <button type="button" class="mod-layout-btn ${layout === 'list' ? 'active' : ''}" data-mod-layout="list" title="Table list">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          List
+        </button>
+      </div>
+      <button type="button" class="btn btn-primary mod-add-user-btn" id="modAddUserBtn">Add User</button>
     </div>`;
+
+  let body;
+  if (!mods.length) {
+    body = `<div class="admin-empty">No moderators in the directory yet. Click <strong>Add User</strong> to create one.</div>`;
+  } else if (layout === 'list') {
+    body = renderModTableHTML(mods);
+  } else {
+    body = `<div class="mod-grid">${mods.map((m, i) => modCardHTML(m, i)).join('')}</div>`;
+  }
+
+  wrap.innerHTML = toolbar + body;
+  ensureModUserModal();
+
+  wrap.querySelectorAll('[data-mod-layout]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-mod-layout');
+      if (next !== 'grid' && next !== 'list') return;
+      if (adminState.modListLayout === next) return;
+      adminState.modListLayout = next;
+      renderModListView();
+    });
+  });
+  const addBtn = document.getElementById('modAddUserBtn');
+  if (addBtn) addBtn.addEventListener('click', () => openModUserModal('create'));
+
   wrap.querySelectorAll('.mod-card-head').forEach(head => {
-    head.addEventListener('click', () => {
+    head.addEventListener('click', (e) => {
+      if (e.target.closest('.mod-edit-btn')) return;
       const card = head.closest('.mod-card');
       const idx = parseInt(card.dataset.idx, 10);
       if (adminState.expandedMods[idx]) {
@@ -10665,6 +10744,317 @@ function renderModListView() {
       head.setAttribute('aria-expanded', !!adminState.expandedMods[idx]);
     });
   });
+  wrap.querySelectorAll('.mod-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-mod-idx'), 10);
+      const row = (adminState.moderators || [])[idx];
+      if (row) openModUserModal('edit', row);
+    });
+  });
+}
+
+function renderModTableHTML(mods) {
+  const head = `
+    <div class="mod-table-wrap">
+      <table class="mod-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Orbit Login ID</th>
+            <th>Role</th>
+            <th>Phone</th>
+            <th>Centific Email</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>`;
+  const rows = mods.map((m, i) => {
+    const f = extractModeratorFields(m);
+    const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim() || f.orbitLoginId || '—';
+    return `
+      <tr>
+        <td>
+          <div class="mod-table-name">
+            <div class="mod-avatar mod-avatar-sm">${escapeHTML(avatarLetters(f.firstName, f.lastName))}</div>
+            <span>${escapeHTML(name)}</span>
+          </div>
+        </td>
+        <td class="mod-table-mono">${escapeHTML(f.orbitLoginId || '—')}</td>
+        <td><span class="mod-role-pill">${escapeHTML(directoryLoginRoleLabel(f.LoginRole))}</span></td>
+        <td>${escapeHTML(f.phoneNumber || '—')}</td>
+        <td>${f.centificEmail ? `<a href="mailto:${escapeForUrl(f.centificEmail)}">${escapeHTML(f.centificEmail)}</a>` : '—'}</td>
+        <td class="mod-table-actions">
+          <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${i}">Edit</button>
+        </td>
+      </tr>`;
+  }).join('');
+  return head + rows + '</tbody></table></div>';
+}
+
+function extractModeratorFields(m) {
+  m = m || {};
+  return {
+    orbitLoginId: pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id'),
+    firstName: pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName', 'given_name', 'GivenName', 'Given Name', 'firstname', 'First'),
+    lastName: pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name', 'surname', 'familyName', 'family_name', 'FamilyName', 'Family Name', 'lastname', 'Last'),
+    phoneNumber: pickField(m, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone'),
+    centificEmail: pickField(m, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email'),
+    personalEmail: pickField(m, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email'),
+    modAddress: pickField(m, 'modAddress', 'mod_address', 'ModAddress', 'Mod Address', 'address', 'Address'),
+    zipcode: pickField(m, 'zipcode', 'zipCode', 'Zipcode', 'Zip Code', 'zip', 'Zip'),
+    timeOff: pickField(m, 'timeOff', 'time_off', 'TimeOff', 'Time Off'),
+    smartPhone: pickField(m, 'smartPhone', 'smart_phone', 'SmartPhone', 'Smart Phone'),
+    carType: pickField(m, 'carType', 'car_type', 'CarType', 'Car Type', 'vehicleType', 'vehicle_type', 'VehicleType', 'Vehicle Type'),
+    'off-date': pickField(m, 'off-date', 'offDate', 'off_date', 'OffDate', 'Off Date'),
+    LoginRole: pickField(m, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE'),
+  };
+}
+
+function emptyModUserFormValues() {
+  return {
+    orbitLoginId: '',
+    firstName: '',
+    lastName: '',
+    LoginRole: 'Mod',
+    phoneNumber: '',
+    centificEmail: '',
+    personalEmail: '',
+    modAddress: '',
+    zipcode: '',
+    timeOff: '',
+    smartPhone: '',
+    carType: '',
+    'off-date': '',
+  };
+}
+
+function ensureModUserModal() {
+  if (document.getElementById('modUserModal')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'mod-user-modal-overlay';
+  overlay.id = 'modUserModalOverlay';
+  const modal = document.createElement('div');
+  modal.className = 'mod-user-modal';
+  modal.id = 'modUserModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.innerHTML = '<div id="modUserModalContent"></div>';
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+  overlay.addEventListener('click', () => closeModUserModal());
+}
+
+function openModUserModal(mode, row) {
+  ensureModUserModal();
+  const values = emptyModUserFormValues();
+  if (mode === 'edit' && row) {
+    const f = extractModeratorFields(row);
+    Object.keys(values).forEach(k => { values[k] = f[k] != null ? String(f[k]) : ''; });
+    values.LoginRole = canonicalizeDirectoryLoginRole(values.LoginRole) || 'Mod';
+  }
+  adminState.modUserModal = {
+    mode: mode === 'edit' ? 'edit' : 'create',
+    values,
+    originalOrbitLoginId: mode === 'edit' ? values.orbitLoginId : '',
+    error: '',
+    saving: false,
+  };
+  renderModUserModal();
+  showModUserModal();
+}
+
+function showModUserModal() {
+  const o = document.getElementById('modUserModalOverlay');
+  const m = document.getElementById('modUserModal');
+  if (o) o.classList.add('open');
+  if (m) m.classList.add('open');
+}
+
+function closeModUserModal() {
+  const o = document.getElementById('modUserModalOverlay');
+  const m = document.getElementById('modUserModal');
+  if (o) o.classList.remove('open');
+  if (m) m.classList.remove('open');
+  adminState.modUserModal = null;
+}
+
+function renderModUserModal() {
+  ensureModUserModal();
+  const state = adminState.modUserModal;
+  const content = document.getElementById('modUserModalContent');
+  if (!state || !content) return;
+  const v = state.values || emptyModUserFormValues();
+  const isEdit = state.mode === 'edit';
+  const writeConfigured = !!(ADMIN_PA_MODERATOR_WRITE_URL && String(ADMIN_PA_MODERATOR_WRITE_URL).trim());
+  const roleOpts = DIRECTORY_LOGIN_ROLE_OPTIONS.map(o =>
+    `<option value="${escapeHTML(o.value)}" ${canonicalizeDirectoryLoginRole(v.LoginRole) === o.value ? 'selected' : ''}>${escapeHTML(o.label)}</option>`
+  ).join('');
+
+  const field = (key, label, opts = {}) => {
+    const required = !!opts.required;
+    const type = opts.type || 'text';
+    const readonly = !!opts.readonly;
+    const hint = opts.hint || '';
+    if (type === 'select') {
+      return `
+        <label class="asgn-field">
+          <span class="asgn-field-label">${escapeHTML(label)}${required ? ' *' : ''}</span>
+          <select id="modUser_${key}" ${required ? 'required' : ''} ${state.saving ? 'disabled' : ''}>${roleOpts}</select>
+        </label>`;
+    }
+    return `
+      <label class="asgn-field">
+        <span class="asgn-field-label">${escapeHTML(label)}${required ? ' *' : ''}</span>
+        <input type="${escapeHTML(type)}" id="modUser_${key}" value="${escapeHTML(v[key] || '')}"
+          ${required ? 'required' : ''} ${readonly ? 'readonly' : ''} ${state.saving ? 'disabled' : ''}
+          autocomplete="off" />
+        ${hint ? `<div class="asgn-field-hint">${escapeHTML(hint)}</div>` : ''}
+      </label>`;
+  };
+
+  content.innerHTML = `
+    <div class="asgn-modal-head">
+      <div>
+        <div class="asgn-modal-title">${isEdit ? 'Edit user' : 'Add user'}</div>
+        <div class="asgn-modal-sub">${isEdit ? 'Update this directory profile' : 'Create a Moderator, Reviewer, or Admin directory profile'}</div>
+      </div>
+      <button type="button" class="icon-btn" id="modUserModalClose" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="asgn-modal-body">
+      ${!writeConfigured ? `
+        <div class="mod-user-config-banner" role="status">
+          Write flow not configured. Create the Power Automate flow described in
+          <code>docs/power-automate-moderator-write.md</code>, then paste its HTTP POST URL into
+          <code>ADMIN_PA_MODERATOR_WRITE_URL</code> in <code>twilight.js</code>.
+          Your form draft stays here until that URL is set.
+        </div>` : ''}
+      <div class="mod-user-form-grid">
+        ${field('orbitLoginId', 'Orbit Login ID', { required: true, readonly: isEdit, hint: isEdit ? 'Orbit Login ID cannot change on edit (Excel key column).' : 'Must be unique in the directory.' })}
+        ${field('LoginRole', 'Login Role', { required: true, type: 'select' })}
+        ${field('firstName', 'First Name', { required: true })}
+        ${field('lastName', 'Last Name', { required: true })}
+        ${field('phoneNumber', 'Phone Number')}
+        ${field('centificEmail', 'Centific Email', { type: 'email' })}
+        ${field('personalEmail', 'Personal Email', { type: 'email' })}
+        ${field('modAddress', 'Address')}
+        ${field('zipcode', 'Zipcode')}
+        ${field('timeOff', 'Time Off')}
+        ${field('smartPhone', 'Smart Phone')}
+        ${field('carType', 'Vehicle Type')}
+        ${field('off-date', 'Off Date')}
+      </div>
+      ${state.error ? `<div class="mod-user-form-error" role="alert">${escapeHTML(state.error)}</div>` : ''}
+    </div>
+    <div class="asgn-modal-foot">
+      <button type="button" class="btn btn-ghost" id="modUserCancelBtn" ${state.saving ? 'disabled' : ''}>Cancel</button>
+      <button type="button" class="btn btn-primary" id="modUserSaveBtn" ${state.saving ? 'disabled' : ''}>
+        ${state.saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create user')}
+      </button>
+    </div>`;
+
+  document.getElementById('modUserModalClose').addEventListener('click', closeModUserModal);
+  document.getElementById('modUserCancelBtn').addEventListener('click', closeModUserModal);
+  document.getElementById('modUserSaveBtn').addEventListener('click', () => submitModUserModal());
+}
+
+function readModUserFormValues() {
+  const out = emptyModUserFormValues();
+  Object.keys(out).forEach(k => {
+    const el = document.getElementById('modUser_' + k);
+    if (!el) return;
+    out[k] = String(el.value || '').trim();
+  });
+  return out;
+}
+
+function isBasicEmailOk(s) {
+  if (!s) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function validateModUserForm(values, mode, originalOrbitLoginId) {
+  if (!values.orbitLoginId) return 'Orbit Login ID is required.';
+  if (!values.firstName) return 'First name is required.';
+  if (!values.lastName) return 'Last name is required.';
+  if (!isValidDirectoryLoginRole(values.LoginRole)) {
+    return 'Login Role must be Moderator, Reviewer, or Admin.';
+  }
+  if (!isBasicEmailOk(values.centificEmail)) return 'Centific Email looks invalid.';
+  if (!isBasicEmailOk(values.personalEmail)) return 'Personal Email looks invalid.';
+  if (mode === 'create') {
+    const idLc = values.orbitLoginId.toLowerCase();
+    const dup = (adminState.moderators || []).some(m => {
+      const existing = String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase();
+      return existing && existing === idLc;
+    });
+    if (dup) return `Orbit Login ID "${values.orbitLoginId}" already exists.`;
+  }
+  if (mode === 'edit' && originalOrbitLoginId && values.orbitLoginId.toLowerCase() !== String(originalOrbitLoginId).toLowerCase()) {
+    return 'Orbit Login ID cannot be changed when editing.';
+  }
+  return '';
+}
+
+async function submitModUserModal() {
+  const state = adminState.modUserModal;
+  if (!state || state.saving) return;
+  const values = readModUserFormValues();
+  values.LoginRole = canonicalizeDirectoryLoginRole(values.LoginRole);
+  state.values = values;
+  const err = validateModUserForm(values, state.mode, state.originalOrbitLoginId);
+  if (err) {
+    state.error = err;
+    renderModUserModal();
+    return;
+  }
+  if (!ADMIN_PA_MODERATOR_WRITE_URL || !String(ADMIN_PA_MODERATOR_WRITE_URL).trim()) {
+    state.error = 'Write flow not configured. Set ADMIN_PA_MODERATOR_WRITE_URL in twilight.js after creating the Power Automate flow (see docs/power-automate-moderator-write.md). Your draft is kept.';
+    renderModUserModal();
+    return;
+  }
+
+  state.saving = true;
+  state.error = '';
+  renderModUserModal();
+
+  const payload = {
+    operation: state.mode === 'edit' ? 'update' : 'create',
+    orbitLoginId: values.orbitLoginId,
+    firstName: values.firstName,
+    lastName: values.lastName,
+    LoginRole: values.LoginRole,
+    phoneNumber: values.phoneNumber,
+    centificEmail: values.centificEmail,
+    personalEmail: values.personalEmail,
+    modAddress: values.modAddress,
+    zipcode: values.zipcode,
+    timeOff: values.timeOff,
+    smartPhone: values.smartPhone,
+    carType: values.carType,
+    'off-date': values['off-date'],
+  };
+
+  try {
+    await fetchWithRetry(ADMIN_PA_MODERATOR_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+      maxAttempts: 2,
+    });
+    toast(state.mode === 'edit' ? 'User updated' : 'User created');
+    closeModUserModal();
+    await loadModerators(true);
+  } catch (e) {
+    state.saving = false;
+    state.error = (e && e.message) ? e.message : String(e);
+    renderModUserModal();
+    toast('Could not save user');
+  }
 }
 
 function renderModTeamView() {
@@ -10845,6 +11235,7 @@ function modCardHTML(m, i, role) {
   // Excel column heading (PA's connector is sensitive to that).
   const carType   = pickField(m, 'carType', 'car_type', 'CarType', 'Car Type', 'vehicleType', 'vehicle_type', 'VehicleType', 'Vehicle Type');
   const smartPhone= pickField(m, 'smartPhone', 'smart_phone', 'SmartPhone', 'Smart Phone');
+  const loginRole = pickField(m, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE');
 
   // Last-resort display name resolution. The order is:
   //   1. First + Last  (the normal case)
@@ -10901,6 +11292,7 @@ function modCardHTML(m, i, role) {
     // serial number, numeric string, or ISO string · formatModDate normalizes
     // all three through coerceWeekRange and pretty-prints to "MMM D, YYYY".
     { label: 'Smart Phone', value: formatModDate(smartPhone) },
+    { label: 'Login Role', value: directoryLoginRoleLabel(loginRole) },
   ];
 
   return `
@@ -10923,6 +11315,9 @@ function modCardHTML(m, i, role) {
         <div class="mod-detail-inner">
           <div class="mod-detail-list">
             ${rows.map(r => modRowHTML(r)).join('')}
+          </div>
+          <div class="mod-card-actions">
+            <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${i}">Edit</button>
           </div>
         </div>
       </div>
@@ -22865,6 +23260,8 @@ function isAnyAsgnModalOpen() {
       '.teammate-sync-modal.open',
       '.cal-drill-modal.open',
       '#calGuideModal.open',
+      '#modUserModal.open',
+      '#modUserModalOverlay.open',
     ];
     for (const sel of selectors) {
       if (document.querySelector(sel)) return true;

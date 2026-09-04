@@ -4089,6 +4089,144 @@ input#ent_lakitu.lakitu-invalid {
 @media (max-width: 880px)  { .mod-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px)  { .mod-grid { grid-template-columns: 1fr; } }
 
+/* Moderator All view · grid/list toggle + add user */
+.mod-all-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.mod-layout-toggle {
+  display: inline-flex; gap: 3px;
+  background: var(--bg3); border: 0.5px solid var(--border);
+  border-radius: 11px; padding: 3px;
+}
+.mod-layout-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  color: var(--text2); background: transparent; border: none;
+  border-radius: 8px; padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.mod-layout-btn:hover { color: var(--text); }
+.mod-layout-btn.active {
+  background: var(--bg2); color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .mod-layout-btn.active { background: var(--bg4); }
+
+.mod-table-wrap {
+  overflow-x: auto;
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  background: var(--card-bg);
+}
+.mod-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13.5px;
+}
+.mod-table th {
+  text-align: left;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text3);
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+  white-space: nowrap;
+}
+.mod-table td {
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.mod-table tr:last-child td { border-bottom: none; }
+.mod-table-name {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600;
+}
+.mod-avatar-sm {
+  width: 28px; height: 28px; font-size: 11px;
+}
+.mod-table-mono {
+  font-family: var(--font-num);
+  font-size: 12.5px; color: var(--text2);
+}
+.mod-role-pill {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--bg3); color: var(--text2);
+  border: 0.5px solid var(--border);
+}
+.mod-table-actions { text-align: right; white-space: nowrap; }
+.mod-card-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+  display: flex; justify-content: flex-end;
+}
+
+/* Create / edit user modal */
+.mod-user-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8, 12, 18, 0.45);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 620;
+}
+.mod-user-modal-overlay.open { opacity: 1; pointer-events: all; }
+.mod-user-modal {
+  position: fixed; left: 50%; top: 50%;
+  transform: translate(-50%, -46%) scale(0.98);
+  width: min(720px, calc(100vw - 28px));
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 621;
+}
+.mod-user-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+.mod-user-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+@media (max-width: 640px) {
+  .mod-user-form-grid { grid-template-columns: 1fr; }
+}
+.mod-user-config-banner {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg3));
+  border: 0.5px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--text);
+  font-size: 13px; line-height: 1.45;
+}
+.mod-user-config-banner code {
+  font-family: var(--font-num);
+  font-size: 12px;
+}
+.mod-user-form-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 12%, var(--bg3));
+  border: 0.5px solid color-mix(in srgb, #ef4444 40%, var(--border));
+  color: var(--text);
+  font-size: 13px;
+}
+
 .mod-card {
   background: var(--card-bg);
   border: 0.5px solid var(--border);
