@@ -1308,6 +1308,9 @@ function entryBarHTML() {
   // treat it as the session URL · but only when the mod hasn't already
   // pasted a valid session URL of their own (graceful fallback).
   const assignedLakitu = (typeof getAssignedLakituUrl === 'function') ? getAssignedLakituUrl() : '';
+  // Only render a clickable href for http(s) URLs. Non-http schemes are
+  // treated as "no link" even if getAssignedLakituUrl returned a value.
+  const assignedLakituHref = (assignedLakitu && isSafeHttpUrl(assignedLakitu)) ? assignedLakitu : '';
   if (assignedLakitu) {
     const curPid = (state.participantId || '').trim();
     if ((!curPid || !isValidLakituUrl(curPid)) && state.participantId !== assignedLakitu) {
@@ -1361,8 +1364,8 @@ function entryBarHTML() {
             </div>
           </span>
         </span>
-        ${assignedLakitu ? `
-        <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakitu)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakitu)}">
+        ${assignedLakituHref ? `
+        <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakituHref)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakituHref)}">
           <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="7.25" fill="#000"/>
             <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
@@ -3184,6 +3187,119 @@ function getLakituProjectByKey(key) {
   return LAKITU_PROJECTS.find(p => p.key === key) || null;
 }
 
+// TeamLog stores the admin-assigned Lakitu project as JSON inside the
+// existing `personalEmail` Excel column (versioned payload). This lets the
+// URL travel through the current Power Automate → Excel mapping without a
+// new column. Moderator-directory personalEmail values are untouched.
+const TEAM_LAKITU_PROJECT_PAYLOAD_TYPE = 'teamLakituProject';
+const TEAM_LAKITU_PROJECT_PAYLOAD_VERSION = 1;
+
+function encodeTeamLakituProjectPayload(team) {
+  const key = team && team.lakituProjectKey ? String(team.lakituProjectKey) : '';
+  let url = team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
+  if (!url && key) {
+    const proj = getLakituProjectByKey(key);
+    if (proj && proj.url) url = String(proj.url).trim();
+  }
+  return JSON.stringify({
+    type: TEAM_LAKITU_PROJECT_PAYLOAD_TYPE,
+    version: TEAM_LAKITU_PROJECT_PAYLOAD_VERSION,
+    lakituProjectKey: key,
+    lakituProjectUrl: url,
+  });
+}
+
+function parseTeamLakituProjectFromPersonalEmail(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s || s[0] !== '{') return null;
+  try {
+    const obj = JSON.parse(s);
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.type !== TEAM_LAKITU_PROJECT_PAYLOAD_TYPE) return null;
+    const key = obj.lakituProjectKey != null ? String(obj.lakituProjectKey) : '';
+    let url = obj.lakituProjectUrl != null ? String(obj.lakituProjectUrl).trim() : '';
+    if (!url && key) {
+      const proj = getLakituProjectByKey(key);
+      if (proj && proj.url) url = String(proj.url).trim();
+    }
+    return { lakituProjectKey: key, lakituProjectUrl: url };
+  } catch (_) {
+    return null;
+  }
+}
+
+// Clickable external hrefs must be http(s) only. Non-http schemes (javascript:,
+// data:, etc.) are rejected so we never render an unsafe link.
+function isSafeHttpUrl(v) {
+  const s = (v == null ? '' : String(v)).trim();
+  if (!s) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function resolveTeamLakituProjectUrl(team) {
+  if (!team) return '';
+  let url = team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
+  if (!url && team.lakituProjectKey) {
+    const proj = getLakituProjectByKey(team.lakituProjectKey);
+    if (proj && proj.url) url = String(proj.url).trim();
+  }
+  return url;
+}
+
+// Moderator Hub → All → List column sort. Empty values sort last in both
+// directions; comparison is case-insensitive and stable (original index tiebreak).
+function getModListSortValue(mod, key) {
+  const f = (typeof extractModeratorFields === 'function') ? extractModeratorFields(mod) : (mod || {});
+  if (key === 'name') {
+    const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim();
+    return name || f.orbitLoginId || '';
+  }
+  if (key === 'orbitLoginId') return f.orbitLoginId || '';
+  if (key === 'role') {
+    const raw = f.LoginRole || f.loginRole || '';
+    return (typeof directoryLoginRoleLabel === 'function') ? directoryLoginRoleLabel(raw) : String(raw);
+  }
+  if (key === 'phone') return f.phoneNumber || '';
+  if (key === 'centificEmail') return f.centificEmail || '';
+  return '';
+}
+
+function sortModeratorListRows(mods, sortSpec) {
+  const key = (sortSpec && sortSpec.key) || 'name';
+  const dir = (sortSpec && sortSpec.dir) === 'desc' ? 'desc' : 'asc';
+  const decorated = (mods || []).map((m, idx) => {
+    const raw = getModListSortValue(m, key);
+    const empty = !String(raw || '').trim();
+    return { m, idx, empty, val: String(raw || '').trim().toLowerCase() };
+  });
+  decorated.sort((a, b) => {
+    if (a.empty !== b.empty) return a.empty ? 1 : -1; // empty last in both dirs
+    if (a.val < b.val) return dir === 'asc' ? -1 : 1;
+    if (a.val > b.val) return dir === 'asc' ? 1 : -1;
+    return a.idx - b.idx; // stable
+  });
+  return decorated.map(d => d.m);
+}
+
+function modListSortHeaderButton(key, label, sortSpec) {
+  const active = sortSpec && sortSpec.key === key;
+  const dir = active ? sortSpec.dir : null;
+  const ariaSort = !active ? 'none' : (dir === 'desc' ? 'descending' : 'ascending');
+  const indicator = !active ? '' : (dir === 'desc' ? ' ▼' : ' ▲');
+  const nextDir = active && dir === 'asc' ? 'desc' : 'asc';
+  const ariaLabel = active
+    ? `Sort by ${label}, currently ${dir === 'desc' ? 'Z to A' : 'A to Z'}. Activate to sort ${nextDir === 'desc' ? 'Z to A' : 'A to Z'}.`
+    : `Sort by ${label}, A to Z`;
+  return `<th aria-sort="${ariaSort}"><button type="button" class="mod-sort-btn${active ? ' is-active' : ''}" data-mod-sort="${escapeHTML(key)}" aria-label="${escapeHTML(ariaLabel)}">${escapeHTML(label)}<span class="mod-sort-indicator" aria-hidden="true">${indicator}</span></button></th>`;
+}
+
+
 // The admin-assigned Lakitu PROJECT url for the moderator's ACTIVE team,
 // or '' when nothing has been assigned. Resolves the team the same way the
 // entry-bar team cell does (team that owns the active assignment, else the
@@ -3193,8 +3309,12 @@ function getAssignedLakituUrl() {
   const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
   if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
   else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
-  const url = team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
-  return isLakituProjectUrl(url) ? url : '';
+  let url = (typeof resolveTeamLakituProjectUrl === 'function')
+    ? resolveTeamLakituProjectUrl(team)
+    : (team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '');
+  if (url && typeof isLakituProjectUrl === 'function' && isLakituProjectUrl(url)) return url;
+  if (url && typeof isSafeHttpUrl === 'function' && isSafeHttpUrl(url)) return url;
+  return '';
 }
 
 // '' | 'empty' | 'invalid' | 'valid' · drives the entry-bar field error
@@ -4581,7 +4701,8 @@ const adminState = {
   partPage: 1,               // 1-indexed current page in the participant table
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
-  modListLayout: 'grid',     // 'grid' | 'list' · All-view card grid vs table list
+  modListLayout: 'grid',
+  modListSort: { key: 'name', dir: 'asc' },  // list-view column sort · { key, dir:'asc'|'desc' }     // 'grid' | 'list' · All-view card grid vs table list
   modUserModal: null,        // { mode:'create'|'edit', values:{}, error:'', saving:false } | null
   activitiesTeamId: '',      // selected team context in the Activities map
   activitiesModeratorId: '', // selected moderator on the Activities map (mutually exclusive with team)
@@ -10764,26 +10885,46 @@ function renderModListView() {
       if (row) openModUserModal('edit', row);
     });
   });
+
+  // List header sort · first click A→Z, second click same header Z→A,
+  // switching headers resets to A→Z. Grid layout ignores this state.
+  wrap.querySelectorAll('[data-mod-sort]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-mod-sort');
+      if (!key) return;
+      const cur = adminState.modListSort || { key: 'name', dir: 'asc' };
+      if (cur.key === key) {
+        adminState.modListSort = { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+      } else {
+        adminState.modListSort = { key, dir: 'asc' };
+      }
+      renderModListView();
+    });
+  });
 }
 
 function renderModTableHTML(mods) {
+  const sortSpec = (adminState && adminState.modListSort) || { key: 'name', dir: 'asc' };
+  const sorted = sortModeratorListRows(mods, sortSpec);
   const head = `
     <div class="mod-table-wrap">
       <table class="mod-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Orbit Login ID</th>
-            <th>Role</th>
-            <th>Phone</th>
-            <th>Centific Email</th>
-            <th></th>
+            ${modListSortHeaderButton('name', 'Name', sortSpec)}
+            ${modListSortHeaderButton('orbitLoginId', 'Orbit Login ID', sortSpec)}
+            ${modListSortHeaderButton('role', 'Role', sortSpec)}
+            ${modListSortHeaderButton('phone', 'Phone', sortSpec)}
+            ${modListSortHeaderButton('centificEmail', 'Centific Email', sortSpec)}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>`;
-  const rows = mods.map((m, i) => {
+  const rows = sorted.map((m, i) => {
     const f = extractModeratorFields(m);
     const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim() || f.orbitLoginId || '—';
+    const origIdx = (adminState.moderators || []).indexOf(m);
+    const idx = origIdx >= 0 ? origIdx : i;
     return `
       <tr>
         <td>
@@ -10797,7 +10938,7 @@ function renderModTableHTML(mods) {
         <td>${escapeHTML(f.phoneNumber || '—')}</td>
         <td>${f.centificEmail ? `<a href="mailto:${escapeForUrl(f.centificEmail)}">${escapeHTML(f.centificEmail)}</a>` : '—'}</td>
         <td class="mod-table-actions">
-          <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${i}">Edit</button>
+          <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${idx}">Edit</button>
         </td>
       </tr>`;
   }).join('');
@@ -12278,9 +12419,13 @@ const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
 //
 // Row schema (the table you've created plus the two recommended additions):
 //   orbitLoginId       · moderator id
-//   firstName, lastName, phoneNumber, centificEmail, personalEmail
+//   firstName, lastName, phoneNumber, centificEmail
 //                      · moderator snapshot fields (same pattern as
 //                        Assignment rows)
+//   personalEmail      · TeamLog transport for the versioned Lakitu project
+//                        JSON: {"type":"teamLakituProject","version":1,
+//                        "lakituProjectKey":"...","lakituProjectUrl":"..."}
+//                        (not a moderator personal email in this table)
 //   teamId             · numeric team ID (same value across all rows of
 //                        the same team)
 //   teamName           · display name
@@ -12310,7 +12455,9 @@ function buildTeamLogRows(team, status) {
       lastName:         mod ? (pickField(mod, 'lastName',  'last_name',  'LastName',  'Last Name')  || '') : '',
       phoneNumber:      mod ? (pickField(mod, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number') || '') : '',
       centificEmail:    mod ? (pickField(mod, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email') || '') : '',
-      personalEmail:    mod ? (pickField(mod, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email') || '') : '',
+      // TeamLog reuses personalEmail for the versioned Lakitu project JSON
+      // (encodeTeamLakituProjectPayload). Not a moderator email.
+      personalEmail:    encodeTeamLakituProjectPayload(team),
       teamId:           team.id,
       teamName:         team.name || '',
       role:             role,
@@ -12330,7 +12477,7 @@ function buildTeamLogRows(team, status) {
     rows.push({
       orbitLoginId: '',
       firstName: '', lastName: '', phoneNumber: '',
-      centificEmail: '', personalEmail: '',
+      centificEmail: '', personalEmail: encodeTeamLakituProjectPayload(team),
       teamId: team.id,
       teamName: team.name || '',
       role: 'primary',
@@ -12431,8 +12578,18 @@ async function fetchTeamsFromPA() {
           status: r.status || 'active',
           // Admin-assigned Lakitu project · taken from the newest row
           // (first seen, given the newest-first sort) so edits win.
-          lakituProjectKey: r.lakituProjectKey || '',
-          lakituProjectUrl: r.lakituProjectUrl || '',
+          // Prefer versioned JSON in personalEmail (TeamLog transport).
+          // Fall back to direct columns / key→url when legacy email or empty.
+          ...(function () {
+            const fromJson = parseTeamLakituProjectFromPersonalEmail(r.personalEmail);
+            let key = (fromJson && fromJson.lakituProjectKey) || r.lakituProjectKey || '';
+            let url = (fromJson && fromJson.lakituProjectUrl) || r.lakituProjectUrl || '';
+            if (!url && key) {
+              const proj = getLakituProjectByKey(key);
+              if (proj && proj.url) url = proj.url;
+            }
+            return { lakituProjectKey: key, lakituProjectUrl: url };
+          })(),
           createdAt: r.createdTimestamp || '',
           updatedAt: r.updatedTimestamp || '',
           primaryIds: [],
