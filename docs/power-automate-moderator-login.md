@@ -29,8 +29,8 @@ Do **not** type `1` as the Orbit Login ID. That number is only for Condition 1.
 **Condition 3** (first login?)
 
 - Left: Dynamic content → **Get a row** → **Password**
-- Middle: **is empty**  ← pick this. Not “is equal to”.
-- Right: leave empty
+- Middle: **is equal to**
+- Right: leave blank (do not type anything)
 - **True** → Condition 4
 - **False** → Condition 5
 
@@ -56,12 +56,13 @@ Every Response: Status **200**.
 
 ## Do Condition 3 now (this is the one still failing)
 
+This designer has no **is empty**. Use **is equal to** and a blank right box.
+
 1. Click **Condition 3**.
-2. Delete whatever is in the left box (including any purple **fx** pill).
-3. Left: **Dynamic content** → **Get a row** → **Password**.
-4. Middle: open the list → click **is empty**.
-5. Delete anything in the right box. Leave it blank.
-6. **Save**.
+2. Left: keep the **Password** pill (Excel).
+3. Middle: **is equal to**.
+4. Right: click the box and delete anything in it. Leave the placeholder “Choose a value”.
+5. **Save**.
 
 Then click **Condition 4**:
 1. Left: **password** (the one the person typed).
