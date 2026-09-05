@@ -1,9 +1,26 @@
 # Fix login — delete Condition 1 and add a new one
 
-Editing the old Condition in place is why login still says **not found**.
-Do not edit it. Delete it. Add a fresh Condition.
+The website is fine. Excel already finds `David-orbit`. The flow still
+sends `{ "ok": false, "reason": "notFound" }` because that Response is
+running for every real ID.
+
+Most common reason after a rebuild: a **Response** card is sitting
+**between** **Get a row** and the Condition. That card fires first, so
+the new Condition never runs.
 
 Do **not** click **Expression**. Do **not** type `empty`. Do **not** type `true` or `false`.
+
+---
+
+## First look (30 seconds)
+
+1. Open **Power Automate** → your **moderator login** flow → **Edit**.
+2. Find **Get a row**. Look at the next card under it.
+3. If the next card is **Response** (not Condition):
+   - Click that **Response** → **⋯** → **Delete**.
+   - **Save**.
+   - Try login again (`david-orbit` / `Twilight2006`).
+4. If the next card is already **Condition**, keep going below.
 
 ---
 
