@@ -31371,9 +31371,11 @@ function syncLoginPasswordFieldForUsername() {
 // return Password (and the client strips it if it does).
 // ---------------------------------------------------------------------------
 
-// In-memory only (never localStorage / never state). Holds the password
-// briefly between a successful login that requires setPassword and the
+// In-memory only (never localStorage / never state). Holds safe profile +
+// orbit id between a successful login that requires setPassword and the
 // setPassword POST. Cleared on success, cancel, logout, or failed auth.
+// (_pendingAuthPassword is kept for clearPendingAuth compatibility; setPassword
+// no longer re-sends the old typed password.)
 let _pendingAuthPassword = null;
 let _pendingAuthProfile = null; // safe profile fields only
 let _pendingAuthOrbitId = null;
@@ -31440,16 +31442,18 @@ async function resolveCanonicalOrbitLoginId(typed) {
 
 function unwrapAuthResponse(data) {
   if (!data || typeof data !== 'object') return data;
-  if ('ok' in data || 'mustChangePassword' in data || 'profile' in data || 'error' in data) {
+  if ('ok' in data || 'mustChangePassword' in data || 'profile' in data || 'error' in data || 'reason' in data) {
     return data;
   }
   let body = data.body != null ? data.body
     : (data.data != null ? data.data
-      : (data.result != null ? data.result : null));
+      : (data.result != null ? data.result
+        : (data.Output != null ? data.Output
+          : (data.output != null ? data.output : null))));
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch (_) { return data; }
   }
-  if (body && typeof body === 'object') return body;
+  if (body && typeof body === 'object') return unwrapAuthResponse(body);
   return data;
 }
 
@@ -31587,7 +31591,9 @@ async function submitForcedPasswordChange() {
     setPwChangeError('New password and confirmation do not match.');
     return;
   }
-  if (!_pendingAuthOrbitId || _pendingAuthPassword == null) {
+  // setPassword only needs the Orbit Login ID + the new password in `password`
+  // (PA contract). The old typed password is not re-sent.
+  if (!_pendingAuthOrbitId) {
     setPwChangeError('Session expired. Return to login and try again.');
     return;
   }
@@ -31599,15 +31605,14 @@ async function submitForcedPasswordChange() {
   if (submitBtn) submitBtn.disabled = true;
   if (cancelBtn) cancelBtn.disabled = true;
   try {
-    // Current password stays in the local var only for this POST.
-    const currentPw = _pendingAuthPassword;
     const orbitId = _pendingAuthOrbitId;
     const profile = _pendingAuthProfile;
+    // PA contract: operation=setPassword puts the NEW password in `password`.
+    // Do not send a separate newPassword field (the flow does not read it).
     const result = await postPasswordAuth({
       operation: 'setPassword',
       orbitLoginId: orbitId,
-      password: currentPw,
-      newPassword: newPw,
+      password: newPw,
     });
     // Clear secrets from memory and DOM immediately after POST returns.
     clearPendingAuth();
@@ -31809,10 +31814,22 @@ async function doLogin() {
       _loginInFlight = false;
       // Distinguish "no such row" from "wrong password" so a misconfigured
       // flow is obvious instead of looking like a bad password.
-      const reason = String((data && (data.reason || data.error)) || '').trim();
-      if (reason) console.warn('[Twilight] Login rejected · reason:', reason);
-      if (/notfound/i.test(reason.replace(/[\s_-]+/g, ''))) {
-        setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
+      const reason = String((data && (data.reason || data.error || data.message)) || '').trim();
+      const reasonKey = reason.replace(/[\s_-]+/g, '').toLowerCase();
+      if (reason) console.warn('[Twilight] Login rejected · reason:', reason, '· keys:', data && typeof data === 'object' ? Object.keys(data) : []);
+      if (reasonKey === 'notfound' || /notfound/.test(reasonKey)) {
+        // If the directory already knows this ID, PA's Condition 1 is wrong
+        // (Excel found the row but the flow still answered notFound).
+        let knownInDirectory = false;
+        try {
+          const index = await loadOrbitLoginIdIndex();
+          knownInDirectory = !!(index && index.has(orbitLoginIdMatchKey(loginId)));
+        } catch (_) {}
+        if (knownInDirectory) {
+          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” An admin must fix Condition 1 in Power Automate (see the moderator login setup doc).');
+        } else {
+          setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
+        }
       } else {
         setLoginError('Orbit Login ID or password is incorrect.');
       }
@@ -31828,9 +31845,10 @@ async function doLogin() {
     const mustChange = !!data.mustChangePassword;
 
     if (mustChange) {
-      // Hold current password in memory only until setPassword completes.
-      _pendingAuthPassword = typedPassword;
+      // Keep orbit id + safe profile only. The old typed password is not
+      // needed for setPassword (PA writes the NEW password from `password`).
       typedPassword = '';
+      clearPendingAuth();
       _pendingAuthProfile = profile;
       _pendingAuthOrbitId = orbitId;
       setLoginLoading(false);
