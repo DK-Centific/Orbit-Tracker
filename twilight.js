@@ -31441,6 +31441,13 @@ async function resolveCanonicalOrbitLoginId(typed) {
 }
 
 function unwrapAuthResponse(data) {
+  // PA sometimes returns a JSON string, or wraps the real payload in
+  // body/data/result. Unwrap before doLogin reads ok / reason.
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) return data;
+    try { return unwrapAuthResponse(JSON.parse(trimmed)); } catch (_) { return data; }
+  }
   if (!data || typeof data !== 'object') return data;
   if ('ok' in data || 'mustChangePassword' in data || 'profile' in data || 'error' in data || 'reason' in data) {
     return data;
@@ -31826,7 +31833,7 @@ async function doLogin() {
           knownInDirectory = !!(index && index.has(orbitLoginIdMatchKey(loginId)));
         } catch (_) {}
         if (knownInDirectory) {
-          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” An admin must fix Condition 1 in Power Automate (see the moderator login setup doc).');
+          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” Delete Condition 1 in Power Automate and add a new one (do not edit the old one). See docs/power-automate-moderator-login.md.');
         } else {
           setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
         }
