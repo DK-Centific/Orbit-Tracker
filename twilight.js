@@ -9580,6 +9580,7 @@ const GEO_DEMO_TEAMS = [
     backupIds: ['demo-blake'],
     teamAddress: '500 106th Ave NE, Bellevue, WA 98004',
     ringDashboardKey: 'nighttime-centific-1',
+    lakituProjectKey: 'centific-1',
   },
   {
     id: 'demo-team-02',
@@ -9621,6 +9622,7 @@ function mergeGeoDemoRoster() {
       // Refresh address / Ring fields on already-cached demo teams.
       if (dt.teamAddress) existing.teamAddress = dt.teamAddress;
       if (dt.ringDashboardKey) existing.ringDashboardKey = dt.ringDashboardKey;
+      if (dt.lakituProjectKey) existing.lakituProjectKey = dt.lakituProjectKey;
       return;
     }
     adminState.teams.push(Object.assign({}, dt, {
@@ -9640,6 +9642,7 @@ function mergeGeoDemoRoster() {
       if (existing) {
         if (dt.teamAddress) existing.teamAddress = dt.teamAddress;
         if (dt.ringDashboardKey) existing.ringDashboardKey = dt.ringDashboardKey;
+        if (dt.lakituProjectKey) existing.lakituProjectKey = dt.lakituProjectKey;
         return;
       }
       teams.push(Object.assign({}, dt, {
