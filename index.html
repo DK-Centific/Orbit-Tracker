@@ -3337,9 +3337,11 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 }
 /* Mobile station stepper · fixed up/down control on the right edge that
    jumps between stations while a station is expanded (Twilight mobile UX).
-   Only rendered in accordion mode (<=760px) and only when a station is open;
-   the accordion reserves a right gutter (.has-stepper) so it never overlaps
-   scenario rows. */
+   Only rendered in accordion mode (<=760px) and only when a station is open.
+   Mounted on document.body (not #content) so position:fixed stays
+   viewport-relative even when #content has a .view-enter transform.
+   Hovers over the accordion; no reserved gutter. z-index 70 sits above
+   tiles and below the Helios bottom bar (180). */
 .acc-stepper {
   position: fixed; right: 10px; top: 50%; transform: translateY(-50%);
   z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -3361,7 +3363,6 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 .acc-step-label { font-family: var(--font-num); font-size: 11px; color: var(--text3); line-height: 1; }
 @media (max-width: 760px) {
   .station-accordion { gap: 12px; }
-  .station-accordion.has-stepper { padding-right: 56px; }
   .acc-head { padding: 16px 14px; }
   .acc-item { scroll-margin-top: 72px; }
 }

@@ -843,10 +843,12 @@ function renderApp() {
       renderStationsAccordion();
     } else {
       _accordionCollapsed = false;
+      removeAccordionStepper();
       renderStation(currentStationKey);
     }
   } else {
     _accordionCollapsed = false;
+    removeAccordionStepper();
     renderWelcome();
   }
   if (typeof isStationAccordionMode === 'function') _lastAccordionMode = isStationAccordionMode();
@@ -2865,15 +2867,57 @@ function isStationAccordionMode() {
     && window.matchMedia('(max-width: 760px)').matches;
 }
 
+// Body-level up/down station stepper. Must live on document.body — never
+// inside #content — because #content gets .view-enter, whose animation
+// leaves a transform on the ancestor. An ancestor transform makes
+// position:fixed relative to that ancestor, so a stepper inside #content
+// scrolls away with the accordion.
+function removeAccordionStepper() {
+  document.querySelectorAll('.acc-stepper').forEach(el => el.remove());
+}
+
+function mountAccordionStepper(openKey) {
+  removeAccordionStepper();
+  if (openKey == null) return;
+  if (typeof isStationAccordionMode === 'function' && !isStationAccordionMode()) return;
+  const sIdx = STATIONS.findIndex(s => String(s.key) === String(openKey));
+  const hasPrev = sIdx > 0;
+  const hasNext = sIdx >= 0 && sIdx < STATIONS.length - 1;
+  const stepper = document.createElement('div');
+  stepper.className = 'acc-stepper';
+  stepper.setAttribute('role', 'group');
+  stepper.setAttribute('aria-label', 'Switch station');
+  stepper.innerHTML = `
+        <button class="acc-step-btn" type="button" data-dir="prev" ${hasPrev ? '' : 'disabled'} aria-label="Previous station" title="Previous station">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 10L8 6L12 10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="acc-step-label">${sIdx + 1}/${STATIONS.length}</span>
+        <button class="acc-step-btn" type="button" data-dir="next" ${hasNext ? '' : 'disabled'} aria-label="Next station" title="Next station">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>`;
+  document.body.appendChild(stepper);
+  stepper.querySelectorAll('.acc-step-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const dir = btn.dataset.dir === 'prev' ? -1 : 1;
+      const sIdxClick = STATIONS.findIndex(s => String(s.key) === String(currentStationKey));
+      if (sIdxClick < 0) return;
+      const target = STATIONS[sIdxClick + dir];
+      if (target) goToAccordionStation(target.key);
+    });
+  });
+}
+
 function renderStationsAccordion() {
   const c = document.getElementById('content');
   if (!c) return;
   const openKey = _accordionCollapsed ? null : currentStationKey;
 
   // My Session drawer sits above the accordion (mobile-only context).
-  // When a station is open we reserve a right gutter (.has-stepper) for the
-  // fixed up/down station stepper so it never overlaps scenario rows.
-  let html = mySessionDrawerHTML() + `<div class="station-accordion${openKey != null ? ' has-stepper' : ''}">`;
+  // The up/down stepper is mounted on document.body (not here) so
+  // position:fixed stays viewport-relative. Accordion uses full width;
+  // the stepper hovers over the tiles.
+  let html = mySessionDrawerHTML() + `<div class="station-accordion">`;
   STATIONS.forEach((st, i) => {
     const status = getStationStatus(st.key);
     const num = stationTag(st.key);
@@ -2910,27 +2954,10 @@ function renderStationsAccordion() {
   });
   html += '</div>';
 
-  // Right-side up/down station stepper (mobile, expanded view). Lets the
-  // moderator jump to the previous/next station without scrolling back up to
-  // tap another header. Only shown while a station is expanded; the label
-  // shows position (e.g. "2/4").
-  if (openKey != null) {
-    const sIdx = STATIONS.findIndex(s => String(s.key) === String(openKey));
-    const hasPrev = sIdx > 0;
-    const hasNext = sIdx >= 0 && sIdx < STATIONS.length - 1;
-    html += `
-      <div class="acc-stepper" role="group" aria-label="Switch station">
-        <button class="acc-step-btn" type="button" data-dir="prev" ${hasPrev ? '' : 'disabled'} aria-label="Previous station" title="Previous station">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 10L8 6L12 10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <span class="acc-step-label">${sIdx + 1}/${STATIONS.length}</span>
-        <button class="acc-step-btn" type="button" data-dir="next" ${hasNext ? '' : 'disabled'} aria-label="Next station" title="Next station">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-      </div>`;
-  }
-
   c.innerHTML = html;
+  // Mount (or clear) the body-level stepper after wiping #content so a
+  // leftover in-content copy can never survive a re-render.
+  mountAccordionStepper(openKey);
 
   // Fill the open station's body with its full content (no section-title;
   // the accordion header already carries the station identity). renderStation
@@ -2947,18 +2974,6 @@ function renderStationsAccordion() {
   // Header taps
   c.querySelectorAll('.acc-head').forEach(head => {
     head.addEventListener('click', () => onAccordionHeadTap(head.dataset.key));
-  });
-
-  // Up/down station stepper taps · jump to the prev/next station.
-  c.querySelectorAll('.acc-step-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.disabled) return;
-      const dir = btn.dataset.dir === 'prev' ? -1 : 1;
-      const sIdx = STATIONS.findIndex(s => String(s.key) === String(currentStationKey));
-      if (sIdx < 0) return;
-      const target = STATIONS[sIdx + dir];
-      if (target) goToAccordionStation(target.key);
-    });
   });
 }
 
@@ -3009,6 +3024,7 @@ function onAccordionHeadTap(key) {
   if (alreadyOpen) {
     _accordionCollapsed = true;
     _closeAccItem(tapped);
+    removeAccordionStepper();
     _lastRenderedView = currentStationKey || '__welcome__';
     renderSidebar(); // keep desktop sidebar active-state coherent on resize
     return;
@@ -3025,6 +3041,7 @@ function onAccordionHeadTap(key) {
   currentStationKey = key;
   const inner = tapped.querySelector('.acc-inner');
   if (inner) renderStation(key, { container: inner, omitTitle: true });
+  mountAccordionStepper(key);
   requestAnimationFrame(() => {
     tapped.classList.add('open');
     const head = tapped.querySelector('.acc-head');
