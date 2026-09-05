@@ -9616,7 +9616,13 @@ function mergeGeoDemoRoster() {
   });
   if (!Array.isArray(adminState.teams)) adminState.teams = [];
   GEO_DEMO_TEAMS.forEach(dt => {
-    if (adminState.teams.some(t => String(t.id) === String(dt.id))) return;
+    const existing = adminState.teams.find(t => String(t.id) === String(dt.id));
+    if (existing) {
+      // Refresh address / Ring fields on already-cached demo teams.
+      if (dt.teamAddress) existing.teamAddress = dt.teamAddress;
+      if (dt.ringDashboardKey) existing.ringDashboardKey = dt.ringDashboardKey;
+      return;
+    }
     adminState.teams.push(Object.assign({}, dt, {
       primaryIds: [...(dt.primaryIds || [])],
       backupIds: [...(dt.backupIds || [])],
@@ -9630,7 +9636,12 @@ function mergeGeoDemoRoster() {
     const parsed = raw ? JSON.parse(raw) : { teams: [], assignments: [] };
     const teams = Array.isArray(parsed.teams) ? parsed.teams.slice() : [];
     GEO_DEMO_TEAMS.forEach(dt => {
-      if (teams.some(t => String(t.id) === String(dt.id))) return;
+      const existing = teams.find(t => String(t.id) === String(dt.id));
+      if (existing) {
+        if (dt.teamAddress) existing.teamAddress = dt.teamAddress;
+        if (dt.ringDashboardKey) existing.ringDashboardKey = dt.ringDashboardKey;
+        return;
+      }
       teams.push(Object.assign({}, dt, {
         primaryIds: [...(dt.primaryIds || [])],
         backupIds: [...(dt.backupIds || [])],
@@ -9642,6 +9653,7 @@ function mergeGeoDemoRoster() {
       assignments: Array.isArray(parsed.assignments) ? parsed.assignments : (adminState.assignments || []),
     }));
   } catch (_) {}
+  if (typeof seedGeoDemoAssignments === 'function') seedGeoDemoAssignments();
 }
 
 
@@ -9649,9 +9661,7 @@ function seedGeoDemoAssignments() {
   if (!isGeoDemoMode()) return;
   if (!Array.isArray(adminState.assignments)) adminState.assignments = [];
   const today = (typeof getPSTDateString === 'function') ? getPSTDateString() : new Date().toISOString().slice(0, 10);
-  const exists = adminState.assignments.some(a => String(a.id) === 'demo-asgn-team-01');
-  if (exists) return;
-  adminState.assignments.push({
+  const demoAsgn = {
     id: 'demo-asgn-team-01',
     teamId: 'demo-team-01',
     date: today,
@@ -9669,7 +9679,27 @@ function seedGeoDemoAssignments() {
       { orbitLoginId: 'demo-annie', role: 'primary' },
       { orbitLoginId: 'demo-blake', role: 'backup' },
     ],
-  });
+  };
+  // Refresh date / fields and re-insert if a later assignment load wiped it.
+  const idx = adminState.assignments.findIndex(a => String(a.id) === 'demo-asgn-team-01');
+  if (idx >= 0) adminState.assignments[idx] = Object.assign({}, adminState.assignments[idx], demoAsgn);
+  else adminState.assignments.push(demoAsgn);
+
+  // Persist into the assignment cache so loadAssignmentData() cannot erase it.
+  try {
+    const raw = localStorage.getItem(ASGN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : { teams: [], assignments: [] };
+    const assignments = Array.isArray(parsed.assignments) ? parsed.assignments.slice() : [];
+    const i = assignments.findIndex(a => String(a.id) === 'demo-asgn-team-01');
+    if (i >= 0) assignments[i] = Object.assign({}, assignments[i], demoAsgn);
+    else assignments.push(demoAsgn);
+    localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+      ...parsed,
+      teams: Array.isArray(parsed.teams) ? parsed.teams : (adminState.teams || []),
+      assignments,
+    }));
+  } catch (_) {}
+
   // Prefill geocode cache so the assignment fence draws without waiting on network.
   try {
     const cache = loadGeocodeCache();
@@ -9696,8 +9726,11 @@ function seedGeoDemoPings(force) {
   let changed = false;
   seeds.forEach(s => {
     const id = s.orbitLoginId.toLowerCase();
-    if (!force && map[id] && Number.isFinite(map[id].lat)) return;
-    map[id] = Object.assign({}, map[id] || {}, s, { at: now, demo: true });
+    const prev = map[id];
+    // Refresh when missing, forced, or demo coords drifted (e.g. Blake moved far).
+    const drifted = prev && (Math.abs((prev.lat || 0) - s.lat) > 0.01 || Math.abs((prev.lng || 0) - s.lng) > 0.01);
+    if (!force && prev && Number.isFinite(prev.lat) && !drifted) return;
+    map[id] = Object.assign({}, prev || {}, s, { at: now, demo: true });
     changed = true;
   });
   if (changed) saveGeoPings(map);
