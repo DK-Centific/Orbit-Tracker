@@ -1254,19 +1254,20 @@ function bindWelcomeWorklogActions() {
 
 // Render the Team cell in the entry bar · shows team name + teammate(s) when assigned
 function entryTeamCellHTML() {
-  // Show the team that owns the ACTIVE (currently-shown) assignment · not the
-  // operator's first team membership. For a multi-team mod these differ, which
-  // is why the entry cell was showing the wrong pair.
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  const team = (typeof teamForAssignment === 'function')
-    ? teamForAssignment(asgn)
+  const team = (typeof getSessionDisplayTeam === 'function')
+    ? getSessionDisplayTeam()
     : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
   if (!team) return '<span style="color: var(--text3); font-style: italic; font-weight: 400;">Not assigned</span>';
   const mates = (typeof getOperatorTeammates === 'function') ? getOperatorTeammates(team) : [];
   const mateNames = mates.map(m => m.name.split(' ')[0]).join(', ');
+  const showMeta = typeof shouldBindAssignedSessionLinks === 'function'
+    ? shouldBindAssignedSessionLinks() : true;
+  const teamAddr = showMeta && typeof getTeamOfficeAddress === 'function'
+    ? getTeamOfficeAddress(team) : '';
   return `
     <span class="entry-team-name">${escapeHTML(team.name)}</span>
     ${mates.length > 0 ? `<span class="entry-team-mates"> · with ${escapeHTML(mateNames)}</span>` : ''}
+    ${teamAddr ? `<div class="entry-team-address"><span class="entry-team-address-label">Team address</span><br>${escapeHTML(teamAddr)}</div>` : ''}
   `;
 }
 
@@ -1311,13 +1312,22 @@ function entryBarHTML() {
   // Only render a clickable href for http(s) URLs. Non-http schemes are
   // treated as "no link" even if getAssignedLakituUrl returned a value.
   const assignedLakituHref = (assignedLakitu && isSafeHttpUrl(assignedLakitu)) ? assignedLakitu : '';
-  if (assignedLakitu) {
+  if (assignedLakitu && typeof shouldBindAssignedSessionLinks === 'function' && shouldBindAssignedSessionLinks()) {
     const curPid = (state.participantId || '').trim();
     if ((!curPid || !isValidLakituUrl(curPid)) && state.participantId !== assignedLakitu) {
       state.participantId = assignedLakitu;
       if (typeof saveState === 'function') saveState();
     }
   }
+
+  const assignedRingRaw = (typeof getAssignedRingUrl === 'function')
+    ? getAssignedRingUrl()
+    : (typeof DEFAULT_RING_DASHBOARD_URL !== 'undefined' ? DEFAULT_RING_DASHBOARD_URL : '');
+  const assignedRingHref = (assignedRingRaw && typeof isSafeHttpsUrl === 'function' && isSafeHttpsUrl(assignedRingRaw))
+    ? assignedRingRaw : '';
+  const showSessionLinks = typeof shouldBindAssignedSessionLinks === 'function'
+    ? shouldBindAssignedSessionLinks()
+    : true;
 
   return `
     <div class="entry-bar">
@@ -1364,20 +1374,36 @@ function entryBarHTML() {
             </div>
           </span>
         </span>
-        ${assignedLakituHref ? `
+        <div class="entry-session-links">
+        ${showSessionLinks && assignedLakituHref ? `
         <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakituHref)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakituHref)}">
           <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="7.25" fill="#000"/>
             <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
           </svg>
-          <span>Open Lakitu session</span>
+          <span>Open Lakitu</span>
           <svg class="entry-lakitu-btn-ext" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </a>
         ` : `
-        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Session Assigned</div>
+        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Lakitu</div>
         `}
+        ${showSessionLinks && assignedRingHref ? `
+        <a id="ent_ring" class="entry-lakitu-btn entry-ring-btn" href="${escapeHTML(assignedRingHref)}" target="_blank" rel="noopener noreferrer" title="Open Ring dashboard" data-ring-url="${escapeHTML(assignedRingHref)}">
+          <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+            <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
+          </svg>
+          <span>Open Ring</span>
+          <svg class="entry-lakitu-btn-ext" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        ` : `
+        <div id="ent_ring" class="entry-lakitu-none" aria-disabled="true">No Ring</div>
+        `}
+        </div>
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field entry-field-wide">
@@ -3382,10 +3408,14 @@ function modListSortHeaderButton(key, label, sortSpec) {
 // entry-bar team cell does (team that owns the active assignment, else the
 // operator's first team membership) so the link matches the session shown.
 function getAssignedLakituUrl() {
-  let team = null;
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
-  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let team = (typeof getSessionDisplayTeam === 'function') ? getSessionDisplayTeam() : null;
+  if (!team) {
+    const asgn = (typeof getAssignedOpenSession === 'function')
+      ? getAssignedOpenSession()
+      : ((typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  }
   let url = (typeof resolveTeamLakituProjectUrl === 'function')
     ? resolveTeamLakituProjectUrl(team)
     : (team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '');
@@ -3396,11 +3426,79 @@ function getAssignedLakituUrl() {
 
 // Admin-assigned Ring dashboard for the moderator's active team, or the
 // default Ring dashboard when none is assigned.
+function isSessionWrapUpDone(asgn) {
+  if (!asgn) return false;
+  if (asgn.status === 'Completed') return true;
+  try {
+    const my = (typeof getMyLatestStatusForAssignment === 'function')
+      ? getMyLatestStatusForAssignment(asgn.id) : null;
+    if (my && my.status === 'session_done') return true;
+  } catch (_) {}
+  return false;
+}
+
+function getAssignedOpenSession() {
+  const isOpen = (a) => {
+    if (!a) return false;
+    if (a.status === 'Cancelled' || a.status === 'Unassigned') return false;
+    return !isSessionWrapUpDone(a);
+  };
+  const active = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment() : null;
+  if (isOpen(active)) return active;
+  const lists = [];
+  try {
+    if (typeof getOperatorCarouselAssignments === 'function') {
+      lists.push(getOperatorCarouselAssignments() || []);
+    }
+  } catch (_) {}
+  try {
+    if (typeof getOperatorAssignments === 'function') {
+      lists.push(getOperatorAssignments() || []);
+    }
+  } catch (_) {}
+  for (const list of lists) {
+    const hit = (list || []).find(isOpen);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function getSessionDisplayTeam() {
+  const asgn = getAssignedOpenSession();
+  if (asgn && typeof teamForAssignment === 'function') {
+    const t = teamForAssignment(asgn);
+    if (t) return t;
+  }
+  return (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
+}
+
+// Team address + Lakitu + Ring stay live from the moment a session is
+// assigned until Station 4 wrap-up queues session_done. Not the reverse.
+function shouldBindAssignedSessionLinks() {
+  return !!getAssignedOpenSession();
+}
+
+function clearSessionBackendBindingsAfterComplete(asgn) {
+  if (state) {
+    state.participantId = '';
+    try { if (typeof saveState === 'function') saveState(); } catch (_) {}
+  }
+  try {
+    if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  } catch (_) {}
+  return asgn || null;
+}
+
 function getAssignedRingUrl() {
-  let team = null;
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
-  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let team = (typeof getSessionDisplayTeam === 'function') ? getSessionDisplayTeam() : null;
+  if (!team) {
+    const asgn = (typeof getAssignedOpenSession === 'function')
+      ? getAssignedOpenSession()
+      : ((typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  }
   let url = (typeof resolveTeamRingDashboardUrl === 'function')
     ? resolveTeamRingDashboardUrl(team)
     : '';
@@ -9490,9 +9588,13 @@ function refreshActivitiesMapFocus() {
   if (teamSel) teamSel.value = adminState.activitiesTeamId || '';
   if (modSel) modSel.value = adminState.activitiesModeratorId || '';
   updateActivitiesMapCaption();
-  _activitiesFocusKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
+  const nextKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
+  const selectionChanged = nextKey !== _activitiesFocusKey;
+  _activitiesFocusKey = nextKey;
   if (_activitiesMap) {
-    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    try {
+      placeActivitiesGeofence(_activitiesMap, { animateSelection: selectionChanged });
+    } catch (_) {}
   }
   prefetchActivityHomeGeocodes();
 }
@@ -10616,36 +10718,49 @@ function assignmentMatchesActivitiesFocus(a) {
   return true;
 }
 
+function activitiesFenceCoordKey(lat, lng) {
+  return Number(lat).toFixed(5) + ',' + Number(lng).toFixed(5);
+}
+
+function activitiesPointIsHq(lat, lng) {
+  try {
+    return haversineMeters(lat, lng, GEO_HQ_CENTER.lat, GEO_HQ_CENTER.lng) < 80;
+  } catch (_) {
+    return false;
+  }
+}
+
 function activitiesFenceFeatures() {
+  // Office fence = HQ only (amber). Assignment fence = team Team Address
+  // (blue). Drawing Team Address as a second office was why assignment
+  // looked like the office color.
   const features = [
     Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
-      properties: { kind: 'hq' },
+      properties: { kind: 'office', label: 'Office' },
     }),
   ];
+  const seen = new Set([activitiesFenceCoordKey(GEO_HQ_CENTER.lat, GEO_HQ_CENTER.lng)]);
   const cache = loadGeocodeCache();
-  // When a team is selected and has an assigned office address, draw that
-  // team office fence in addition to global HQ.
+  const addAssignmentFence = (addr) => {
+    const q = String(addr || '').trim();
+    if (!q) return;
+    const hit = cache[q.toLowerCase()];
+    if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) return;
+    if (activitiesPointIsHq(hit.lat, hit.lng)) return;
+    const key = activitiesFenceCoordKey(hit.lat, hit.lng);
+    if (seen.has(key)) return;
+    seen.add(key);
+    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
+      properties: { kind: 'assignment', label: 'Assignment', address: q },
+    }));
+  };
   const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
   const teamAddr = (typeof getTeamOfficeAddress === 'function')
     ? getTeamOfficeAddress(team)
     : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
-  if (teamAddr) {
-    const hit = cache[teamAddr.toLowerCase()];
-    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
-      features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HQ_RADIUS_M), {
-        properties: { kind: 'hq', officeSource: 'team' },
-      }));
-    }
-  }
+  addAssignmentFence(teamAddr);
   const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
-  asgns.forEach(a => {
-    const addr = assignmentFenceAddress(a);
-    const hit = cache[addr.toLowerCase()];
-    if (!hit) return;
-    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
-      properties: { kind: 'home' },
-    }));
-  });
+  asgns.forEach(a => addAssignmentFence(assignmentFenceAddress(a)));
   return { type: 'FeatureCollection', features };
 }
 
@@ -10654,6 +10769,7 @@ async function prefetchActivityHomeGeocodes() {
   const teamAddr = (typeof getTeamOfficeAddress === 'function')
     ? getTeamOfficeAddress(team)
     : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  const hadAssigned = !!(typeof getActivitiesAssignmentCenter === 'function' && getActivitiesAssignmentCenter());
   if (teamAddr) {
     try { await geocodeAddress(teamAddr); } catch (_) {}
   }
@@ -10663,10 +10779,233 @@ async function prefetchActivityHomeGeocodes() {
   }
   if (_activitiesMap) {
     try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    if (!hadAssigned && typeof getActivitiesAssignmentCenter === 'function' && getActivitiesAssignmentCenter()
+        && team && typeof playActivitiesSelectionAnimation === 'function') {
+      playActivitiesSelectionAnimation(_activitiesMap);
+    }
   }
 }
 
-function placeActivitiesGeofence(map) {
+const ACTIVITIES_FENCE_COLOR_OFFICE = '#D97706';
+const ACTIVITIES_FENCE_COLOR_ASSIGNMENT = '#2563EB';
+const ACTIVITIES_FENCE_MATCH_COLOR = [
+  'case',
+  ['any',
+    ['==', ['get', 'kind'], 'office'],
+    ['==', ['get', 'kind'], 'hq']],
+  ACTIVITIES_FENCE_COLOR_OFFICE,
+  ACTIVITIES_FENCE_COLOR_ASSIGNMENT
+];
+
+let _activitiesCameraToken = 0;
+let _activitiesCameraLocked = false;
+let _activitiesCameraFocusKey = '';
+
+function cancelActivitiesCameraAnimation(map) {
+  _activitiesCameraToken += 1;
+  try { if (map && typeof map.stop === 'function') map.stop(); } catch (_) {}
+}
+
+function getActivitiesAssignmentCenter() {
+  const cache = loadGeocodeCache();
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  const candidates = [];
+  if (teamAddr) candidates.push(teamAddr);
+  const asgns = (adminState.assignments || []).filter(a =>
+    assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a)
+  );
+  asgns.forEach(a => candidates.push(assignmentFenceAddress(a)));
+  for (const addr of candidates) {
+    const q = String(addr || '').trim();
+    if (!q) continue;
+    const hit = cache[q.toLowerCase()];
+    if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) continue;
+    if (activitiesPointIsHq(hit.lat, hit.lng)) continue;
+    return { lat: hit.lat, lng: hit.lng, address: q };
+  }
+  return null;
+}
+
+function getActivitiesOfficeCenter() {
+  return {
+    lat: GEO_HQ_CENTER.lat,
+    lng: GEO_HQ_CENTER.lng,
+    address: GEO_HQ_ADDRESS,
+    source: 'hq',
+  };
+}
+
+function activitiesEaseTo(map, opts) {
+  return new Promise(resolve => {
+    if (!map) return resolve();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { map.off('moveend', finish); } catch (_) {}
+      resolve();
+    };
+    try {
+      map.easeTo(Object.assign({ duration: 900, essential: true }, opts));
+      map.once('moveend', finish);
+      setTimeout(finish, (opts && opts.duration ? opts.duration : 900) + 400);
+    } catch (_) {
+      finish();
+    }
+  });
+}
+
+function activitiesFitPoints(map, points, duration) {
+  return new Promise(resolve => {
+    if (!map || !points || !points.length) return resolve();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { map.off('moveend', finish); } catch (_) {}
+      resolve();
+    };
+    try {
+      if (points.length === 1) {
+        map.easeTo({
+          center: [points[0].lng, points[0].lat],
+          zoom: 14,
+          duration: duration || 1100,
+          essential: true,
+        });
+      } else {
+        const bounds = new maplibregl.LngLatBounds();
+        points.forEach(p => bounds.extend([p.lng, p.lat]));
+        map.fitBounds(bounds, {
+          padding: 72,
+          duration: duration || 1200,
+          maxZoom: 14,
+          essential: true,
+        });
+      }
+      map.once('moveend', finish);
+      setTimeout(finish, (duration || 1200) + 400);
+    } catch (_) {
+      finish();
+    }
+  });
+}
+
+function teamContainingOrbitId(orbitId) {
+  const id = String(orbitId || '').toLowerCase();
+  if (!id) return null;
+  return (adminState.teams || []).find(t => {
+    if (!t) return false;
+    const ids = (t.primaryIds || []).concat(
+      (typeof getTeamBackupIds === 'function') ? (getTeamBackupIds(t) || []) : (t.backupIds || [])
+    );
+    return ids.some(x => String(x).toLowerCase() === id);
+  }) || null;
+}
+
+function activitiesModeratorFirstName(orbitId, ping) {
+  const id = String(orbitId || '').toLowerCase();
+  const row = (adminState.moderators || []).find(m => {
+    const mid = String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase();
+    return mid && mid === id;
+  });
+  if (row) {
+    const first = pickField(row, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName');
+    if (first) return String(first).trim();
+  }
+  const fromPing = String((ping && ping.name) || '').trim().split(/\s+/)[0];
+  return fromPing || String(orbitId || '').trim();
+}
+
+function activitiesPersonPopupHtml(orbitId, ping, role) {
+  const first = activitiesModeratorFirstName(orbitId, ping);
+  const team = teamContainingOrbitId(orbitId);
+  const teamName = team && (team.name || team.teamName) ? String(team.name || team.teamName).trim() : '';
+  const roleLabel = fenceRoleLabel(role);
+  let html = '<div class="activities-hover-pop">';
+  html += '<strong>' + escapeHTML(first) + '</strong>';
+  if (teamName) html += '<span>' + escapeHTML(teamName) + '</span>';
+  else html += '<span>' + escapeHTML(roleLabel) + '</span>';
+  html += '</div>';
+  return html;
+}
+
+function activitiesPlaceHoverPopup(map, marker, html) {
+  if (!map || !marker || typeof maplibregl === 'undefined') return;
+  const popup = new maplibregl.Popup({
+    offset: 16,
+    closeButton: false,
+    closeOnClick: false,
+    className: 'activities-hover-popup',
+  });
+  popup.setHTML(html);
+  const el = marker.getElement();
+  if (!el) return;
+  el.addEventListener('mouseenter', () => {
+    try { popup.setLngLat(marker.getLngLat()).addTo(map); } catch (_) {}
+  });
+  el.addEventListener('mouseleave', () => {
+    try { popup.remove(); } catch (_) {}
+  });
+}
+
+async function playActivitiesSelectionAnimation(map) {
+  if (!map) return;
+  const focusKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
+  cancelActivitiesCameraAnimation(map);
+  const token = _activitiesCameraToken;
+  _activitiesCameraLocked = false;
+  _activitiesCameraFocusKey = focusKey;
+  const still = () => token === _activitiesCameraToken && _activitiesMap === map;
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const focusMod = (typeof getSelectedActivitiesModeratorId === 'function')
+    ? String(getSelectedActivitiesModeratorId() || '').toLowerCase()
+    : '';
+
+  try {
+    if (focusMod) {
+      const pings = loadGeoPings();
+      const ping = pings[focusMod] || Object.values(pings).find(p =>
+        String((p && p.orbitLoginId) || '').toLowerCase() === focusMod
+      );
+      if (ping && Number.isFinite(ping.lat) && Number.isFinite(ping.lng) && still()) {
+        await activitiesEaseTo(map, { center: [ping.lng, ping.lat], zoom: 14, duration: 1000 });
+      }
+    } else if (team) {
+      const office = getActivitiesOfficeCenter();
+      const assigned = getActivitiesAssignmentCenter();
+      if (office && still()) {
+        await activitiesEaseTo(map, { center: [office.lng, office.lat], zoom: 15, duration: 900 });
+      }
+      if (assigned && still()) {
+        await activitiesEaseTo(map, { center: [assigned.lng, assigned.lat], zoom: 15, duration: 1100 });
+      }
+      if (office && assigned && still()) {
+        await activitiesFitPoints(map, [office, assigned], 1300);
+      } else if (!assigned && office && still()) {
+        await activitiesEaseTo(map, {
+          center: [office.lng, office.lat],
+          zoom: ACTIVITIES_MAP_ZOOM,
+          duration: 800,
+        });
+      }
+    } else if (still()) {
+      await activitiesEaseTo(map, {
+        center: [GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat],
+        zoom: ACTIVITIES_MAP_ZOOM,
+        duration: 800,
+      });
+    }
+  } catch (_) {}
+
+  if (still()) _activitiesCameraLocked = true;
+}
+
+function placeActivitiesGeofence(map, opts) {
+  opts = opts || {};
   if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
   const data = activitiesFenceFeatures();
   const src = map.getSource('twilight-geofence');
@@ -10679,13 +11018,8 @@ function placeActivitiesGeofence(map) {
       type: 'fill',
       source: 'twilight-geofence',
       paint: {
-        'fill-color': [
-          'match', ['get', 'kind'],
-          'hq', '#C68A00',
-          'home', '#00F0FF',
-          '#00F0FF'
-        ],
-        'fill-opacity': 0.12,
+        'fill-color': ACTIVITIES_FENCE_MATCH_COLOR,
+        'fill-opacity': 0.16,
       },
     });
     map.addLayer({
@@ -10693,33 +11027,61 @@ function placeActivitiesGeofence(map) {
       type: 'line',
       source: 'twilight-geofence',
       paint: {
-        'line-color': [
-          'match', ['get', 'kind'],
-          'hq', '#C68A00',
-          'home', '#00F0FF',
-          '#00F0FF'
-        ],
-        'line-width': 2,
-        'line-opacity': 0.75,
+        'line-color': ACTIVITIES_FENCE_MATCH_COLOR,
+        'line-width': 2.5,
+        'line-opacity': 0.9,
       },
     });
   }
-  document.querySelectorAll('.geo-mod-marker').forEach(el => {
+  try {
+    map.setPaintProperty('twilight-geofence-fill', 'fill-color', ACTIVITIES_FENCE_MATCH_COLOR);
+    map.setPaintProperty('twilight-geofence-fill', 'fill-opacity', 0.16);
+    map.setPaintProperty('twilight-geofence-line', 'line-color', ACTIVITIES_FENCE_MATCH_COLOR);
+    map.setPaintProperty('twilight-geofence-line', 'line-width', 2.5);
+    map.setPaintProperty('twilight-geofence-line', 'line-opacity', 0.9);
+  } catch (_) {}
+
+  document.querySelectorAll('.geo-mod-marker, .activities-map-marker, .geo-place-marker').forEach(el => {
     try { if (el.__marker) el.__marker.remove(); } catch (_) {}
   });
+
+  const office = getActivitiesOfficeCenter();
+  const officeEl = document.createElement('div');
+  officeEl.className = 'geo-place-marker is-office';
+  const officeMarker = new maplibregl.Marker({ element: officeEl })
+    .setLngLat([office.lng, office.lat])
+    .addTo(map);
+  officeEl.__marker = officeMarker;
+  activitiesPlaceHoverPopup(map, officeMarker,
+    '<div class="activities-hover-pop"><strong>Office</strong><span>' + escapeHTML(GEO_HQ_ADDRESS) + '</span></div>');
+
+  const assigned = getActivitiesAssignmentCenter();
+  if (assigned) {
+    const asgnEl = document.createElement('div');
+    asgnEl.className = 'geo-place-marker is-assignment';
+    const asgnMarker = new maplibregl.Marker({ element: asgnEl })
+      .setLngLat([assigned.lng, assigned.lat])
+      .addTo(map);
+    asgnEl.__marker = asgnMarker;
+    activitiesPlaceHoverPopup(map, asgnMarker,
+      '<div class="activities-hover-pop"><strong>Assignment</strong><span>' + escapeHTML(assigned.address || 'Assigned address') + '</span></div>');
+  }
+
   const team = getSelectedActivitiesTeam();
-  const focusMod = getSelectedActivitiesModeratorId().toLowerCase();
+  const focusMod = String(getSelectedActivitiesModeratorId() || '').toLowerCase();
   const allowed = new Map();
   const collect = (ids, role) => {
     (ids || []).forEach(id => allowed.set(String(id).toLowerCase(), role));
   };
   if (team) {
     collect(team.primaryIds, 'primary');
-    collect((typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds, 'backup');
+    collect(
+      (typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds,
+      'backup'
+    );
   }
   const pings = loadGeoPings();
   const now = Date.now();
-  let focusPing = null;
   Object.keys(pings).forEach(idRaw => {
     const id = String(idRaw).toLowerCase();
     const ping = pings[idRaw];
@@ -10735,20 +11097,15 @@ function placeActivitiesGeofence(map) {
     }
     const el = document.createElement('div');
     el.className = 'geo-mod-marker is-' + role + ((now - (ping.at || 0) > GEO_PING_STALE_MS) ? ' is-stale' : '');
-    const label = (ping.name || id) + ' · ' + fenceRoleLabel(role);
-    el.title = label;
     const marker = new maplibregl.Marker({ element: el })
       .setLngLat([ping.lng, ping.lat])
-      .setPopup(new maplibregl.Popup({ offset: 14 }).setText(label))
       .addTo(map);
     el.__marker = marker;
-    if (focusMod && id === focusMod) focusPing = ping;
+    activitiesPlaceHoverPopup(map, marker, activitiesPersonPopupHtml(idRaw, ping, role));
   });
   updateActivitiesMapCaption();
-  if (focusPing) {
-    try { map.easeTo({ center: [focusPing.lng, focusPing.lat], zoom: 14, duration: 500 }); } catch (_) {}
-  } else {
-    try { map.easeTo({ center: [GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat], zoom: ACTIVITIES_MAP_ZOOM, duration: 500 }); } catch (_) {}
+  if (opts.animateSelection) {
+    playActivitiesSelectionAnimation(map);
   }
 }
 
@@ -10809,6 +11166,8 @@ function activitiesMapStyleUrl() {
 
 function destroyActivitiesMap() {
   stopActivitiesLocalPingPoll();
+  _activitiesCameraToken += 1;
+  _activitiesCameraLocked = false;
   if (_activitiesMap) {
     try { _activitiesMap.remove(); } catch (_) {}
     _activitiesMap = null;
@@ -10967,7 +11326,10 @@ function initActivitiesMap() {
   _activitiesMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
   _activitiesMap.on('load', () => {
     placeActivitiesMapMarker(_activitiesMap);
-    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    try {
+      const shouldAnimate = !!(adminState.activitiesTeamId || adminState.activitiesModeratorId);
+      placeActivitiesGeofence(_activitiesMap, { animateSelection: shouldAnimate });
+    } catch (_) {}
     applyActivitiesMapTheme(_activitiesMap);
     try { _activitiesMap.resize(); } catch (_) {}
     const fallback = document.getElementById('activitiesMapFallback');
@@ -25950,6 +26312,11 @@ function pushWorklogStatus(asgn, status, opts) {
     completeAssignment(asgn.id, {
       completedBy: event.moderatorName || '',
     });
+    // Empty the session Lakitu binding only after wrap-up is queued, so
+    // the next booking does not inherit this session's URL.
+    if (typeof clearSessionBackendBindingsAfterComplete === 'function') {
+      clearSessionBackendBindingsAfterComplete(asgn);
+    }
   }
 
   // Trigger UI re-render
@@ -27518,6 +27885,17 @@ function renderMySessionSection() {
   const tileTeam = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn) : team;
   if (tileTeam) {
     const mates = getOperatorTeammates(tileTeam);
+    const showMeta = typeof shouldBindAssignedSessionLinks === 'function'
+      ? shouldBindAssignedSessionLinks() : true;
+    const addrTeam = (typeof getSessionDisplayTeam === 'function' && getSessionDisplayTeam()) || tileTeam;
+    const teamAddr = showMeta
+      ? ((typeof getTeamOfficeAddress === 'function')
+          ? getTeamOfficeAddress(addrTeam)
+          : (addrTeam.teamAddress ? String(addrTeam.teamAddress).trim() : ''))
+      : '';
+    const teamAddrMap = teamAddr
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(teamAddr)}`
+      : '';
     teamHTML = `
       <div class="assigned-tile-team">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -27526,7 +27904,17 @@ function renderMySessionSection() {
           <path d="M2.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5M7.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
         </svg>
         <span><strong>${escapeHTML(tileTeam.name)}</strong>${mates.length > 0 ? '<br>with ' + mates.map(m => escapeHTML(m.name) + (m.isBackup ? ' <span style="opacity:0.6">(BU)</span>' : '')).join(', ') : ''}</span>
-      </div>`;
+      </div>
+      ${teamAddr ? `
+      <div class="assigned-tile-row assigned-tile-team-address">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 14c3-3.5 5-6 5-8a5 5 0 0 0-10 0c0 2 2 4.5 5 8z" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="8" cy="6" r="1.5" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+        <span><span class="assigned-tile-team-address-label">Team address</span><br>
+          <a href="${teamAddrMap}" target="_blank" rel="noopener noreferrer" title="Open team address in Google Maps">${escapeHTML(teamAddr)}</a>
+        </span>
+      </div>` : ''}`;
   }
 
   const navHTML = total > 1 ? `
