@@ -1,23 +1,23 @@
-# Fix login — Condition 1 must compare two ID pills
+# Fix login — make Condition 1 always continue when Excel found the row
 
-If Condition 1’s left box is a purple **fx** pill that says `string(empty(...))`,
-that formula is why every login is “not found.” Power Automate writes
-`False` with a capital F, so a right box of `false` never matches.
+Do **not** compare two `orbitLoginId` pills. Those pills are not matching,
+so every real ID still goes to **False** → not found.
 
-Do **not** keep that formula. Do **not** type `empty`, `true`, or `false`.
+Do **not** use a purple **fx** pill. Do **not** type `empty`, `true`, or `false`.
 
 ---
 
-## Fastest fix (the boxes in your screenshot)
+## Do this on Condition 1 (now)
 
 1. Click **Condition 1**.
-2. Click the purple **fx** pill in the left box → press **Delete**.
-3. Left box: **Dynamic content** → **Get a row** → **orbitLoginId**.
-4. Middle: leave **is equal to**.
-5. Right box: delete the word `false`.
-6. Right box: **Dynamic content** → **orbitLoginId** (from the first trigger step or Parse JSON).
-7. You should see two purple **orbitLoginId** pills. No `fx`. No `false`.
-8. **Save**.
+2. Click whatever is in the **left** box → press **Delete** until the box is empty.
+3. Type `1` in the left box. Just the number 1. Do not open Expression.
+4. Middle: **is equal to**.
+5. Click the **right** box → delete everything in it.
+6. Type `1` in the right box.
+7. **Save**.
+
+Leave the branches as they are: **True** = Condition 2. **False** = Response 5.
 
 ---
 
