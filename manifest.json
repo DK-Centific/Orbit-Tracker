@@ -1,0 +1,11 @@
+{
+  "name": "Project Twilight",
+  "short_name": "Twilight",
+  "description": "Centific Data Collection · Project Twilight",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00F0FF",
+  "lang": "en"
+}

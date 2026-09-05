@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HELIOS | Solar Observatory</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200;300;400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+        // Map Tailwind's font utilities to the loaded display/body faces so
+        // `font-serif` renders Crimson Pro (headings) and `font-sans` renders Inter.
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['"Crimson Pro"', 'ui-serif', 'Georgia', 'serif'],
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
+    <style>
+        :root {
+            --bg: #F7F7F2;
+            --shadow-light: #ffffff;
+            --shadow-dark: #DEDECF;
+            --well-bg: #F0F0E8;
+            --accent: #E07A2B;
+            --text-main: #3C3C3B;
+            --text-dim: #94948C;
+            --orb-center: #ffffff;
+            --orb-glow: rgba(224, 122, 43, 0.25);
+            --orb-shadow: rgba(0,0,0,0.05);
+            --hinge: #D1D1C7;
+            --leaf-invert: 0;
+            --leaf-opacity: 0.03;
+            --leaf-blend: multiply;
+            --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        [data-theme="dark"] {
+            --bg: #1A1C1E;
+            --shadow-light: #25282B;
+            --shadow-dark: #0F1012;
+            --well-bg: #151719;
+            --accent: #C5A059;
+            --text-main: #E2E2E2;
+            --text-dim: #70757A;
+            --orb-center: #E8D2A6;
+            --orb-glow: rgba(197, 160, 89, 0.15);
+            --orb-shadow: rgba(0,0,0,0.4);
+            --hinge: #2C2F33;
+            --leaf-invert: 1;
+            --leaf-opacity: 0.05;
+            --leaf-blend: overlay;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.5s ease, color 0.5s ease;
+        }
+
+
+        .neu-flat {
+            background: var(--bg);
+            box-shadow:
+                8px 8px 16px var(--shadow-dark),
+                -8px -8px 16px var(--shadow-light);
+            transition: var(--transition);
+        }
+
+        .neu-flat-lg {
+            background: var(--bg);
+            box-shadow:
+                16px 16px 32px var(--shadow-dark),
+                -16px -16px 32px var(--shadow-light);
+            transition: var(--transition);
+        }
+
+        .neu-inset {
+            background: var(--well-bg);
+            box-shadow:
+                inset 8px 8px 16px var(--shadow-dark),
+                inset -8px -8px 16px var(--shadow-light);
+            transition: var(--transition);
+        }
+
+        .neu-inset-sm {
+            background: var(--bg);
+            box-shadow:
+                inset 4px 4px 8px var(--shadow-dark),
+                inset -4px -4px 8px var(--shadow-light);
+            transition: var(--transition);
+        }
+
+
+        .nav-item {
+            color: var(--text-dim);
+            transition: var(--transition);
+        }
+        .nav-item:hover {
+            color: var(--text-main);
+        }
+        .nav-item.active {
+            color: var(--accent);
+            background: var(--bg);
+            box-shadow:
+                inset 4px 4px 8px var(--shadow-dark),
+                inset -4px -4px 8px var(--shadow-light);
+        }
+        .nav-item:not(.active) {
+            box-shadow:
+                6px 6px 12px var(--shadow-dark),
+                -6px -6px 12px var(--shadow-light);
+        }
+        .nav-item:not(.active):hover {
+            transform: translateY(-2px);
+        }
+
+
+        .leaf-shadow {
+            position: fixed;
+            top: -10%;
+            left: -10%;
+            width: 120%;
+            height: 120%;
+            background: url('https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=2000&auto=format&fit=crop');
+            background-size: cover;
+            pointer-events: none;
+            opacity: var(--leaf-opacity);
+            mix-blend-mode: var(--leaf-blend);
+            filter: grayscale(var(--leaf-invert)) invert(var(--leaf-invert)) contrast(1.5);
+            transform: rotate(15deg);
+            z-index: 0;
+            transition: var(--transition);
+        }
+
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-15px) scale(1.03); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col lg:flex-row relative">
+
+    <div class="leaf-shadow"></div>
+
+
+    <nav class="fixed bottom-0 left-0 w-full h-[88px] z-50 rounded-t-[32px] px-6 flex items-center justify-between pb-safe lg:relative lg:w-[104px] lg:h-[calc(100vh-80px)] lg:m-10 lg:rounded-[48px] lg:flex-col lg:py-10 lg:justify-start lg:gap-8 neu-flat-lg lg:shrink-0">
+
+
+        <div class="hidden lg:flex w-14 h-14 rounded-full neu-inset-sm items-center justify-center text-[var(--accent)] font-serif font-semibold text-2xl tracking-tighter mb-auto">H</div>
+
+
+        <button class="nav-item active w-12 h-12 lg:w-14 lg:h-14 rounded-full flex items-center justify-center" aria-label="Dashboard">
+            <svg viewBox="0 0 24 24" class="w-6 h-6 stroke-current stroke-[1.5] fill-none"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v20M2 12h20"></path></svg>
+        </button>
+
+        <button class="nav-item w-12 h-12 lg:w-14 lg:h-14 rounded-full flex items-center justify-center" aria-label="Analytics">
+            <svg viewBox="0 0 24 24" class="w-6 h-6 stroke-current stroke-[1.5] fill-none"><path d="M3 17h18M3 12h18M3 7h18"></path></svg>
+        </button>
+
+        <button class="nav-item w-12 h-12 lg:w-14 lg:h-14 rounded-full flex items-center justify-center" aria-label="Layout">
+            <svg viewBox="0 0 24 24" class="w-6 h-6 stroke-current stroke-[1.5] fill-none"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18M9 21V9"></path></svg>
+        </button>
+
+        <div class="hidden lg:block flex-1"></div>
+
+
+        <button id="themeToggle" class="nav-item w-12 h-12 lg:w-14 lg:h-14 rounded-full flex items-center justify-center" aria-label="Toggle Theme">
+            <svg viewBox="0 0 24 24" id="themeIcon" class="w-6 h-6 stroke-current stroke-[1.5] fill-none">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+        </button>
+
+        <button class="hidden lg:flex nav-item w-14 h-14 rounded-full items-center justify-center" aria-label="Settings">
+            <svg viewBox="0 0 24 24" class="w-6 h-6 stroke-current stroke-[1.5] fill-none"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+    </nav>
+
+
+    <main class="flex-1 w-full h-full overflow-y-auto lg:overflow-hidden flex flex-col p-6 pb-28 lg:p-10 lg:pl-0 gap-8 lg:gap-10 relative z-10 scrollbar-hide">
+
+
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shrink-0 w-full max-w-7xl mx-auto">
+            <div class="flex flex-col gap-1">
+                <h1 class="font-serif text-3xl tracking-[0.05em] font-light">HELIOS</h1>
+                <span class="text-[11px] uppercase tracking-[0.2em] text-[var(--text-dim)]">Solar Observatory</span>
+            </div>
+
+            <div class="flex gap-4 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-hide shrink-0">
+                <div class="neu-inset px-5 py-2.5 rounded-full text-[10px] lg:text-[11px] font-medium uppercase tracking-widest flex items-center gap-2.5 whitespace-nowrap text-[var(--text-main)]">
+                    <div class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] animate-pulse"></div>
+                    Live Spectrum
+                </div>
+                <div class="neu-flat px-5 py-2.5 rounded-full text-[10px] lg:text-[11px] font-medium uppercase tracking-widest text-[var(--text-dim)] flex items-center whitespace-nowrap">
+                    14:20 GMT
+                </div>
+                <div class="neu-flat px-5 py-2.5 rounded-full text-[10px] lg:text-[11px] font-medium uppercase tracking-widest text-[var(--text-dim)] hidden sm:flex items-center whitespace-nowrap">
+                    42.4° N / 71.1° W
+                </div>
+            </div>
+        </header>
+
+
+        <div class="flex flex-col lg:flex-row gap-8 lg:gap-10 flex-1 min-h-0 w-full max-w-7xl mx-auto">
+
+
+            <div class="w-full lg:flex-[1.2] neu-flat rounded-[40px] lg:rounded-[64px] p-6 lg:p-12 flex items-center justify-center shrink-0 lg:shrink" id="vizContainer">
+                <div class="w-full h-[450px] lg:h-full neu-inset rounded-[32px] lg:rounded-[48px] relative overflow-hidden flex flex-col items-center justify-between py-10 lg:py-16 transform-gpu transition-transform duration-100 ease-out" id="vizWell">
+
+
+                    <div class="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-[rgba(128,128,128,0.15)] to-transparent -translate-y-1/2 z-0"></div>
+                    <div class="absolute top-1/2 left-4 lg:left-6 w-2.5 h-2.5 rounded-full bg-[var(--hinge)] shadow-[inset_1px_1px_3px_rgba(0,0,0,0.3)] -translate-y-1/2 z-10"></div>
+                    <div class="absolute top-1/2 right-4 lg:right-6 w-2.5 h-2.5 rounded-full bg-[var(--hinge)] shadow-[inset_1px_1px_3px_rgba(0,0,0,0.3)] -translate-y-1/2 z-10"></div>
+
+
+                    <div class="flex-1 w-full flex items-end justify-center pb-8 z-10">
+                        <div class="w-40 h-40 lg:w-[200px] lg:h-[200px] rounded-full bg-[radial-gradient(circle_at_35%_35%,var(--orb-center)_0%,var(--accent)_80%)] shadow-[0_20px_60px_var(--orb-glow),0_40px_80px_var(--orb-shadow),inset_-10px_-10px_40px_rgba(0,0,0,0.1)] blur-[0.5px] animate-[float_12s_ease-in-out_infinite] transition-all duration-500"></div>
+                    </div>
+
+
+                    <div class="text-center z-10 mt-auto">
+                        <div class="text-[12px] lg:text-[14px] tracking-[0.25em] uppercase text-[var(--text-dim)] mb-4 lg:mb-6 transition-colors duration-500">Solar Altitude</div>
+                        <div class="font-serif text-[80px] lg:text-[120px] font-extralight leading-[0.8] text-[var(--text-main)] flex items-start justify-center transition-colors duration-500" id="altValue">
+                            48.19<span class="text-3xl lg:text-4xl font-sans text-[var(--text-dim)] mt-1 lg:mt-2 ml-1">°</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="w-full lg:flex-[0.8] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 lg:grid-rows-2 gap-6 lg:gap-8 lg:overflow-y-auto overflow-visible pb-4 lg:pb-0 lg:pr-2 scrollbar-hide">
+
+
+                <div class="neu-flat rounded-[32px] p-8 flex flex-col justify-between min-h-[220px]">
+                    <div class="flex justify-between items-start">
+                        <div class="text-[11px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-medium">UV Index</div>
+                        <div class="w-8 h-8 rounded-full neu-inset-sm flex items-center justify-center text-[var(--accent)] shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-4 mt-4">
+                        <div class="font-serif text-5xl leading-none">04.2</div>
+                        <div class="h-1.5 w-full bg-[var(--well-bg)] rounded-full relative overflow-hidden shadow-[inset_1px_1px_2px_rgba(0,0,0,0.1)]">
+                            <div class="absolute left-0 top-0 h-full w-[42%] bg-[var(--accent)] rounded-full shadow-[0_0_10px_var(--accent)] transition-all duration-1000"></div>
+                        </div>
+                        <div class="text-[10px] text-[var(--text-dim)] uppercase tracking-[0.05em]">Moderate • Use Protection</div>
+                    </div>
+                </div>
+
+
+                <div class="neu-flat rounded-[32px] p-8 flex flex-col justify-between min-h-[220px]">
+                    <div class="flex justify-between items-start">
+                        <div class="text-[11px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-medium">Luminance</div>
+                        <div class="w-8 h-8 rounded-full neu-inset-sm flex items-center justify-center text-[var(--accent)] shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-4 mt-4">
+                        <div class="font-serif text-5xl leading-none flex items-baseline gap-1">92<span class="text-base font-sans text-[var(--text-dim)]">klx</span></div>
+                        <div class="h-1.5 w-full bg-[var(--well-bg)] rounded-full relative overflow-hidden shadow-[inset_1px_1px_2px_rgba(0,0,0,0.1)]">
+                            <div class="absolute left-0 top-0 h-full w-[85%] bg-[var(--text-dim)] rounded-full transition-all duration-1000"></div>
+                        </div>
+                        <div class="text-[10px] text-[var(--text-dim)] uppercase tracking-[0.05em]">Peak reached at 12:44</div>
+                    </div>
+                </div>
+
+
+                <div class="neu-flat rounded-[32px] p-8 flex flex-col justify-between min-h-[220px]">
+                    <div class="flex justify-between items-start">
+                        <div class="text-[11px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-medium">Azimuth Angle</div>
+                        <div class="w-8 h-8 rounded-full neu-inset-sm flex items-center justify-center text-[var(--accent)] shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-4 mt-4">
+                        <div class="font-serif text-5xl leading-none flex items-baseline gap-1">184.5<span class="text-base font-sans text-[var(--text-dim)]">°</span></div>
+                        <div class="h-1 w-full bg-[var(--well-bg)] rounded-full relative mt-2">
+                            <div class="absolute left-[51%] top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[var(--bg)] border-2 border-[var(--accent)] shadow-[2px_2px_4px_rgba(0,0,0,0.2)]"></div>
+                        </div>
+                        <div class="text-[10px] text-[var(--text-dim)] uppercase tracking-[0.05em] mt-1">South-Southwest Transit</div>
+                    </div>
+                </div>
+
+
+                <div class="neu-flat rounded-[32px] p-8 flex flex-col justify-between min-h-[220px]">
+                    <div class="flex justify-between items-start">
+                        <div class="text-[11px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-medium">Solar Radiation</div>
+                        <div class="w-8 h-8 rounded-full neu-inset-sm flex items-center justify-center text-[var(--accent)] shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-4 mt-4">
+                        <div class="font-serif text-5xl leading-none flex items-baseline gap-1">842<span class="text-base font-sans text-[var(--text-dim)]">W/m²</span></div>
+                        <div class="h-1.5 w-full bg-[var(--well-bg)] rounded-full relative overflow-hidden shadow-[inset_1px_1px_2px_rgba(0,0,0,0.1)]">
+                            <div class="absolute left-0 top-0 h-full w-[70%] bg-[var(--text-main)] rounded-full transition-all duration-1000"></div>
+                        </div>
+                        <div class="text-[10px] text-[var(--text-dim)] uppercase tracking-[0.05em]">Direct Normal Irradiance</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+
+        const vizContainer = document.getElementById('vizContainer');
+        const vizWell = document.getElementById('vizWell');
+
+
+        if (window.matchMedia("(min-width: 1024px)").matches) {
+            vizContainer.addEventListener('mousemove', (e) => {
+                const rect = vizContainer.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+
+                const rotateY = (x / rect.width) * 10;
+                const rotateX = -(y / rect.height) * 10;
+
+                vizWell.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            });
+
+            vizContainer.addEventListener('mouseleave', () => {
+                vizWell.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg)`;
+            });
+        }
+
+
+        const valElement = document.getElementById('altValue');
+        setInterval(() => {
+            if (valElement) {
+                const base = 48.19;
+                const variance = (Math.random() * 0.04 - 0.02);
+                const current = base + variance;
+                valElement.innerHTML = `${current.toFixed(2)}<span class="text-3xl lg:text-4xl font-sans text-[var(--text-dim)] mt-1 lg:mt-2 ml-1">°</span>`;
+            }
+        }, 3000);
+
+
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        let isDark = false;
+
+        const moonPath = "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z";
+        const sunPath = "<circle cx='12' cy='12' r='5'></circle><path d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42'></path>";
+
+        themeToggle.addEventListener('click', () => {
+            isDark = !isDark;
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeIcon.innerHTML = sunPath;
+                themeToggle.classList.add('active', 'neu-inset');
+                themeToggle.classList.remove('neu-flat');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                themeIcon.innerHTML = `<path d="${moonPath}"></path>`;
+                themeToggle.classList.remove('active', 'neu-inset');
+                themeToggle.classList.add('neu-flat');
+            }
+        });
+    </script>
+
+</body>
+</html>

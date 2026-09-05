@@ -1,0 +1,31 @@
+---
+description: Exact Power Automate UI language for this user's login flow
+alwaysApply: true
+---
+
+# Power Automate instructions (this user)
+
+The user is a non-technical PM. They use the **new** Power Automate designer.
+
+When you tell them what to click, use ONLY labels that exist on their screen. Do not invent older designer names.
+
+Their screen has:
+
+- Tabs: Parameters, Settings, Code view, Testing, About
+- Condition branches named **True** and **False** (never say Yes / No)
+- Condition operator list (no "is empty"): contains, does not contain, is equal to, is not equal to, is greater than, is greater or equal to, is less than, is less or equal to, starts with, does not start with, ends with, does not end with
+- Right-box placeholder: **Choose a value**
+- Excel pills (green) from Get a row vs lightning pills from the HTTP trigger / Parse JSON
+- They often do **not** see Configure run after
+
+Never tell them to:
+
+- Click **is empty**
+- Click **Configure run after** unless they confirm they see it
+- Open **Expression** / type `empty()`, `true`, or `false` (Power Automate stringifies booleans as `True`/`False`, so lowercase never matches)
+- Use Yes / No
+- Type `1` as the Orbit Login ID on the website (that `1` is only inside Condition 1)
+
+To check a blank Excel Password: left = Excel **Password** pill, middle = **is equal to**, right = leave **Choose a value**.
+
+Canonical click list: `docs/power-automate-moderator-login.md`
