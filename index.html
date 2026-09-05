@@ -13043,17 +13043,17 @@ button.perf-stat-chip.scheduled.active {
 }
 .activities-map-legend i.role-primary { background: var(--brand, #00F0FF); }
 .activities-map-legend i.role-backup { background: var(--amber, #F59E0B); }
-.activities-map-legend i.role-moderator { background: var(--blue, #3b82f6); }
+.activities-map-legend i.role-moderator { background: #DC2626; }
 .activities-map-legend i.role-fence {
   border-radius: 2px;
   background: transparent;
-  box-shadow: inset 0 0 0 2px #00F0FF;
+  box-shadow: inset 0 0 0 2px #2563EB;
   border-color: transparent;
 }
 .activities-map-legend i.role-fence-hq {
   border-radius: 2px;
   background: transparent;
-  box-shadow: inset 0 0 0 2px #C68A00;
+  box-shadow: inset 0 0 0 2px #D97706;
   border-color: transparent;
 }
 .geo-mod-marker {
@@ -13062,11 +13062,36 @@ button.perf-stat-chip.scheduled.active {
   border-radius: 50%;
   border: 2px solid var(--bg, #fff);
   box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+  cursor: pointer;
 }
 .geo-mod-marker.is-primary { background: var(--brand, #00F0FF); }
 .geo-mod-marker.is-backup { background: var(--amber, #F59E0B); }
-.geo-mod-marker.is-moderator { background: var(--blue, #3b82f6); }
+.geo-mod-marker.is-moderator { background: #DC2626; }
 .geo-mod-marker.is-stale { opacity: 0.45; }
+.geo-place-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+  cursor: pointer;
+}
+.geo-place-marker.is-office { background: #D97706; }
+.geo-place-marker.is-assignment { background: #2563EB; }
+.activities-hover-popup .maplibregl-popup-content {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.25;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+}
+.activities-hover-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.activities-hover-pop strong { font-weight: 650; }
+.activities-hover-pop span { font-size: 11px; opacity: 0.78; }
 .geo-fence-overlay {
   position: fixed;
   inset: 0;
