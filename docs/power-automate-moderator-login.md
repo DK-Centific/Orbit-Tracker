@@ -1,26 +1,23 @@
-# Fix login — delete Condition 1 and add a new one
+# Fix login — Condition 1 must compare two ID pills
 
-The website is fine. Excel already finds `David-orbit`. The flow still
-sends `{ "ok": false, "reason": "notFound" }` because that Response is
-running for every real ID.
+If Condition 1’s left box is a purple **fx** pill that says `string(empty(...))`,
+that formula is why every login is “not found.” Power Automate writes
+`False` with a capital F, so a right box of `false` never matches.
 
-Most common reason after a rebuild: a **Response** card is sitting
-**between** **Get a row** and the Condition. That card fires first, so
-the new Condition never runs.
-
-Do **not** click **Expression**. Do **not** type `empty`. Do **not** type `true` or `false`.
+Do **not** keep that formula. Do **not** type `empty`, `true`, or `false`.
 
 ---
 
-## First look (30 seconds)
+## Fastest fix (the boxes in your screenshot)
 
-1. Open **Power Automate** → your **moderator login** flow → **Edit**.
-2. Find **Get a row**. Look at the next card under it.
-3. If the next card is **Response** (not Condition):
-   - Click that **Response** → **⋯** → **Delete**.
-   - **Save**.
-   - Try login again (`david-orbit` / `Twilight2006`).
-4. If the next card is already **Condition**, keep going below.
+1. Click **Condition 1**.
+2. Click the purple **fx** pill in the left box → press **Delete**.
+3. Left box: **Dynamic content** → **Get a row** → **orbitLoginId**.
+4. Middle: leave **is equal to**.
+5. Right box: delete the word `false`.
+6. Right box: **Dynamic content** → **orbitLoginId** (from the first trigger step or Parse JSON).
+7. You should see two purple **orbitLoginId** pills. No `fx`. No `false`.
+8. **Save**.
 
 ---
 
@@ -81,6 +78,8 @@ When an HTTP request is received
         |
    Excel: Get a row
    (⋯ → run after: successful AND failed)
+        |
+   (no Response here — if you see one, delete it)
         |
    NEW Condition 1
    Get a row orbitLoginId  is equal to  typed orbitLoginId
