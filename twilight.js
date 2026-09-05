@@ -373,6 +373,12 @@ function defaultState() {
     // clicks "Arrived at participant" in the entry bar.
     arrivedAt: '',
     remindersShown: [],
+    officeCheckedInAt: '',
+    officeCheckedOutAt: '',
+    officeCheckinGeo: null,
+    officeCheckoutGeo: null,
+    arrivalGeo: null,
+    lastGeo: null,
     // Change-detection key used by syncBookedParticipantName to decide
     // when to prefill the Participant Name field. Null on fresh state
     // means "no booking seen yet" · the first time the mod lands on
@@ -646,6 +652,12 @@ function migrateState(loaded) {
   // reminder loop. Empty string = not yet arrived (no reminders fire).
   // Reminders fire at arrivedAt + 1h, +2h, ... up to PROGRESS_REMINDER_MAX_HOUR.
   if (typeof loaded.arrivedAt !== 'string') loaded.arrivedAt = '';
+  if (typeof loaded.officeCheckedInAt !== 'string') loaded.officeCheckedInAt = '';
+  if (typeof loaded.officeCheckedOutAt !== 'string') loaded.officeCheckedOutAt = '';
+  if (!loaded.officeCheckinGeo || typeof loaded.officeCheckinGeo !== 'object') loaded.officeCheckinGeo = null;
+  if (!loaded.officeCheckoutGeo || typeof loaded.officeCheckoutGeo !== 'object') loaded.officeCheckoutGeo = null;
+  if (!loaded.arrivalGeo || typeof loaded.arrivalGeo !== 'object') loaded.arrivalGeo = null;
+  if (!loaded.lastGeo || typeof loaded.lastGeo !== 'object') loaded.lastGeo = null;
   // Hour-marks already acknowledged (array of integers 1, 2, 3, ...).
   // Stored as an array (not a Set) because state is JSON-serialized to
   // localStorage and Sets don't survive JSON.stringify. Idempotent
@@ -1092,12 +1104,18 @@ function renderWelcomeWorklogBannerHTML() {
   const displayStatus = (statusOrderIdx(teamStatus) > statusOrderIdx(myStatus)) ? teamStatus : myStatus;
   const arrivedIdx = statusOrderIdx('arrived');
   const myIdx = statusOrderIdx(myStatus);
+  const phase = (typeof getModeratorGeoPhase === 'function') ? getModeratorGeoPhase(asgn) : null;
+  const officeIn = (typeof hasOfficeCheckin === 'function') ? hasOfficeCheckin(asgn) : !!(state && state.officeCheckedInAt);
 
   const requiredEquipment = (typeof EQUIPMENT_LIST !== 'undefined') ? EQUIPMENT_LIST.filter(e => !e.optional) : [];
   const equipmentReady = requiredEquipment.length === 0 || requiredEquipment.every(e => state.equipment && state.equipment[e.id]);
+  const stationDots = (typeof WORKLOG_STATION_DOT_STATUSES !== 'undefined' && WORKLOG_STATION_DOT_STATUSES)
+    ? WORKLOG_STATION_DOT_STATUSES
+    : WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
-  // ---- Locked: session done ----
-  if (displayStatus === 'session_done') {
+  // ---- Session complete (office check-in/out is admin-only; no location copy here) ----
+  if (displayStatus === 'session_done' || displayStatus === 'office_checkout' ||
+      (statusOrderIdx(displayStatus) >= statusOrderIdx('session_done') && statusOrderIdx(displayStatus) >= 0)) {
     return `<div class="welcome-worklog-banner done">
       <div class="welcome-worklog-banner-icon">
         <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
@@ -1111,7 +1129,7 @@ function renderWelcomeWorklogBannerHTML() {
     </div>`;
   }
 
-  // ---- Pre-arrival ----
+  // ---- Pre-arrival (en route) ----
   if (myIdx < arrivedIdx) {
     if (!equipmentReady) {
       return `<div class="welcome-worklog-banner waiting">
@@ -1180,7 +1198,7 @@ function renderWelcomeWorklogBannerHTML() {
       <div class="welcome-worklog-banner-sub">Continue with the next station from the sidebar.</div>
     </div>
     <div class="welcome-worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
+      ${stationDots.slice(0, 6).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="welcome-worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
@@ -1219,12 +1237,7 @@ function bindWelcomeWorklogActions() {
   if (arrivalBtn) {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const asgn = (typeof getActiveOperatorAssignment === 'function')
-        ? getActiveOperatorAssignment()
-        : getOperatorAssignment();
-      if (asgn) pushWorklogStatus(asgn, 'arrived');
-      // Re-render welcome so the banner reflects the new state
-      renderApp();
+      if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
     });
   }
   const startBtn = document.getElementById('welcomeStartBtn');
@@ -1295,6 +1308,9 @@ function entryBarHTML() {
   // treat it as the session URL · but only when the mod hasn't already
   // pasted a valid session URL of their own (graceful fallback).
   const assignedLakitu = (typeof getAssignedLakituUrl === 'function') ? getAssignedLakituUrl() : '';
+  // Only render a clickable href for http(s) URLs. Non-http schemes are
+  // treated as "no link" even if getAssignedLakituUrl returned a value.
+  const assignedLakituHref = (assignedLakitu && isSafeHttpUrl(assignedLakitu)) ? assignedLakitu : '';
   if (assignedLakitu) {
     const curPid = (state.participantId || '').trim();
     if ((!curPid || !isValidLakituUrl(curPid)) && state.participantId !== assignedLakitu) {
@@ -1348,8 +1364,8 @@ function entryBarHTML() {
             </div>
           </span>
         </span>
-        ${assignedLakitu ? `
-        <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakitu)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakitu)}">
+        ${assignedLakituHref ? `
+        <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakituHref)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakituHref)}">
           <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="7.25" fill="#000"/>
             <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
@@ -1659,16 +1675,15 @@ function bindEntryFields() {
   if (arrivedBtn && !arrivedBtn.dataset.boundEntry) {
     arrivedBtn.dataset.boundEntry = '1';
     arrivedBtn.addEventListener('click', () => {
+      if (typeof confirmOperatorArrival === 'function') {
+        confirmOperatorArrival();
+        return;
+      }
       state.arrivedAt = new Date().toISOString();
-      state.remindersShown = []; // fresh start for this session
+      state.remindersShown = [];
       saveState();
       if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
-      // Re-render the entry bar to swap button → pill. Cheapest path:
-      // re-render the whole current view so the entry bar updates
-      // without us needing to know its container's ID. This is what
-      // every other entry-bar update does too.
-      if (typeof render === 'function') render();
-      // Kick the reminder loop now so the user can see it running.
+      if (typeof renderApp === 'function') renderApp();
       schedulePerHourReminder();
     });
   }
@@ -3142,27 +3157,28 @@ function isValidLakituUrl(v) {
 // SINGLE SOURCE OF TRUTH for the project dropdown shown in the team modal
 // (under the team-name field). Each option maps a human label to the
 // Lakitu PROJECT URL an admin wants the team's moderators to open. Edit
-// this list to change the options everywhere. NOTE: several labels
-// intentionally map to the SAME url · only item 4 differs.
+// this list to change the options everywhere. Each Centific slot maps
+// to its own Lakitu session URL.
 const LAKITU_PROJECTS = [
-  { key: 'centific-1', label: 'US - BEV+ LeapFrog - Centific 1', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-2', label: 'US - BEV+ LeapFrog - Centific 2', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-3', label: 'US - BEV+ LeapFrog - Centific 3', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-4', label: 'US - BEV+ LeapFrog - Centific 4', url: 'https://lakitu.ring.amazon.dev/project/ad65fa51-d211-4144-9f55-c078b862cce9' },
-  { key: 'centific-5', label: 'US - BEV+ LeapFrog - Centific 5', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-6', label: 'US - BEV+ LeapFrog - Centific 6', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
-  { key: 'centific-7', label: 'US - BEV+ LeapFrog - Centific 7', url: 'https://lakitu.ring.amazon.dev/project/c8c3fc2c-9cd8-4188-b8e0-862f648afc8d' },
+  { key: 'centific-1',  label: 'US - BEV+ LeapFrog - Centific 1',  url: 'https://lakitu.ring.amazon.dev/?session=80ddee87-7f5f-4113-80a2-4d4574973301' },
+  { key: 'centific-2',  label: 'US - BEV+ LeapFrog - Centific 2',  url: 'https://lakitu.ring.amazon.dev/?session=eb7f995b-f0f0-4af3-9686-c60c080e8f42' },
+  { key: 'centific-3',  label: 'US - BEV+ LeapFrog - Centific 3',  url: 'https://lakitu.ring.amazon.dev/?session=2a78366e-78c5-435e-890b-4a314c8ee749' },
+  { key: 'centific-4',  label: 'US - BEV+ LeapFrog - Centific 4',  url: 'https://lakitu.ring.amazon.dev/?session=3157be0a-2321-41e7-a925-76239a3a3d5c' },
+  { key: 'centific-5',  label: 'US - BEV+ LeapFrog - Centific 5',  url: 'https://lakitu.ring.amazon.dev/?session=f71b5b17-2298-467c-9198-3b4dd0fe0b05' },
+  { key: 'centific-6',  label: 'US - BEV+ LeapFrog - Centific 6',  url: 'https://lakitu.ring.amazon.dev/?session=f965116f-3cd9-4737-876d-98a3f28f73c3' },
+  { key: 'centific-7',  label: 'US - BEV+ LeapFrog - Centific 7',  url: 'https://lakitu.ring.amazon.dev/?session=e9a04818-53ea-4eb5-bd0f-95a7f2bb3d14' },
+  { key: 'centific-8',  label: 'US - BEV+ LeapFrog - Centific 8',  url: 'https://lakitu.ring.amazon.dev/?session=95911f83-8085-47a5-9692-2de1a8bc22b8' },
+  { key: 'centific-9',  label: 'US - BEV+ LeapFrog - Centific 9',  url: 'https://lakitu.ring.amazon.dev/?session=7c19ce77-ff46-4349-a76e-8a304f96ace4' },
+  { key: 'centific-10', label: 'US - BEV+ LeapFrog - Centific 10', url: 'https://lakitu.ring.amazon.dev/?session=10d98fd0-bf99-486b-9f0c-07ee7898d8e6' },
 ];
 
-// Lakitu PROJECT URLs (what admins assign) look different from the SESSION
-// URLs a moderator would otherwise paste (/p/<uuid>?session=<uuid>). Project
-// links are /project/<uuid>. Accept those as a valid pre-filled value so the
-// moderator gets a working clickable link without pasting anything.
+// Assigned Lakitu links may be a project page or a session query URL.
 const LAKITU_PROJECT_URL_RE = /^https:\/\/lakitu\.ring\.amazon\.dev\/project\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?&#].*)?$/i;
+const LAKITU_ASSIGNED_SESSION_URL_RE = /^https:\/\/lakitu\.ring\.amazon\.dev\/\?session=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[&#].*)?$/i;
 
 function isLakituProjectUrl(v) {
   const s = (v == null ? '' : String(v)).trim();
-  return LAKITU_PROJECT_URL_RE.test(s);
+  return LAKITU_PROJECT_URL_RE.test(s) || LAKITU_ASSIGNED_SESSION_URL_RE.test(s);
 }
 
 // Look up a project entry (label + url) by its stored key. Returns null
@@ -3171,6 +3187,195 @@ function getLakituProjectByKey(key) {
   if (!key) return null;
   return LAKITU_PROJECTS.find(p => p.key === key) || null;
 }
+
+// Admin-assigned Ring account dashboards (Nighttime Centific 1–5).
+// Same pattern as LAKITU_PROJECTS: pick a key in the team modal; the
+// mapped https URL is stored on the team and used for moderator Ring nav.
+const RING_DASHBOARDS = [
+  { key: 'nighttime-centific-1', label: 'Nighttime Centific 1', url: 'https://account.ring.com/account/dashboard?l=7f2fba81-0d37-49be-bff7-291f59c36747' },
+  { key: 'nighttime-centific-2', label: 'Nighttime Centific 2', url: 'https://account.ring.com/account/dashboard?l=b4a61c0c-1414-4d89-a43c-3c6278cfc08e' },
+  { key: 'nighttime-centific-3', label: 'Nighttime Centific 3', url: 'https://account.ring.com/account/dashboard?l=c2cfdef4-5d91-4c8b-a358-5f4d9e6dd7f5' },
+  { key: 'nighttime-centific-4', label: 'Nighttime Centific 4', url: 'https://account.ring.com/account/dashboard?l=cf59ccd3-2f3d-441f-ac44-6b2e8befd904' },
+  { key: 'nighttime-centific-5', label: 'Nighttime Centific 5', url: 'https://account.ring.com/account/dashboard?l=2fa21650-29ae-414b-add7-872f30910719' },
+];
+
+// Fallback Ring dashboard when a team has no assigned Ring link.
+const DEFAULT_RING_DASHBOARD_URL = 'https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e';
+
+function getRingDashboardByKey(key) {
+  if (!key) return null;
+  return RING_DASHBOARDS.find(p => p.key === key) || null;
+}
+
+// TeamLog stores the admin-assigned Lakitu project (+ Ring dashboard +
+// team address) as JSON inside the existing `personalEmail` Excel column
+// (versioned payload). This lets the fields travel through the current
+// Power Automate → Excel mapping without a new column. Moderator-directory
+// personalEmail values are untouched. Old payloads without ring/address
+// still parse (those fields default to empty).
+const TEAM_LAKITU_PROJECT_PAYLOAD_TYPE = 'teamLakituProject';
+const TEAM_LAKITU_PROJECT_PAYLOAD_VERSION = 1;
+
+function encodeTeamLakituProjectPayload(team) {
+  const key = team && team.lakituProjectKey ? String(team.lakituProjectKey) : '';
+  let url = team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
+  if (!url && key) {
+    const proj = getLakituProjectByKey(key);
+    if (proj && proj.url) url = String(proj.url).trim();
+  }
+  const ringKey = team && team.ringDashboardKey ? String(team.ringDashboardKey) : '';
+  let ringUrl = team && team.ringDashboardUrl ? String(team.ringDashboardUrl).trim() : '';
+  if (!ringUrl && ringKey) {
+    const dash = getRingDashboardByKey(ringKey);
+    if (dash && dash.url) ringUrl = String(dash.url).trim();
+  }
+  // Ring links must be https only · drop anything else before persist.
+  if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+  const teamAddress = team && team.teamAddress != null
+    ? String(team.teamAddress).trim()
+    : '';
+  return JSON.stringify({
+    type: TEAM_LAKITU_PROJECT_PAYLOAD_TYPE,
+    version: TEAM_LAKITU_PROJECT_PAYLOAD_VERSION,
+    lakituProjectKey: key,
+    lakituProjectUrl: url,
+    ringDashboardKey: ringKey,
+    ringDashboardUrl: ringUrl,
+    teamAddress: teamAddress,
+  });
+}
+
+function parseTeamLakituProjectFromPersonalEmail(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s || s[0] !== '{') return null;
+  try {
+    const obj = JSON.parse(s);
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.type !== TEAM_LAKITU_PROJECT_PAYLOAD_TYPE) return null;
+    const key = obj.lakituProjectKey != null ? String(obj.lakituProjectKey) : '';
+    let url = obj.lakituProjectUrl != null ? String(obj.lakituProjectUrl).trim() : '';
+    if (!url && key) {
+      const proj = getLakituProjectByKey(key);
+      if (proj && proj.url) url = String(proj.url).trim();
+    }
+    const ringKey = obj.ringDashboardKey != null ? String(obj.ringDashboardKey) : '';
+    let ringUrl = obj.ringDashboardUrl != null ? String(obj.ringDashboardUrl).trim() : '';
+    if (!ringUrl && ringKey) {
+      const dash = getRingDashboardByKey(ringKey);
+      if (dash && dash.url) ringUrl = String(dash.url).trim();
+    }
+    if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+    const teamAddress = obj.teamAddress != null ? String(obj.teamAddress).trim() : '';
+    return {
+      lakituProjectKey: key,
+      lakituProjectUrl: url,
+      ringDashboardKey: ringKey,
+      ringDashboardUrl: ringUrl,
+      teamAddress: teamAddress,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+// Clickable external hrefs must be http(s) only. Non-http schemes (javascript:,
+// data:, etc.) are rejected so we never render an unsafe link.
+function isSafeHttpUrl(v) {
+  const s = (v == null ? '' : String(v)).trim();
+  if (!s) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+// Ring dashboard links must be https only (stricter than isSafeHttpUrl).
+function isSafeHttpsUrl(v) {
+  const s = (v == null ? '' : String(v)).trim();
+  if (!s) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function resolveTeamLakituProjectUrl(team) {
+  if (!team) return '';
+  let url = team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
+  if (!url && team.lakituProjectKey) {
+    const proj = getLakituProjectByKey(team.lakituProjectKey);
+    if (proj && proj.url) url = String(proj.url).trim();
+  }
+  return url;
+}
+
+function resolveTeamRingDashboardUrl(team) {
+  if (!team) return '';
+  let url = team.ringDashboardUrl ? String(team.ringDashboardUrl).trim() : '';
+  if (!url && team.ringDashboardKey) {
+    const dash = getRingDashboardByKey(team.ringDashboardKey);
+    if (dash && dash.url) url = String(dash.url).trim();
+  }
+  return (url && isSafeHttpsUrl(url)) ? url : '';
+}
+
+function getTeamOfficeAddress(team) {
+  if (!team || team.teamAddress == null) return '';
+  return String(team.teamAddress).trim();
+}
+
+// Moderator Hub → All → List column sort. Empty values sort last in both
+// directions; comparison is case-insensitive and stable (original index tiebreak).
+function getModListSortValue(mod, key) {
+  const f = (typeof extractModeratorFields === 'function') ? extractModeratorFields(mod) : (mod || {});
+  if (key === 'name') {
+    const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim();
+    return name || f.orbitLoginId || '';
+  }
+  if (key === 'orbitLoginId') return f.orbitLoginId || '';
+  if (key === 'role') {
+    const raw = f.LoginRole || f.loginRole || '';
+    return (typeof directoryLoginRoleLabel === 'function') ? directoryLoginRoleLabel(raw) : String(raw);
+  }
+  if (key === 'phone') return f.phoneNumber || '';
+  if (key === 'centificEmail') return f.centificEmail || '';
+  return '';
+}
+
+function sortModeratorListRows(mods, sortSpec) {
+  const key = (sortSpec && sortSpec.key) || 'name';
+  const dir = (sortSpec && sortSpec.dir) === 'desc' ? 'desc' : 'asc';
+  const decorated = (mods || []).map((m, idx) => {
+    const raw = getModListSortValue(m, key);
+    const empty = !String(raw || '').trim();
+    return { m, idx, empty, val: String(raw || '').trim().toLowerCase() };
+  });
+  decorated.sort((a, b) => {
+    if (a.empty !== b.empty) return a.empty ? 1 : -1; // empty last in both dirs
+    if (a.val < b.val) return dir === 'asc' ? -1 : 1;
+    if (a.val > b.val) return dir === 'asc' ? 1 : -1;
+    return a.idx - b.idx; // stable
+  });
+  return decorated.map(d => d.m);
+}
+
+function modListSortHeaderButton(key, label, sortSpec) {
+  const active = sortSpec && sortSpec.key === key;
+  const dir = active ? sortSpec.dir : null;
+  const ariaSort = !active ? 'none' : (dir === 'desc' ? 'descending' : 'ascending');
+  const indicator = !active ? '' : (dir === 'desc' ? ' ▼' : ' ▲');
+  const nextDir = active && dir === 'asc' ? 'desc' : 'asc';
+  const ariaLabel = active
+    ? `Sort by ${label}, currently ${dir === 'desc' ? 'Z to A' : 'A to Z'}. Activate to sort ${nextDir === 'desc' ? 'Z to A' : 'A to Z'}.`
+    : `Sort by ${label}, A to Z`;
+  return `<th aria-sort="${ariaSort}"><button type="button" class="mod-sort-btn${active ? ' is-active' : ''}" data-mod-sort="${escapeHTML(key)}" aria-label="${escapeHTML(ariaLabel)}">${escapeHTML(label)}<span class="mod-sort-indicator" aria-hidden="true">${indicator}</span></button></th>`;
+}
+
 
 // The admin-assigned Lakitu PROJECT url for the moderator's ACTIVE team,
 // or '' when nothing has been assigned. Resolves the team the same way the
@@ -3181,8 +3386,39 @@ function getAssignedLakituUrl() {
   const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
   if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
   else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
-  const url = team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '';
-  return isLakituProjectUrl(url) ? url : '';
+  let url = (typeof resolveTeamLakituProjectUrl === 'function')
+    ? resolveTeamLakituProjectUrl(team)
+    : (team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '');
+  if (url && typeof isLakituProjectUrl === 'function' && isLakituProjectUrl(url)) return url;
+  if (url && typeof isSafeHttpUrl === 'function' && isSafeHttpUrl(url)) return url;
+  return '';
+}
+
+// Admin-assigned Ring dashboard for the moderator's active team, or the
+// default Ring dashboard when none is assigned.
+function getAssignedRingUrl() {
+  let team = null;
+  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
+  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let url = (typeof resolveTeamRingDashboardUrl === 'function')
+    ? resolveTeamRingDashboardUrl(team)
+    : '';
+  if (url && isSafeHttpsUrl(url)) return url;
+  return DEFAULT_RING_DASHBOARD_URL;
+}
+
+// Point the nav Ring button + menu Quick Link at the team Ring dashboard
+// (or the default). Safe to call often; no-ops when nodes are missing.
+function syncModeratorRingLinks() {
+  const url = (typeof getAssignedRingUrl === 'function')
+    ? getAssignedRingUrl()
+    : DEFAULT_RING_DASHBOARD_URL;
+  if (!url || !isSafeHttpsUrl(url)) return;
+  const nav = document.getElementById('navLakituBtn');
+  if (nav && nav.tagName === 'A') nav.setAttribute('href', url);
+  const row = document.getElementById('lakituRow');
+  if (row && row.tagName === 'A') row.setAttribute('href', url);
 }
 
 // '' | 'empty' | 'invalid' | 'valid' · drives the entry-bar field error
@@ -3957,6 +4193,7 @@ function exportExcel() {
    MENU + UTILS
    ===================================================================== */
 function openMenu() {
+  if (typeof syncModeratorRingLinks === 'function') syncModeratorRingLinks();
   // Toggle visibility of admin-only menu rows based on which app is
   // active. The shared menu drawer is used by both moderator and admin
   // nav buttons, so we gate admin-specific links (Master List, future
@@ -4408,22 +4645,26 @@ function escapeHTML(s) {
    ADMIN APP
    ===================================================================== */
 
-// Admin login is allowed for any username in this list (case-insensitive).
+// Hardcoded admin allowlist (case-insensitive). Used for nav labels,
+// avatar initials, auto-resume routing, AND passwordless login bypass.
+// Admin-orbit, Ritu-Orbit, and John-Orbit all sign in without a password
+// (see isPasswordlessAdminUsername). Every other Orbit Login ID — including
+// directory LoginRole=Admin rows — must authenticate via the PA login flow.
+//
 // The legacy single-username form is kept as ADMIN_USERNAME (= the first
 // entry) for any code outside the auth path that needs a "default" admin
-// label; everywhere else, prefer isAdminUsername() so all listed admins
-// authenticate correctly.
-//
-// To add a new admin: append to ADMIN_USERNAMES. No other code changes
-// needed · every check goes through isAdminUsername. The username the
-// admin typed at login is preserved on state.username and displayed in
-// the top-nav, so each admin sees their own identity.
+// label; everywhere else, prefer isAdminUsername() for display helpers.
 const ADMIN_USERNAMES = ['Admin-orbit', 'Ritu-Orbit', 'John-Orbit'];
 const ADMIN_USERNAME = ADMIN_USERNAMES[0];  // legacy alias, default label
 function isAdminUsername(name) {
   if (!name) return false;
   const lower = String(name).toLowerCase();
   return ADMIN_USERNAMES.some(u => u.toLowerCase() === lower);
+}
+// Passwordless login · same allowlist as isAdminUsername (Admin-orbit,
+// Ritu-Orbit, John-Orbit). Case-insensitive.
+function isPasswordlessAdminUsername(name) {
+  return isAdminUsername(name);
 }
 // Resolve the canonical-case version of an admin username from the
 // list (so "ritu-orbit" types matches "Ritu-Orbit" in the display).
@@ -4448,8 +4689,53 @@ function directoryRoleIsAdmin(row) {
   const v = directoryLoginRole(row).toLowerCase();
   return v === 'admin' || v === 'administrator';
 }
-const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
+// Canonical LoginRole values written to Excel / accepted by the create-user
+// form. Excel historically stores moderators as "Mod"; the UI label is
+// "Moderator". Reviewer and Admin are stored as-is. Login routes
+// LoginRole=Admin to the admin app after successful PA password auth
+// (or passwordless allowlist usernames). See doLogin / isPasswordlessAdminUsername.
+const DIRECTORY_LOGIN_ROLE_OPTIONS = [
+  { value: 'Mod', label: 'Moderator' },
+  { value: 'Reviewer', label: 'Reviewer' },
+  { value: 'Admin', label: 'Admin' },
+];
+function canonicalizeDirectoryLoginRole(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v === 'admin' || v === 'administrator') return 'Admin';
+  if (v === 'reviewer' || v === 'review') return 'Reviewer';
+  if (v === 'mod' || v === 'moderator' || v === 'primary' || v === 'backup') return 'Mod';
+  // Preserve unknown non-empty values for display, but form select only
+  // offers the three canonical options above.
+  return String(raw).trim();
+}
+function directoryLoginRoleLabel(raw) {
+  const c = canonicalizeDirectoryLoginRole(raw);
+  const opt = DIRECTORY_LOGIN_ROLE_OPTIONS.find(o => o.value === c);
+  if (opt) return opt.label;
+  return c || '—';
+}
+function isValidDirectoryLoginRole(raw) {
+  const c = canonicalizeDirectoryLoginRole(raw);
+  return DIRECTORY_LOGIN_ROLE_OPTIONS.some(o => o.value === c);
+}
+
+const ADMIN_PA_MODERATORS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/12/workflows/b1c2ebab26ca46b48157a9b3eb1fe8ea/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=30zTIugKOWleHUNplcvGBs6d6u_2VZxmBipvvs9O0P0';
 const ADMIN_PA_PARTICIPANTS_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4b5a0dc8941740a8990406a808240b07/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=IZ3IBqG2swwMqr8MMJcmEmcfGtWMImyUF7W6THYZXO0';
+
+// Moderator directory write/upsert · former Orbit App Mod Info HTTP URL,
+// now used as the write/upsert flow. See docs/power-automate-moderator-write.md.
+const ADMIN_PA_MODERATOR_WRITE_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/acc0b1c2810e454593fe42431c3cc207/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=xR9JIgLJwWfq8ZsZCSa_lV48_hj9DFyMpyKxttmMYWc';
+
+// Dedicated password auth flow (login + setPassword). Do NOT reuse the
+// directory read/write URLs — never fetch passwords via ADMIN_PA_MODERATORS_URL.
+const ADMIN_PA_MODERATOR_LOGIN_URL = 'https://default9b415834803a4da0afdcfe6b1d52d6.49.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/30/workflows/18e20403ab9b4c7a98980743fec5fb13/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=0k-8C0cw4MnkS7QiMQjkeqaf-hzTlvs8Y88CFyEvPls';
+
+// Default first-login password accepted by PA only while Excel Password
+// is blank. Client never reads Excel Password; this constant is used only
+// to reject re-using the default when forcing a password change, and as
+// the documented default for the PA guide.
+const DEFAULT_FIRST_LOGIN_PASSWORD = 'Twilight2006';
 
 // Participant column schema · single source of truth for headers,
 // field keys, default visibility, and rendering style.
@@ -4534,7 +4820,11 @@ const adminState = {
   partPage: 1,               // 1-indexed current page in the participant table
   partPageSize: loadParticipantPageSize(),  // 20 | 50 | 100
   modView: 'list',           // 'list' | 'team' | 'assignment' · view modes for Moderators subtab
+  modListLayout: 'grid',
+  modListSort: null,  // set on first header click · { key, dir:'asc'|'desc' }
+  modUserModal: null,        // { mode:'create'|'edit', values:{}, error:'', saving:false } | null
   activitiesTeamId: '',      // selected team context in the Activities map
+  activitiesModeratorId: '', // selected moderator on the Activities map (mutually exclusive with team)
   // Assignment state
   teams: [],                 // [{ id, name, primaryIds: [orbitLoginId,...], backupIds: [orbitLoginId,...] }]
   assignments: [],           // [{ id, teamId, date (YYYY-MM-DD), startMin, endMin, participantOrbitId, participantData, modSnapshots, savedAt }]
@@ -4773,7 +5063,17 @@ async function fetchWithRetry(url, opts) {
 
       // Any other non-2xx is a hard failure · no retry, surface it.
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        let bodyText = '';
+        try { bodyText = await res.text(); } catch (_) {}
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        err.bodyText = bodyText;
+        // PA answers with this code when a flow's HTTP trigger only
+        // accepts POST but the caller used GET (or vice versa).
+        if (/TriggerRequestMethodNotValid/i.test(bodyText)) {
+          err.isTriggerMethodMismatch = true;
+        }
+        throw err;
       }
 
       // Happy path: parse and return. JSON parse errors are NOT
@@ -4830,6 +5130,37 @@ async function fetchWithRetry(url, opts) {
 
   // Defensive: shouldn't reach here, but if we do, surface the last error.
   throw lastErr || new Error('Request failed after retries');
+}
+
+// PA read flows historically used GET. Newer HTTP triggers are often
+// POST-only, and PA then answers TriggerRequestMethodNotValid. Try GET
+// first, then POST an empty body so a flow rebuilt as POST keeps working
+// without a client change.
+async function fetchPaRead(url, opts) {
+  opts = opts || {};
+  const common = {
+    timeoutMs: opts.timeoutMs || 45000,
+    maxAttempts: opts.maxAttempts || 3,
+    signal: opts.signal || null,
+  };
+  try {
+    return await fetchWithRetry(url, Object.assign({ method: 'GET' }, common));
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    const methodMismatch = !!(e && e.isTriggerMethodMismatch)
+      || /^HTTP 40[015]/.test(msg)
+      || /^HTTP 405/.test(msg);
+    if (!methodMismatch) throw e;
+    return await fetchWithRetry(url, Object.assign({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }, common));
+  }
+}
+
+function fetchModeratorDirectory(opts) {
+  return fetchPaRead(ADMIN_PA_MODERATORS_URL, opts || {});
 }
 
 function extractArray(payload) {
@@ -5874,6 +6205,8 @@ function perfLiveStatusDisplay(a) {
     return { key: 'completed', label: 'Completed' };
   }
   if (live && (typeof statusOrderIdx === 'function') && statusOrderIdx(live.status) >= 0) {
+    if (live.status === 'office_checkin') return { key: 'notified', label: 'Office check-in' };
+    if (live.status === 'office_checkout') return { key: 'completed', label: 'Office check-out' };
     if (live.status === 'arrived') return { key: 'checkin', label: 'Check-in' };
     const st = PERF_STATUS_STATION_SHORT[live.status];
     return { key: 'insession', label: st ? `In session · ${st}` : 'In session' };
@@ -8671,6 +9004,7 @@ function renderAdminTabBody() {
         </div>
       </div>
     </div>
+    <div id="modviewExtraFilters" class="modview-extra-filters" hidden></div>
     <div id="subtabBody"></div>
   `;
   const setModviewSlideOpen = (open) => {
@@ -8761,14 +9095,11 @@ async function loadModerators(force = false) {
   adminState.modError = null;
   renderModerators();
   try {
-    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
-      method: 'GET',
-      signal: abortCtrl.signal,
-      timeoutMs: 45000,
-      maxAttempts: 3,
-    });
+    const data = await fetchModeratorDirectory({ signal: abortCtrl.signal });
     const arr = extractArray(data);
-    adminState.moderators = arr;
+    // Never keep Password (or similar) from the directory read in memory /
+    // localStorage. Prefer excluding Password from the PA Response mapping.
+    adminState.moderators = arr.map(stripModeratorSecrets);
   } catch (e) {
     if (e && e.isCallerAbort) {
       console.log('[Twilight] Moderators load aborted (force-refresh took over)');
@@ -8799,6 +9130,7 @@ async function loadModerators(force = false) {
       // has a booking modal open, defer the page rebuild to avoid a
       // visible repaint underneath. The data on adminState is already
       // current; the UI just hasn't been redrawn yet.
+      if (typeof mergeGeoDemoRoster === 'function') mergeGeoDemoRoster();
       if (typeof isAnyAsgnModalOpen === 'function' && isAnyAsgnModalOpen()) {
         console.log('[Twilight] Moderators load landed during open modal · deferring render');
         adminState._pendingPostFetchRender = true;
@@ -8833,13 +9165,15 @@ function renderModerators() {
   // View switcher lives in the slide next to the Moderators subtab
   // (#modviewToolbar). Fall back to painting it into #subtabBody only if
   // the slide shell is missing (shouldn't happen in normal hub renders).
+  // Coerce unknown/stale modView values (e.g. cached "modview") so Activities
+  // filters are never hidden by an invalid view key.
+  const VALID_MOD_VIEWS = new Set(['list', 'team', 'assignment', 'availability', 'activities']);
   let view = adminState.modView || 'list';
-  const activityTeams = [...(adminState.teams || [])]
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  if (adminState.activitiesTeamId == null) adminState.activitiesTeamId = '';
-  if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
-    adminState.activitiesTeamId = '';
+  if (!VALID_MOD_VIEWS.has(view)) {
+    adminState.modView = 'list';
+    view = 'list';
   }
+  normalizeActivitiesFilterState();
   // SHOW_MOD_AVAILABILITY_TAB: Availability button is hidden (display:none /
   // hidden attr). Un-hide the button + set this true to restore the tab.
   // Prior sessions that still have modView === 'availability' fall back to
@@ -8874,40 +9208,30 @@ function renderModerators() {
           Activities
         </button>
       </div>
-      ${view === 'activities' ? `
-        <label class="activities-team-filter" for="activitiesTeamSelect">
-          <span class="activities-team-filter-label">Team</span>
-          <select class="activities-team-select" id="activitiesTeamSelect">
-            <option value="">All teams</option>
-            ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(adminState.activitiesTeamId) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
-          </select>
-        </label>
-      ` : ''}
   `;
 
   const toolbarHost = document.getElementById('modviewToolbar');
-  const bindModviewControls = (root) => {
+  const bindModviewToggle = (root) => {
     if (!root) return;
     root.querySelectorAll('.modview-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.hasAttribute('hidden') || btn.classList.contains('modview-btn--hidden')) return;
-        adminState.modView = btn.dataset.mview;
+        const next = btn.dataset.mview;
+        if (!VALID_MOD_VIEWS.has(next)) return;
+        adminState.modView = next;
         renderModerators();
       });
     });
-    const activitiesTeamSelect = root.querySelector('#activitiesTeamSelect') || document.getElementById('activitiesTeamSelect');
-    if (activitiesTeamSelect) {
-      activitiesTeamSelect.addEventListener('change', e => {
-        adminState.activitiesTeamId = e.target.value || '';
-        updateActivitiesTeamContext();
-      });
-    }
   };
 
   if (toolbarHost) {
     toolbarHost.innerHTML = toolbarHtml;
-    bindModviewControls(toolbarHost);
+    bindModviewToggle(toolbarHost);
   }
+  // Filters live outside the overflow-clipped slide so they stay visible.
+  // Always (re)paint after hub rebuilds; filter changes themselves do NOT
+  // call renderModerators — they only update adminState + the map.
+  paintActivitiesExtraFilters();
 
   if (adminState.modLoading) {
     body.innerHTML = `
@@ -8927,6 +9251,11 @@ function renderModerators() {
     return;
   }
   if (!adminState.moderators) {
+    if (typeof isGeoDemoMode === 'function' && isGeoDemoMode() && typeof applyGeoDemoMode === 'function') {
+      applyGeoDemoMode();
+    }
+  }
+  if (!adminState.moderators) {
     loadModerators();
     body.innerHTML = `
       <div class="admin-state">
@@ -8944,7 +9273,7 @@ function renderModerators() {
     <div class="modview-toolbar">${toolbarHtml}</div>
     <div id="modviewBody"></div>
   `;
-  if (!toolbarHost) bindModviewControls(body);
+  if (!toolbarHost) bindModviewToggle(body);
 
   if (view !== 'activities' && typeof destroyActivitiesMap === 'function') {
     destroyActivitiesMap();
@@ -8953,6 +9282,8 @@ function renderModerators() {
   else if (view === 'team')        renderModTeamView();
   else if (view === 'assignment')  renderModAssignmentView();
   else if (view === 'activities')  renderModActivitiesView();
+  // Hub rebuild can recreate #modviewExtraFilters; re-assert filters last.
+  paintActivitiesExtraFilters();
 }
 
 function renderModAvailabilityView() {
@@ -8962,24 +9293,1470 @@ function renderModAvailabilityView() {
   if (typeof renderAvailabilityHub === 'function') renderAvailabilityHub();
 }
 
+function listActivitiesTeams() {
+  return [...(adminState.teams || [])]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function normalizeActivitiesFilterState() {
+  if (adminState.activitiesTeamId == null) adminState.activitiesTeamId = '';
+  if (adminState.activitiesModeratorId == null) adminState.activitiesModeratorId = '';
+  const activityTeams = listActivitiesTeams();
+  if (adminState.activitiesTeamId && !activityTeams.some(t => String(t.id) === String(adminState.activitiesTeamId))) {
+    // Keep demo team selections across brief roster rebuilds.
+    if (!(isGeoDemoMode() && String(adminState.activitiesTeamId).startsWith('demo-team-'))) {
+      adminState.activitiesTeamId = '';
+    }
+  }
+  const activityMods = listActivitiesModeratorOptions();
+  if (adminState.activitiesModeratorId && !activityMods.some(m => String(m.id).toLowerCase() === String(adminState.activitiesModeratorId).toLowerCase())) {
+    if (!(isGeoDemoMode() && String(adminState.activitiesModeratorId).toLowerCase().startsWith('demo-'))) {
+      adminState.activitiesModeratorId = '';
+    }
+  }
+}
+
+function paintActivitiesExtraFilters() {
+  const extraFilters = document.getElementById('modviewExtraFilters');
+  if (!extraFilters) return;
+  const view = adminState.modView || 'list';
+  const onHub = adminState.tab === 'moderators' && adminState.subtab === 'moderators';
+  const show = onHub && view === 'activities';
+  if (!show) {
+    extraFilters.hidden = true;
+    if (extraFilters.innerHTML) extraFilters.innerHTML = '';
+    return;
+  }
+  normalizeActivitiesFilterState();
+  const activityTeams = listActivitiesTeams();
+  const activityMods = listActivitiesModeratorOptions();
+  const teamId = String(adminState.activitiesTeamId || '');
+  const modId = String(adminState.activitiesModeratorId || '');
+  const signature = [
+    'v1',
+    activityTeams.map(t => String(t.id) + ':' + (t.name || '')).join('|'),
+    activityMods.map(m => String(m.id) + ':' + (m.name || '')).join('|'),
+  ].join('::');
+
+  // Rebuild markup only when the option lists change. Filter *selection*
+  // updates sync values in place so the controls never flash away.
+  if (extraFilters.dataset.filterSig !== signature || !document.getElementById('activitiesTeamSelect')) {
+    extraFilters.innerHTML = `
+      <div class="activities-map-filters">
+        <label class="activities-team-filter" for="activitiesTeamSelect">
+          <span class="activities-team-filter-label">Team</span>
+          <select class="activities-team-select" id="activitiesTeamSelect">
+            <option value="">All teams</option>
+            ${activityTeams.map(t => `<option value="${escapeHTML(String(t.id))}">${escapeHTML(t.name || 'Unnamed team')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="activities-team-filter" for="activitiesModeratorSelect">
+          <span class="activities-team-filter-label">Moderator</span>
+          <select class="activities-team-select" id="activitiesModeratorSelect">
+            <option value="">All moderators</option>
+            ${activityMods.map(m => `<option value="${escapeHTML(m.id)}">${escapeHTML(m.name)}</option>`).join('')}
+          </select>
+        </label>
+        ${isGeoDemoMode() ? `<button type="button" class="btn btn-ghost activities-demo-ping-btn" id="activitiesDemoPingBtn" title="Write a local demo ping for Blake">Simulate Blake ping</button>` : ''}
+      </div>`;
+    extraFilters.dataset.filterSig = signature;
+    const teamSel = document.getElementById('activitiesTeamSelect');
+    const modSel = document.getElementById('activitiesModeratorSelect');
+    if (teamSel) {
+      teamSel.addEventListener('change', e => {
+        adminState.activitiesTeamId = e.target.value || '';
+        adminState.activitiesModeratorId = '';
+        // Keep the filter row mounted — only sync the sibling select.
+        const other = document.getElementById('activitiesModeratorSelect');
+        if (other) other.value = '';
+        refreshActivitiesMapFocus();
+      });
+    }
+    if (modSel) {
+      modSel.addEventListener('change', e => {
+        adminState.activitiesModeratorId = e.target.value || '';
+        adminState.activitiesTeamId = '';
+        const other = document.getElementById('activitiesTeamSelect');
+        if (other) other.value = '';
+        refreshActivitiesMapFocus();
+      });
+    }
+    const demoBtn = document.getElementById('activitiesDemoPingBtn');
+    if (demoBtn) {
+      demoBtn.addEventListener('click', () => {
+        if (typeof simulateGeoDemoPing === 'function') simulateGeoDemoPing('demo-blake');
+      });
+    }
+  }
+
+  extraFilters.hidden = false;
+  const teamSel = document.getElementById('activitiesTeamSelect');
+  const modSel = document.getElementById('activitiesModeratorSelect');
+  if (teamSel && teamSel.value !== teamId) teamSel.value = teamId;
+  if (modSel) {
+    const match = activityMods.find(m => String(m.id).toLowerCase() === modId.toLowerCase());
+    const next = match ? match.id : '';
+    if (modSel.value !== next) modSel.value = next;
+  }
+}
+
 function getSelectedActivitiesTeam() {
   const id = adminState.activitiesTeamId;
   if (!id) return null;
   return (adminState.teams || []).find(t => String(t.id) === String(id)) || null;
 }
 
-function updateActivitiesTeamContext() {
-  const target = document.getElementById('activitiesTeamContext');
-  if (!target) return;
+function listActivitiesModeratorOptions() {
+  const rows = adminState.moderators || [];
+  const seen = new Set();
+  const out = [];
+  rows.forEach(m => {
+    const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+    const key = String(id || '').trim();
+    if (!key) return;
+    const lower = key.toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    const name = (typeof getModeratorDisplayName === 'function')
+      ? getModeratorDisplayName(key)
+      : ([pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name'),
+          pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name')].filter(Boolean).join(' ').trim() || key);
+    out.push({ id: key, name });
+  });
+  out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
+function getSelectedActivitiesModeratorId() {
+  return String(adminState.activitiesModeratorId || '').trim();
+}
+
+function activitiesViewTitle() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) {
+    const name = (typeof getModeratorDisplayName === 'function') ? getModeratorDisplayName(modId) : modId;
+    return name || modId;
+  }
   const team = getSelectedActivitiesTeam();
-  target.textContent = team ? `Live map · ${team.name}` : 'Live map · All teams';
+  if (team) return team.name || 'Unnamed team';
+  return 'All teams';
+}
+
+function activitiesViewEyebrow() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) return 'Live map · Moderator';
+  const team = getSelectedActivitiesTeam();
+  if (team) return 'Live map · Team';
+  return 'Live map · All teams';
+}
+
+function activitiesViewAddrLine() {
+  const modId = getSelectedActivitiesModeratorId();
+  if (modId) {
+    const ping = (loadGeoPings() || {})[modId.toLowerCase()];
+    if (ping && Number.isFinite(ping.lat) && Number.isFinite(ping.lng)) {
+      const when = ping.at ? new Date(ping.at) : null;
+      const whenLabel = (when && !isNaN(when.getTime()))
+        ? when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : '';
+      return whenLabel ? ('Last location · ' + whenLabel) : 'Last known location';
+    }
+    return 'No location reported yet';
+  }
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) return teamAddr;
+  return GEO_HQ_ADDRESS;
+}
+
+function updateActivitiesMapCaption() {
+  const title = document.getElementById('activities-map-title') || document.querySelector('.activities-map-title');
+  if (title) title.textContent = activitiesViewTitle();
+  const eyebrow = document.getElementById('activitiesTeamContext');
+  if (eyebrow) eyebrow.textContent = activitiesViewEyebrow();
+  const addr = document.querySelector('.activities-map-addr');
+  if (addr) addr.textContent = activitiesViewAddrLine();
+}
+
+function updateActivitiesTeamContext() {
+  updateActivitiesMapCaption();
+}
+
+function refreshActivitiesMapFocus() {
+  const teamSel = document.getElementById('activitiesTeamSelect');
+  const modSel = document.getElementById('activitiesModeratorSelect');
+  if (teamSel) teamSel.value = adminState.activitiesTeamId || '';
+  if (modSel) modSel.value = adminState.activitiesModeratorId || '';
+  updateActivitiesMapCaption();
+  _activitiesFocusKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+  prefetchActivityHomeGeocodes();
+}
+
+/* =====================================================================
+   GEO FENCE · full day flow for every moderator role
+   State machine:
+     office_checkin → en_route → arrived at assignment → stations complete
+     → office_checkout
+   Primary, backup, and any other non-admin LoginRole. Foreground GPS only.
+   Activities map draws HQ fence + assignment fence + role pins.
+   ===================================================================== */
+const GEOFENCE_HOME_RADIUS_M = 200;   // participant / assignment (~150–200 m)
+const GEOFENCE_HQ_RADIUS_M = 150;     // Redmond office · indoor GPS tolerance
+const GEO_HQ_CENTER = { lng: -122.1370, lat: 47.6446 };
+const GEO_HQ_ADDRESS = '14980 NE 31st St Ste 100, Redmond, WA 98052';
+const GEOCODE_CACHE_KEY = 'centific_orbit_geocode_v1';
+const GEO_PINGS_KEY = 'centific_orbit_geo_pings_v1';
+const GEO_PING_STALE_MS = 15 * 60 * 1000;
+const GEO_FLOW_TICK_MS = 45000;
+const GEO_SESSIONSTATE_SYNC_MS = 15 * 60 * 1000;
+const GEO_MOCK_LS_KEY = 'centific_orbit_mock_geo_v1';
+const GEO_BC_NAME = 'centific_orbit_geo_pings_bc_v1';
+const GEO_DEMO_FLAG_KEY = 'centific_orbit_geo_demo_v1';
+let _geoPingTimer = null;
+let _geoSessionStateTimer = null;
+let _geoFlowBusy = false;
+let _geoPermissionDenied = false;
+let _geoLastToastKey = '';
+let _geoLastToastAt = 0;
+let _lastGeoSyncAt = 0;
+let _activitiesFocusKey = '';
+let _geoPingBc = null;
+let _geoPingListenersReady = false;
+let _activitiesLocalPingPoll = null;
+let _activitiesCloudPingPoll = null;
+let _activitiesCloudPingInflight = false;
+let _sessionStateReadRetryAt = 0;
+let _sessionStateReadWarned = false;
+
+const GEO_DEMO_MODS = [
+  { orbitLoginId: 'demo-annie', firstName: 'Annie', lastName: 'Demo', LoginRole: 'Primary' },
+  { orbitLoginId: 'demo-blake', firstName: 'Blake', lastName: 'Demo', LoginRole: 'Backup' },
+  { orbitLoginId: 'demo-casey', firstName: 'Casey', lastName: 'Demo', LoginRole: 'Moderator' },
+];
+const GEO_DEMO_TEAMS = [
+  { id: 'demo-team-01', name: 'Team 01', primaryIds: ['demo-annie'], backupIds: ['demo-blake'] },
+  { id: 'demo-team-02', name: 'Team 02', primaryIds: ['demo-casey'], backupIds: [] },
+];
+
+function isGeoDemoMode() {
+  try {
+    const q = new URLSearchParams((location && location.search) || '');
+    if (q.get('geoDemo') === '1' || q.get('geoDemo') === 'true') return true;
+  } catch (_) {}
+  try {
+    if (localStorage.getItem(GEO_DEMO_FLAG_KEY) === '1') return true;
+  } catch (_) {}
+  return false;
+}
+
+function mergeGeoDemoRoster() {
+  if (!isGeoDemoMode()) return;
+  if (!Array.isArray(adminState.moderators)) adminState.moderators = [];
+  const seen = new Set(adminState.moderators.map(m =>
+    String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase()
+  ).filter(Boolean));
+  GEO_DEMO_MODS.forEach(m => {
+    const id = String(m.orbitLoginId).toLowerCase();
+    if (seen.has(id)) return;
+    adminState.moderators.push(Object.assign({}, m));
+    seen.add(id);
+  });
+  if (!Array.isArray(adminState.teams)) adminState.teams = [];
+  GEO_DEMO_TEAMS.forEach(dt => {
+    if (adminState.teams.some(t => String(t.id) === String(dt.id))) return;
+    adminState.teams.push(Object.assign({}, dt, {
+      primaryIds: [...(dt.primaryIds || [])],
+      backupIds: [...(dt.backupIds || [])],
+    }));
+  });
+  adminState._asgnLoaded = true;
+  // Persist demo teams into the assignment cache so a later loadAssignmentData()
+  // (or TeamLog empty wipe of localStorage) does not erase them mid-session.
+  try {
+    const raw = localStorage.getItem(ASGN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : { teams: [], assignments: [] };
+    const teams = Array.isArray(parsed.teams) ? parsed.teams.slice() : [];
+    GEO_DEMO_TEAMS.forEach(dt => {
+      if (teams.some(t => String(t.id) === String(dt.id))) return;
+      teams.push(Object.assign({}, dt, {
+        primaryIds: [...(dt.primaryIds || [])],
+        backupIds: [...(dt.backupIds || [])],
+      }));
+    });
+    localStorage.setItem(ASGN_STORAGE_KEY, JSON.stringify({
+      ...parsed,
+      teams,
+      assignments: Array.isArray(parsed.assignments) ? parsed.assignments : (adminState.assignments || []),
+    }));
+  } catch (_) {}
+}
+
+function seedGeoDemoPings(force) {
+  if (!isGeoDemoMode()) return;
+  const map = loadGeoPings();
+  const now = Date.now();
+  const seeds = [
+    { orbitLoginId: 'demo-annie', name: 'Annie Demo', role: 'primary', lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng, accuracy: 12 },
+    { orbitLoginId: 'demo-blake', name: 'Blake Demo', role: 'backup', lat: 47.6502, lng: -122.1288, accuracy: 18 },
+    { orbitLoginId: 'demo-casey', name: 'Casey Demo', role: 'moderator', lat: 47.6388, lng: -122.1455, accuracy: 20 },
+  ];
+  let changed = false;
+  seeds.forEach(s => {
+    const id = s.orbitLoginId.toLowerCase();
+    if (!force && map[id] && Number.isFinite(map[id].lat)) return;
+    map[id] = Object.assign({}, map[id] || {}, s, { at: now, demo: true });
+    changed = true;
+  });
+  if (changed) saveGeoPings(map);
+}
+
+function simulateGeoDemoPing(orbitLoginId) {
+  const id = String(orbitLoginId || 'demo-blake').toLowerCase();
+  const nameMap = { 'demo-annie': 'Annie Demo', 'demo-blake': 'Blake Demo', 'demo-casey': 'Casey Demo' };
+  const roleMap = { 'demo-annie': 'primary', 'demo-blake': 'backup', 'demo-casey': 'moderator' };
+  // Nudge slightly east of HQ so the map move is obvious.
+  const jitter = (Math.random() - 0.5) * 0.006;
+  recordGeoPing({
+    orbitLoginId: id,
+    name: nameMap[id] || id,
+    role: roleMap[id] || 'moderator',
+    lat: GEO_HQ_CENTER.lat + 0.004 + jitter,
+    lng: GEO_HQ_CENTER.lng + 0.008 + jitter,
+    accuracy: 15,
+    demo: true,
+    at: Date.now(),
+  }, { skipSync: true });
+  if (adminState) {
+    adminState.activitiesModeratorId = id;
+    adminState.activitiesTeamId = '';
+  }
+  paintActivitiesExtraFilters();
+  refreshActivitiesMapFocus();
+  if (typeof showToast === 'function') showToast('Demo ping saved for ' + (nameMap[id] || id), 'success', 2500);
+}
+
+function applyGeoDemoMode() {
+  if (!isGeoDemoMode()) return;
+  try { localStorage.setItem(GEO_DEMO_FLAG_KEY, '1'); } catch (_) {}
+  mergeGeoDemoRoster();
+  seedGeoDemoPings(false);
+  ensureGeoPingBroadcast();
+  console.info('[Twilight] Geo demo mode on · seeded Team 01 / Team 02 and Annie / Blake / Casey pins. Cloud SessionState read is not required.');
+  try {
+    window.orbitSimulateGeoPing = simulateGeoDemoPing;
+  } catch (_) {}
+}
+
+function ensureGeoPingBroadcast() {
+  if (_geoPingListenersReady) return;
+  _geoPingListenersReady = true;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      _geoPingBc = new BroadcastChannel(GEO_BC_NAME);
+      _geoPingBc.onmessage = (ev) => {
+        if (!ev || !ev.data || ev.data.type !== 'geo-pings') return;
+        onRemoteGeoPingsUpdated(ev.data.map);
+      };
+    }
+  } catch (_) { _geoPingBc = null; }
+  window.addEventListener('storage', (e) => {
+    if (!e || e.key !== GEO_PINGS_KEY) return;
+    try {
+      const map = e.newValue ? JSON.parse(e.newValue) : {};
+      onRemoteGeoPingsUpdated(map && typeof map === 'object' ? map : {});
+    } catch (_) {}
+  });
+}
+
+function broadcastGeoPings(map) {
+  try {
+    if (_geoPingBc) _geoPingBc.postMessage({ type: 'geo-pings', map: map || loadGeoPings(), at: Date.now() });
+  } catch (_) {}
+}
+
+function onRemoteGeoPingsUpdated(incoming) {
+  if (!incoming || typeof incoming !== 'object') return;
+  // Merge newer remote pins into localStorage without re-broadcast loops.
+  const local = loadGeoPings();
+  let changed = false;
+  Object.keys(incoming).forEach(idRaw => {
+    const id = String(idRaw).toLowerCase();
+    const ping = incoming[idRaw];
+    if (!ping || !Number.isFinite(Number(ping.lat)) || !Number.isFinite(Number(ping.lng))) return;
+    const prev = local[id];
+    if (prev && prev.at && ping.at && prev.at >= ping.at) return;
+    local[id] = Object.assign({}, prev || {}, ping, { orbitLoginId: id });
+    changed = true;
+  });
+  if (changed) {
+    try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(local)); } catch (_) {}
+  }
+  if (_activitiesMap && adminState && adminState.modView === 'activities') {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    try { updateActivitiesMapCaption(); } catch (_) {}
+  }
+}
+
+function startActivitiesLocalPingPoll() {
+  if (_activitiesLocalPingPoll) return;
+  ensureGeoPingBroadcast();
+  _activitiesLocalPingPoll = setInterval(() => {
+    if (!_activitiesMap || !adminState || adminState.modView !== 'activities') return;
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }, 5000);
+  // Cloud locations are written every 15 minutes. Poll once a minute so
+  // Admin sees a newly-written SessionState row shortly after it lands.
+  if (!_activitiesCloudPingPoll) {
+    _activitiesCloudPingPoll = setInterval(() => {
+      if (!_activitiesMap || !adminState || adminState.modView !== 'activities') return;
+      refreshActivitiesCloudPings();
+    }, 60 * 1000);
+  }
+}
+
+function stopActivitiesLocalPingPoll() {
+  if (_activitiesLocalPingPoll) {
+    clearInterval(_activitiesLocalPingPoll);
+    _activitiesLocalPingPoll = null;
+  }
+  if (_activitiesCloudPingPoll) {
+    clearInterval(_activitiesCloudPingPoll);
+    _activitiesCloudPingPoll = null;
+  }
+}
+
+async function refreshActivitiesCloudPings() {
+  if (_activitiesCloudPingInflight || typeof fetchSessionStateRows !== 'function') return;
+  _activitiesCloudPingInflight = true;
+  try {
+    const rows = await fetchSessionStateRows();
+    if (rows == null) return;
+    if (_activitiesMap) {
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    }
+    updateActivitiesMapCaption();
+  } catch (_) {
+    // fetchSessionStateRows logs the actionable failure.
+  } finally {
+    _activitiesCloudPingInflight = false;
+  }
+}
+
+function isGeofencePreviewHost() {
+  const h = (location && location.hostname) || '';
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+function haversineMeters(aLat, aLng, bLat, bLng) {
+  const toRad = d => d * Math.PI / 180;
+  const R = 6371000;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function geofenceCirclePolygon(lng, lat, radiusM, steps) {
+  steps = steps || 64;
+  const coords = [];
+  const latRad = lat * Math.PI / 180;
+  const mPerDegLat = 110540;
+  const mPerDegLng = Math.max(1e-6, 111320 * Math.cos(latRad));
+  for (let i = 0; i <= steps; i++) {
+    const ang = (i / steps) * 2 * Math.PI;
+    coords.push([
+      lng + (radiusM * Math.sin(ang)) / mPerDegLng,
+      lat + (radiusM * Math.cos(ang)) / mPerDegLat,
+    ]);
+  }
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} };
+}
+
+function assignmentFenceAddress(asgn) {
+  if (!asgn || !asgn.participantData) return '';
+  const pd = asgn.participantData;
+  return [pd.address, pd.state, pd.zipCode].filter(Boolean).join(', ').trim();
+}
+
+function loadGeocodeCache() {
+  try {
+    const raw = localStorage.getItem(GEOCODE_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) { return {}; }
+}
+function saveGeocodeCache(cache) {
+  try { localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache)); } catch (_) {}
+}
+
+async function geocodeAddress(address) {
+  const q = String(address || '').trim();
+  if (!q) return null;
+  const cache = loadGeocodeCache();
+  const key = q.toLowerCase();
+  if (cache[key] && Number.isFinite(cache[key].lat) && Number.isFinite(cache[key].lng)) {
+    return cache[key];
+  }
+  const tryFetch = async (url) => {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('geocode ' + res.status);
+    return res.json();
+  };
+  let lat = null, lng = null;
+  try {
+    const photon = await tryFetch('https://photon.komoot.io/api/?limit=1&q=' + encodeURIComponent(q));
+    const feat = photon && photon.features && photon.features[0];
+    const c = feat && feat.geometry && feat.geometry.coordinates;
+    if (c && c.length >= 2) { lng = Number(c[0]); lat = Number(c[1]); }
+  } catch (_) { /* try nominatim */ }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    try {
+      const nom = await tryFetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+      if (Array.isArray(nom) && nom[0]) {
+        lat = Number(nom[0].lat);
+        lng = Number(nom[0].lon);
+      }
+    } catch (_) { /* leave null */ }
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const hit = { lat, lng, at: Date.now() };
+  cache[key] = hit;
+  saveGeocodeCache(cache);
+  return hit;
+}
+
+function getOperatorFenceRole() {
+  const myId = String((state.modProfile && state.modProfile.orbitLoginId) || state.username || '').toLowerCase();
+  if (!myId) return 'moderator';
+  const asgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment()
+    : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+  const team = (typeof teamForAssignment === 'function')
+    ? teamForAssignment(asgn)
+    : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
+  if (team) {
+    if ((team.primaryIds || []).some(id => String(id).toLowerCase() === myId)) return 'primary';
+    const backups = (typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : (team.backupIds || []);
+    if ((backups || []).some(id => String(id).toLowerCase() === myId)) return 'backup';
+  }
+  const loginRole = directoryLoginRole(state.modProfile || {});
+  if (loginRole && !directoryRoleIsAdmin(state.modProfile)) {
+    const v = loginRole.toLowerCase();
+    if (v === 'backup') return 'backup';
+    if (v === 'primary' || v === 'mod' || v === 'moderator') return v === 'primary' ? 'primary' : 'moderator';
+  }
+  return 'moderator';
+}
+
+function fenceRoleLabel(role) {
+  if (role === 'primary') return 'Primary';
+  if (role === 'backup') return 'Backup';
+  return 'Moderator';
+}
+
+function loadGeoPings() {
+  try {
+    const raw = localStorage.getItem(GEO_PINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) { return {}; }
+}
+function saveGeoPings(map) {
+  try { localStorage.setItem(GEO_PINGS_KEY, JSON.stringify(map)); } catch (_) {}
+  ensureGeoPingBroadcast();
+  broadcastGeoPings(map);
+}
+function recordGeoPing(ping, opts) {
+  opts = opts || {};
+  const id = String(ping.orbitLoginId || '').toLowerCase();
+  if (!id) return;
+  const map = loadGeoPings();
+  const next = Object.assign({}, map[id] || {}, ping, { at: ping.at || Date.now() });
+  map[id] = next;
+  saveGeoPings(map);
+  if (opts.fromCloud) return;
+  if (!state || !state.modProfile) return;
+  if (String(state.modProfile.orbitLoginId || '').toLowerCase() !== id) return;
+  state.lastGeo = {
+    lat: next.lat,
+    lng: next.lng,
+    at: next.at,
+    role: next.role,
+    name: next.name,
+    accuracy: next.accuracy,
+    syncReason: next.syncReason || '',
+  };
+  try { saveState(); } catch (_) {}
+  const due = !_lastGeoSyncAt || (Date.now() - _lastGeoSyncAt) >= GEO_SESSIONSTATE_SYNC_MS;
+  if (!opts.skipSync && due && typeof triggerSessionStateSync === 'function') {
+    _lastGeoSyncAt = Date.now();
+    triggerSessionStateSync();
+  }
+}
+
+/* ---- Mock geolocation (localhost / QA) ---- */
+function parseMockGeoQuery() {
+  try {
+    const q = new URLSearchParams((location && location.search) || '');
+    const raw = (q.get('mockGeo') || q.get('geo') || '').trim().toLowerCase();
+    return raw || '';
+  } catch (_) { return ''; }
+}
+
+function resolveMockGeoPreset(preset) {
+  const key = String(preset || '').trim().toLowerCase();
+  if (!key || key === 'off' || key === 'none' || key === 'clear') return null;
+  if (key === 'hq' || key === 'office' || key === 'redmond') {
+    return { lat: GEO_HQ_CENTER.lat, lng: GEO_HQ_CENTER.lng, accuracy: 12, label: 'HQ', preset: 'hq' };
+  }
+  if (key === 'far' || key === 'away' || key === 'seattle') {
+    return { lat: 47.6062, lng: -122.3321, accuracy: 20, label: 'Far (Seattle)', preset: 'far' };
+  }
+  if (key === 'home' || key === 'assignment' || key === 'participant') {
+    // Prefer cached assignment geocode; fall back to a nearby Redmond residential pin.
+    try {
+      const asgn = (typeof getActiveOperatorAssignment === 'function')
+        ? getActiveOperatorAssignment()
+        : (typeof getOperatorAssignment === 'function' ? getOperatorAssignment() : null);
+      const addr = assignmentFenceAddress(asgn);
+      if (addr) {
+        const cache = loadGeocodeCache();
+        const hit = cache[addr.toLowerCase()];
+        if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+          return { lat: hit.lat, lng: hit.lng, accuracy: 15, label: 'Assignment', preset: 'assignment' };
+        }
+      }
+    } catch (_) {}
+    return { lat: 47.6701, lng: -122.1209, accuracy: 15, label: 'Assignment (sample)', preset: 'assignment' };
+  }
+  const parts = key.split(',').map(s => s.trim());
+  if (parts.length === 2) {
+    const lat = Number(parts[0]);
+    const lng = Number(parts[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng, accuracy: 15, label: 'Custom', preset: 'custom' };
+    }
+  }
+  return null;
+}
+
+function getOrbitMockGeo() {
+  if (typeof window !== 'undefined' && window.__orbitMockGeo &&
+      Number.isFinite(window.__orbitMockGeo.lat) && Number.isFinite(window.__orbitMockGeo.lng)) {
+    return Object.assign({ accuracy: 15, label: 'Custom', preset: 'custom' }, window.__orbitMockGeo);
+  }
+  const fromQuery = resolveMockGeoPreset(parseMockGeoQuery());
+  if (fromQuery) return fromQuery;
+  if (!isGeofencePreviewHost()) return null;
+  try {
+    const raw = localStorage.getItem(GEO_MOCK_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) return parsed;
+  } catch (_) {}
+  return null;
+}
+
+function setOrbitMockGeo(presetOrCoords) {
+  if (presetOrCoords == null || presetOrCoords === '' || presetOrCoords === 'off') {
+    try { localStorage.removeItem(GEO_MOCK_LS_KEY); } catch (_) {}
+    try { delete window.__orbitMockGeo; } catch (_) {}
+    ensureGeoQaPanel();
+    if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+    return null;
+  }
+  const resolved = (typeof presetOrCoords === 'object' && presetOrCoords !== null)
+    ? Object.assign({ accuracy: 15, label: 'Custom', preset: 'custom' }, presetOrCoords)
+    : resolveMockGeoPreset(presetOrCoords);
+  if (!resolved) return setOrbitMockGeo(null);
+  try { window.__orbitMockGeo = resolved; } catch (_) {}
+  try { localStorage.setItem(GEO_MOCK_LS_KEY, JSON.stringify(resolved)); } catch (_) {}
+  ensureGeoQaPanel();
+  if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true });
+  return resolved;
+}
+try { window.setOrbitMockGeo = setOrbitMockGeo; } catch (_) {}
+
+function readCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    const mock = getOrbitMockGeo();
+    if (mock) {
+      resolve({
+        lat: mock.lat,
+        lng: mock.lng,
+        accuracy: mock.accuracy != null ? mock.accuracy : 15,
+        mocked: true,
+        mockLabel: mock.label || mock.preset || 'mock',
+      });
+      return;
+    }
+    if (!navigator.geolocation) {
+      reject(Object.assign(new Error('Location is not available on this device.'), { code: 0 }));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        mocked: false,
+      }),
+      err => reject(err),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
+    );
+  });
+}
+
+function formatGeoWorklogNote(kind, result) {
+  const role = fenceRoleLabel((result && result.role) || getOperatorFenceRole());
+  const parts = ['Geo', kind];
+  if (result) {
+    if (result.skipped) parts.push('skipped');
+    else if (result.inside != null) parts.push(result.inside ? 'inside' : 'outside');
+    if (result.meters != null && Number.isFinite(result.meters)) parts.push(result.meters + 'm');
+    if (result.pos && Number.isFinite(result.pos.lat) && Number.isFinite(result.pos.lng)) {
+      parts.push('lat=' + Number(result.pos.lat).toFixed(5));
+      parts.push('lng=' + Number(result.pos.lng).toFixed(5));
+    }
+    if (result.mocked) parts.push('preview');
+  }
+  parts.push(role);
+  return parts.join(' · ');
+}
+
+function geoToastOnce(key, message, cooldownMs) {
+  // Location / check-in copy is admin-only. Operator flow stays silent.
+  return;
+}
+
+function activeOperatorAssignmentForGeo() {
+  let asgn = null;
+  try {
+    if (typeof getActiveOperatorAssignment === 'function') asgn = getActiveOperatorAssignment();
+  } catch (_) {}
+  if (asgn) return asgn;
+  try {
+    if (typeof getOperatorAssignment === 'function') asgn = getOperatorAssignment();
+  } catch (_) {}
+  if (asgn) return asgn;
+  // Last-resort: today's non-cancelled booking that includes this mod.
+  try {
+    const myId = String((state.modProfile && state.modProfile.orbitLoginId) || '').toLowerCase();
+    const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+    const list = (adminState && adminState.assignments) || [];
+    asgn = list.find(a => {
+      if (!a || a.status === 'Cancelled' || a.status === 'Unassigned') return false;
+      if (todayStr && a.date !== todayStr) return false;
+      return (a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === myId);
+    }) || null;
+  } catch (_) {}
+  return asgn || null;
+}
+
+function worklogHasStatus(asgnId, status) {
+  if (!asgnId || !state.modProfile || !state.modProfile.orbitLoginId) return false;
+  const myId = String(state.modProfile.orbitLoginId).toLowerCase();
+  const cache = (typeof loadWorklogCache === 'function') ? loadWorklogCache() : [];
+  return (cache || []).some(r =>
+    r.assignmentId === asgnId &&
+    r.status === status &&
+    String(r.orbitLoginId || '').toLowerCase() === myId
+  );
+}
+
+function hasOfficeCheckin(asgn) {
+  if (state && state.officeCheckedInAt) return true;
+  return !!(asgn && worklogHasStatus(asgn.id, 'office_checkin'));
+}
+
+function hasOfficeCheckout(asgn) {
+  if (state && state.officeCheckedOutAt) return true;
+  return !!(asgn && worklogHasStatus(asgn.id, 'office_checkout'));
+}
+
+function hasAssignmentArrival(asgn) {
+  if (state && state.arrivedAt) return true;
+  return !!(asgn && (
+    worklogHasStatus(asgn.id, 'arrived') ||
+    (typeof statusOrderIdx === 'function' && (() => {
+      const my = (typeof getMyLatestStatusForAssignment === 'function')
+        ? getMyLatestStatusForAssignment(asgn.id) : null;
+      return my && statusOrderIdx(my.status) >= statusOrderIdx('arrived');
+    })())
+  ));
+}
+
+function isSessionCompleteForGeo(asgn) {
+  if (state && state.sessionCompletedAt) return true;
+  if (!asgn) return false;
+  if (asgn.status === 'Completed') return true;
+  const my = (typeof getMyLatestStatusForAssignment === 'function')
+    ? getMyLatestStatusForAssignment(asgn.id) : null;
+  if (my && (my.status === 'session_done' || my.status === 'office_checkout')) return true;
+  if (typeof statusOrderIdx === 'function' && my &&
+      statusOrderIdx(my.status) >= statusOrderIdx('session_done')) return true;
+  return false;
+}
+
+/** Plain-language phase for banners / QA. */
+function getModeratorGeoPhase(asgn) {
+  asgn = asgn || activeOperatorAssignmentForGeo();
+  if (hasOfficeCheckout(asgn)) return 'office_checkout';
+  if (isSessionCompleteForGeo(asgn)) return 'stations_complete';
+  if (hasAssignmentArrival(asgn)) return 'arrived';
+  if (hasOfficeCheckin(asgn)) return 'en_route';
+  return 'need_office_checkin';
+}
+
+function geoPhaseBannerCopy(phase) {
+  switch (phase) {
+    case 'need_office_checkin':
+      return {
+        title: 'Check in at the Redmond office',
+        sub: 'Open the app at the office. When you are inside the office area, the app checks you in automatically.',
+      };
+    case 'en_route':
+      return {
+        title: 'Checked in at the office · on the way',
+        sub: 'Travel to the assigned address. Confirm arrival only when you are there — the app checks your location.',
+      };
+    case 'arrived':
+      return {
+        title: 'Arrived at the assignment',
+        sub: 'Finish every station in the app. Do not check out at the house — come back to the office when you are done.',
+      };
+    case 'stations_complete':
+      return {
+        title: 'Session done · return to the office',
+        sub: 'Head back to the Redmond office. When you are inside the office area, the app checks you out automatically.',
+      };
+    case 'office_checkout':
+      return {
+        title: 'Checked out for the day',
+        sub: 'Office check-out is complete. Thanks — you are done with location steps for this session.',
+      };
+    default:
+      return { title: 'Location steps', sub: '' };
+  }
+}
+
+async function pingModeratorLocation(opts) {
+  opts = opts || {};
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  try {
+    const pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
+    recordGeoPing({
+      orbitLoginId: state.modProfile.orbitLoginId,
+      name: state.modProfile.name || state.username,
+      role: getOperatorFenceRole(),
+      lat: pos.lat,
+      lng: pos.lng,
+      accuracy: pos.accuracy,
+      mocked: !!pos.mocked,
+      syncReason: opts.syncReason || '',
+    }, { skipSync: !!opts.skipSync });
+    if (_activitiesMap) {
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+    }
+    return pos;
+  } catch (err) {
+    if (err && err.code === 1) _geoPermissionDenied = true;
+    return null;
+  }
+}
+
+async function syncModeratorLocationToSessionState(reason) {
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) {
+    return { ok: false, reason: 'notmoderator' };
+  }
+  if (state.isAdmin || isAdminUsername(state.username)) {
+    return { ok: false, reason: 'admin' };
+  }
+  // Capture first so stateJson contains the freshest coordinates. If the
+  // browser cannot provide a new fix, still write the last known location
+  // and any lifecycle state (completion/logout) already stored locally.
+  await pingModeratorLocation({ skipSync: true, syncReason: reason || 'scheduled' });
+  _lastGeoSyncAt = Date.now();
+  if (typeof flushSessionStateSync === 'function') {
+    return flushSessionStateSync({ force: true, geoSyncReason: reason || 'scheduled' });
+  }
+  return { ok: false, reason: 'notconfigured' };
+}
+
+function buildFenceCheckResult(kind, role, pos, dest, radiusM, extra) {
+  const meters = (pos && dest)
+    ? Math.round(haversineMeters(pos.lat, pos.lng, dest.lat, dest.lng))
+    : null;
+  const inside = meters != null ? meters <= radiusM : false;
+  return Object.assign({
+    kind,
+    role,
+    pos,
+    dest,
+    meters,
+    inside,
+    radiusM,
+    mocked: !!(pos && pos.mocked),
+    ok: inside,
+    reason: inside ? 'inside' : 'outside',
+  }, extra || {});
+}
+
+// Office fence for the logged-in moderator: team address when set,
+// otherwise Redmond HQ. Geocodes + caches team addresses via geocodeAddress.
+async function resolveOperatorOfficeFence() {
+  let team = null;
+  try {
+    const asgn = (typeof getActiveOperatorAssignment === 'function')
+      ? getActiveOperatorAssignment()
+      : ((typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  } catch (_) { team = null; }
+  const addr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (addr) {
+    try {
+      const dest = await geocodeAddress(addr);
+      if (dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng)) {
+        return {
+          lat: dest.lat,
+          lng: dest.lng,
+          address: addr,
+          source: 'team',
+          radiusM: GEOFENCE_HQ_RADIUS_M,
+        };
+      }
+    } catch (_) { /* fall through to HQ */ }
+  }
+  return {
+    lat: GEO_HQ_CENTER.lat,
+    lng: GEO_HQ_CENTER.lng,
+    address: GEO_HQ_ADDRESS,
+    source: 'hq',
+    radiusM: GEOFENCE_HQ_RADIUS_M,
+  };
+}
+
+async function checkHqGeofence() {
+  const role = getOperatorFenceRole();
+  let pos;
+  try {
+    pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
+  } catch (err) {
+    const denied = err && (err.code === 1);
+    if (denied) _geoPermissionDenied = true;
+    return {
+      ok: false,
+      role,
+      reason: denied ? 'denied' : 'unavailable',
+      error: err,
+      kind: 'hq',
+    };
+  }
+  const fence = await resolveOperatorOfficeFence();
+  const dest = { lat: fence.lat, lng: fence.lng };
+  const result = buildFenceCheckResult('hq', role, pos, dest, fence.radiusM || GEOFENCE_HQ_RADIUS_M, {
+    address: fence.address,
+    officeSource: fence.source,
+  });
+  recordGeoPing({
+    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
+    name: (state.modProfile && state.modProfile.name) || state.username,
+    role,
+    lat: pos.lat,
+    lng: pos.lng,
+    accuracy: pos.accuracy,
+    inside: result.inside,
+    meters: result.meters,
+    fence: fence.source === 'team' ? 'team_office' : 'hq',
+    mocked: !!pos.mocked,
+  });
+  return result;
+}
+
+async function checkParticipantGeofence(asgn) {
+  const role = getOperatorFenceRole();
+  const address = assignmentFenceAddress(asgn);
+  if (!address) {
+    return { ok: true, skipped: true, role, reason: 'no-address', kind: 'home', inside: true };
+  }
+  let pos;
+  try {
+    pos = await readCurrentPosition();
+    _geoPermissionDenied = false;
+  } catch (err) {
+    const denied = err && (err.code === 1);
+    if (denied) _geoPermissionDenied = true;
+    return {
+      ok: false,
+      role,
+      reason: denied ? 'denied' : 'unavailable',
+      error: err,
+      kind: 'home',
+    };
+  }
+  const dest = await geocodeAddress(address);
+  if (!dest) {
+    return { ok: false, role, reason: 'geocode', pos, kind: 'home', address };
+  }
+  const result = buildFenceCheckResult('home', role, pos, dest, GEOFENCE_HOME_RADIUS_M, { address });
+  recordGeoPing({
+    orbitLoginId: state.modProfile && state.modProfile.orbitLoginId,
+    name: (state.modProfile && state.modProfile.name) || state.username,
+    role,
+    lat: pos.lat,
+    lng: pos.lng,
+    accuracy: pos.accuracy,
+    assignmentId: asgn && asgn.id,
+    inside: result.inside,
+    meters: result.meters,
+    fence: 'home',
+    mocked: !!pos.mocked,
+  });
+  return result;
+}
+
+function applyOfficeCheckin(asgn, result) {
+  const note = formatGeoWorklogNote('office_checkin', result);
+  state.officeCheckedInAt = new Date().toISOString();
+  if (!state.officeCheckinGeo) state.officeCheckinGeo = {};
+  state.officeCheckinGeo = {
+    at: state.officeCheckedInAt,
+    lat: result && result.pos && result.pos.lat,
+    lng: result && result.pos && result.pos.lng,
+    meters: result && result.meters,
+    inside: !!(result && result.inside),
+    role: (result && result.role) || getOperatorFenceRole(),
+  };
+  saveState();
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'office_checkin', { notes: note });
+  }
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  geoToastOnce('office_checkin', 'Checked in at the office');
+  refreshGeoFlowUi();
+}
+
+function applyOfficeCheckout(asgn, result) {
+  const note = formatGeoWorklogNote('office_checkout', result);
+  state.officeCheckedOutAt = new Date().toISOString();
+  state.officeCheckoutGeo = {
+    at: state.officeCheckedOutAt,
+    lat: result && result.pos && result.pos.lat,
+    lng: result && result.pos && result.pos.lng,
+    meters: result && result.meters,
+    inside: !!(result && result.inside),
+    role: (result && result.role) || getOperatorFenceRole(),
+  };
+  saveState();
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'office_checkout', { notes: note });
+  }
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  geoToastOnce('office_checkout', 'Checked out at the office');
+  refreshGeoFlowUi();
+}
+
+function applyOperatorArrival(asgn, geoNote, result) {
+  const note = geoNote || formatGeoWorklogNote('arrival', result || { role: getOperatorFenceRole(), inside: true });
+  if (asgn && typeof pushWorklogStatus === 'function') {
+    pushWorklogStatus(asgn, 'arrived', { notes: note });
+  }
+  state.arrivedAt = new Date().toISOString();
+  if (result && result.pos) {
+    state.arrivalGeo = {
+      at: state.arrivedAt,
+      lat: result.pos.lat,
+      lng: result.pos.lng,
+      meters: result.meters,
+      inside: result.inside != null ? !!result.inside : true,
+      role: result.role || getOperatorFenceRole(),
+    };
+  }
+  state.remindersShown = [];
+  saveState();
+  if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  if (typeof schedulePerHourReminder === 'function') schedulePerHourReminder();
+  refreshGeoFlowUi();
+}
+
+function refreshGeoFlowUi() {
+  ensureGeoStatusBanner();
+  ensureGeoQaPanel();
+  try {
+    if (typeof renderMySessionSection === 'function') renderMySessionSection();
+  } catch (_) {}
+  try {
+    if (currentStationKey === null && typeof renderWelcome === 'function') renderWelcome();
+    else if (typeof renderApp === 'function') renderApp();
+    else if (typeof render === 'function') render();
+  } catch (_) {}
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+}
+
+function closeGeoFenceModal() {
+  const el = document.getElementById('geoFenceOverlay');
+  if (el) el.remove();
+}
+
+function showGeoFenceModal(opts) {
+  // Operator screens stay silent; location / fence copy is admin-only.
+  closeGeoFenceModal();
+}
+
+function showArrivalFenceFailure(result, asgn, retryFn) {
+  const role = (result && result.role) || getOperatorFenceRole();
+  const retry = retryFn || (() => confirmOperatorArrival());
+  const previewArrive = () => {
+    applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', {
+      role, inside: true, meters: 0, mocked: true, skipped: false,
+      pos: result && result.pos,
+    }), Object.assign({}, result, { inside: true, meters: 0, mocked: true }));
+    geoToastOnce('arrival_preview', 'Arrival confirmed (preview)');
+  };
+  if (result.reason === 'denied') {
+    showGeoFenceModal({
+      role,
+      title: 'Turn on location',
+      body: 'Location is required for every moderator role — office check-in, arrival, and office check-out. Allow location access, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  if (result.reason === 'unavailable') {
+    showGeoFenceModal({
+      role,
+      title: 'Location not available',
+      body: 'The app could not read your position. Move to an open area, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  if (result.reason === 'geocode') {
+    showGeoFenceModal({
+      role,
+      title: 'Could not find the address',
+      body: 'The participant address could not be placed on the map. Check the booking address, then try again.',
+      retry: true,
+      onRetry: retry,
+      preview: isGeofencePreviewHost(),
+      onPreview: previewArrive,
+    });
+    return;
+  }
+  const meters = result.meters != null ? result.meters : '·';
+  showGeoFenceModal({
+    role,
+    title: 'You are not at the location yet',
+    body: `You are about ${meters} meters away. Arrival only works inside a ${GEOFENCE_HOME_RADIUS_M} meter circle around the participant home (primary, backup, and every other moderator role).`,
+    retry: true,
+    onRetry: retry,
+    preview: isGeofencePreviewHost(),
+    onPreview: previewArrive,
+    dismissLabel: 'Keep traveling',
+  });
+}
+
+async function confirmOperatorArrival() {
+  const asgn = activeOperatorAssignmentForGeo();
+  const result = await checkParticipantGeofence(asgn);
+  if (result.ok) {
+    applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', result), result);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Foreground auto state machine. Safe to call often; gated by _geoFlowBusy.
+ * Does NOT check out at the participant house — checkout only at HQ after
+ * the session is complete.
+ */
+async function tickModeratorGeoFlow(opts) {
+  opts = opts || {};
+  if (_geoFlowBusy && !opts.force) return;
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+  _geoFlowBusy = true;
+  try {
+    const asgn = activeOperatorAssignmentForGeo();
+    const phase = getModeratorGeoPhase(asgn);
+
+    // 1) Office check-in
+    if (!hasOfficeCheckin(asgn)) {
+      const hq = await checkHqGeofence();
+      if (hq.reason === 'denied') {
+        return;
+      }
+      if (hq.ok) {
+        applyOfficeCheckin(asgn, hq);
+      }
+      return;
+    }
+
+    // 2) Auto-confirm arrival when already inside the assignment fence
+    if (asgn && !hasAssignmentArrival(asgn) && !isSessionCompleteForGeo(asgn)) {
+      const home = await checkParticipantGeofence(asgn);
+      if (home.ok && !home.skipped) {
+        applyOperatorArrival(asgn, formatGeoWorklogNote('arrival', home), home);
+      }
+      return;
+    }
+
+    // 3) Stations complete → only check out at HQ (never at the house)
+    if (isSessionCompleteForGeo(asgn) && !hasOfficeCheckout(asgn)) {
+      const hq = await checkHqGeofence();
+      if (hq.ok) {
+        applyOfficeCheckout(asgn, hq);
+      }
+      return;
+    }
+
+    // Keep map pins fresh even when no transition fires
+    await pingModeratorLocation();
+  } catch (err) {
+    console.warn('[Twilight] geo flow tick failed', err);
+  } finally {
+    _geoFlowBusy = false;
+  }
+}
+
+function startModeratorGeofence() {
+  if (state.isAdmin || isAdminUsername(state.username)) return;
+  hideModeratorGeoUi();
+  if (typeof syncModeratorRingLinks === 'function') syncModeratorRingLinks();
+  // App-open upload: location is captured and written to SessionState
+  // immediately, even when this moderator has no assignment today.
+  _lastGeoSyncAt = Date.now();
+  syncModeratorLocationToSessionState('app_open');
+  tickModeratorGeoFlow({ force: true });
+  if (_geoPingTimer) return;
+  _geoPingTimer = setInterval(() => {
+    tickModeratorGeoFlow();
+  }, GEO_FLOW_TICK_MS);
+  if (!_geoSessionStateTimer) {
+    _geoSessionStateTimer = setInterval(() => {
+      syncModeratorLocationToSessionState('15_minute_interval');
+    }, GEO_SESSIONSTATE_SYNC_MS);
+  }
+  document.addEventListener('visibilitychange', onGeoVisibilityChange);
+}
+
+function onGeoVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    tickModeratorGeoFlow({ force: true });
+    if (!_lastGeoSyncAt || Date.now() - _lastGeoSyncAt >= GEO_SESSIONSTATE_SYNC_MS) {
+      syncModeratorLocationToSessionState('app_resume');
+    }
+  }
+}
+
+function stopModeratorGeofence() {
+  if (_geoPingTimer) {
+    clearInterval(_geoPingTimer);
+    _geoPingTimer = null;
+  }
+  if (_geoSessionStateTimer) {
+    clearInterval(_geoSessionStateTimer);
+    _geoSessionStateTimer = null;
+  }
+  try { document.removeEventListener('visibilitychange', onGeoVisibilityChange); } catch (_) {}
+  const banner = document.getElementById('geoStatusBanner');
+  if (banner) banner.remove();
+  const qa = document.getElementById('geoQaPanel');
+  if (qa) qa.remove();
+  closeGeoFenceModal();
+}
+
+function hideModeratorGeoUi() {
+  const banner = document.getElementById('geoStatusBanner');
+  if (banner) banner.remove();
+  const qa = document.getElementById('geoQaPanel');
+  if (qa) qa.remove();
+  closeGeoFenceModal();
+}
+function ensureGeoStatusBanner() { hideModeratorGeoUi(); }
+function ensureGeoQaPanel() { hideModeratorGeoUi(); }
+
+function assignmentMatchesActivitiesFocus(a) {
+  if (!a || a.status === 'Cancelled') return false;
+  const todayStr = (typeof getPSTDateString === 'function') ? getPSTDateString() : '';
+  if (todayStr && a.date !== todayStr) return false;
+  const focusMod = getSelectedActivitiesModeratorId().toLowerCase();
+  const team = getSelectedActivitiesTeam();
+  if (focusMod) {
+    if ((a.modSnapshots || []).some(s => String(s.orbitLoginId || '').toLowerCase() === focusMod)) return true;
+    const t = (adminState.teams || []).find(x => String(x.id) === String(a.teamId));
+    if (!t) return false;
+    const ids = [...(t.primaryIds || []), ...((typeof getTeamBackupIds === 'function') ? getTeamBackupIds(t) : (t.backupIds || []))];
+    return ids.some(id => String(id).toLowerCase() === focusMod);
+  }
+  if (team && String(a.teamId) !== String(team.id)) return false;
+  return true;
+}
+
+function activitiesFenceFeatures() {
+  const features = [
+    Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
+      properties: { kind: 'hq' },
+    }),
+  ];
+  const cache = loadGeocodeCache();
+  // When a team is selected and has an assigned office address, draw that
+  // team office fence in addition to global HQ.
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) {
+    const hit = cache[teamAddr.toLowerCase()];
+    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+      features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HQ_RADIUS_M), {
+        properties: { kind: 'hq', officeSource: 'team' },
+      }));
+    }
+  }
+  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
+  asgns.forEach(a => {
+    const addr = assignmentFenceAddress(a);
+    const hit = cache[addr.toLowerCase()];
+    if (!hit) return;
+    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
+      properties: { kind: 'home' },
+    }));
+  });
+  return { type: 'FeatureCollection', features };
+}
+
+async function prefetchActivityHomeGeocodes() {
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) {
+    try { await geocodeAddress(teamAddr); } catch (_) {}
+  }
+  const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
+  for (const a of asgns) {
+    try { await geocodeAddress(assignmentFenceAddress(a)); } catch (_) {}
+  }
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+}
+
+function placeActivitiesGeofence(map) {
+  if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) return;
+  const data = activitiesFenceFeatures();
+  const src = map.getSource('twilight-geofence');
+  if (src) {
+    src.setData(data);
+  } else {
+    map.addSource('twilight-geofence', { type: 'geojson', data });
+    map.addLayer({
+      id: 'twilight-geofence-fill',
+      type: 'fill',
+      source: 'twilight-geofence',
+      paint: {
+        'fill-color': [
+          'match', ['get', 'kind'],
+          'hq', '#C68A00',
+          'home', '#00F0FF',
+          '#00F0FF'
+        ],
+        'fill-opacity': 0.12,
+      },
+    });
+    map.addLayer({
+      id: 'twilight-geofence-line',
+      type: 'line',
+      source: 'twilight-geofence',
+      paint: {
+        'line-color': [
+          'match', ['get', 'kind'],
+          'hq', '#C68A00',
+          'home', '#00F0FF',
+          '#00F0FF'
+        ],
+        'line-width': 2,
+        'line-opacity': 0.75,
+      },
+    });
+  }
+  document.querySelectorAll('.geo-mod-marker').forEach(el => {
+    try { if (el.__marker) el.__marker.remove(); } catch (_) {}
+  });
+  const team = getSelectedActivitiesTeam();
+  const focusMod = getSelectedActivitiesModeratorId().toLowerCase();
+  const allowed = new Map();
+  const collect = (ids, role) => {
+    (ids || []).forEach(id => allowed.set(String(id).toLowerCase(), role));
+  };
+  if (team) {
+    collect(team.primaryIds, 'primary');
+    collect((typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds, 'backup');
+  }
+  const pings = loadGeoPings();
+  const now = Date.now();
+  let focusPing = null;
+  Object.keys(pings).forEach(idRaw => {
+    const id = String(idRaw).toLowerCase();
+    const ping = pings[idRaw];
+    if (!ping || !Number.isFinite(ping.lat) || !Number.isFinite(ping.lng)) return;
+    if (focusMod && id !== focusMod) return;
+    let role = ping.role || 'moderator';
+    if (!focusMod && team) {
+      const mapped = allowed.get(id);
+      if (!mapped) return;
+      role = mapped;
+    } else if (!focusMod && allowed.has(id)) {
+      role = allowed.get(id);
+    }
+    const el = document.createElement('div');
+    el.className = 'geo-mod-marker is-' + role + ((now - (ping.at || 0) > GEO_PING_STALE_MS) ? ' is-stale' : '');
+    const label = (ping.name || id) + ' · ' + fenceRoleLabel(role);
+    el.title = label;
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat([ping.lng, ping.lat])
+      .setPopup(new maplibregl.Popup({ offset: 14 }).setText(label))
+      .addTo(map);
+    el.__marker = marker;
+    if (focusMod && id === focusMod) focusPing = ping;
+  });
+  updateActivitiesMapCaption();
+  if (focusPing) {
+    try { map.easeTo({ center: [focusPing.lng, focusPing.lat], zoom: 14, duration: 500 }); } catch (_) {}
+  } else {
+    try { map.easeTo({ center: [GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat], zoom: ACTIVITIES_MAP_ZOOM, duration: 500 }); } catch (_) {}
+  }
 }
 
 /* ----------- Activities (live map) ----------- */
-// Redmond HQ · 14980 NE 31st St Ste 100, Redmond, WA 98052
-const ACTIVITIES_MAP_CENTER = { lng: -122.1370, lat: 47.6446 };
+// Redmond HQ · shared with GEO_HQ_* (office geofence)
+const ACTIVITIES_MAP_CENTER = GEO_HQ_CENTER;
 const ACTIVITIES_MAP_ZOOM = 15;
-const ACTIVITIES_MAP_ADDRESS = '14980 NE 31st St Ste 100, Redmond, WA 98052';
+const ACTIVITIES_MAP_ADDRESS = GEO_HQ_ADDRESS;
 const ACTIVITIES_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/positron';
 const ACTIVITIES_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 // Liberty kept as a light-theme alternate if positron is unavailable.
@@ -9031,6 +10808,7 @@ function activitiesMapStyleUrl() {
 }
 
 function destroyActivitiesMap() {
+  stopActivitiesLocalPingPoll();
   if (_activitiesMap) {
     try { _activitiesMap.remove(); } catch (_) {}
     _activitiesMap = null;
@@ -9124,6 +10902,7 @@ function syncActivitiesMapTheme() {
     _activitiesMap.setStyle(next);
     _activitiesMap.once('load', () => {
       try { placeActivitiesMapMarker(_activitiesMap); } catch (_) {}
+      try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
       applyActivitiesMapTheme(_activitiesMap);
       try { _activitiesMap.resize(); } catch (_) {}
     });
@@ -9188,6 +10967,7 @@ function initActivitiesMap() {
   _activitiesMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
   _activitiesMap.on('load', () => {
     placeActivitiesMapMarker(_activitiesMap);
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
     applyActivitiesMapTheme(_activitiesMap);
     try { _activitiesMap.resize(); } catch (_) {}
     const fallback = document.getElementById('activitiesMapFallback');
@@ -9212,30 +10992,88 @@ function renderModActivitiesView() {
     <div class="activities-viz-outer" id="activitiesVizContainer">
       <div class="activities-viz-well" id="activitiesMapWell">
         <div class="activities-map-slot">
-          <div id="activitiesMap" class="activities-map" role="img" aria-label="Live map of Redmond office"></div>
+          <div id="activitiesMap" class="activities-map" role="img" aria-label="Live map"></div>
           <div id="activitiesMapFallback" class="activities-map-fallback" hidden>
             Map could not load. Check your network connection and refresh.
           </div>
         </div>
         <div class="activities-map-caption">
-          <div class="activities-map-eyebrow" id="activitiesTeamContext">${getSelectedActivitiesTeam() ? `Live map · ${escapeHTML(getSelectedActivitiesTeam().name || 'Unnamed team')}` : 'Live map · All teams'}</div>
-          <div class="activities-map-title">Redmond HQ</div>
-          <div class="activities-map-addr">14980 NE 31st St Ste 100, Redmond, WA 98052</div>
+          <div class="activities-map-eyebrow" id="activitiesTeamContext">${escapeHTML(activitiesViewEyebrow())}</div>
+          <div class="activities-map-title" id="activities-map-title">${escapeHTML(activitiesViewTitle())}</div>
+          <div class="activities-map-addr">${escapeHTML(activitiesViewAddrLine())}</div>
+          <div class="activities-map-legend">
+            <span><i class="role-fence-hq"></i> Office fence</span>
+            <span><i class="role-fence"></i> Assignment fence</span>
+            <span><i class="role-primary"></i> Primary</span>
+            <span><i class="role-backup"></i> Backup</span>
+            <span><i class="role-moderator"></i> Moderator</span>
+          </div>
         </div>
       </div>
     </div>`;
   // Defer so the inset well has layout before MapLibre measures it.
   requestAnimationFrame(() => initActivitiesMap());
+  prefetchActivityHomeGeocodes();
+  startActivitiesLocalPingPoll();
+  ensureGeoPingBroadcast();
+  // Prefer local / demo pins immediately. Cloud SessionState READ may be
+  // disabled (HTTP 400 WorkflowTriggerIsNotEnabled) — soft-fail and keep
+  // showing whatever is already in localStorage.
+  if (_activitiesMap) {
+    try { placeActivitiesGeofence(_activitiesMap); } catch (_) {}
+  }
+  updateActivitiesMapCaption();
+  refreshActivitiesCloudPings();
 }
 
 function renderModListView() {
   const wrap = document.getElementById('modviewBody');
-  wrap.innerHTML = `
-    <div class="mod-grid">
-      ${adminState.moderators.map((m, i) => modCardHTML(m, i)).join('')}
+  if (!wrap) return;
+  const layout = adminState.modListLayout === 'list' ? 'list' : 'grid';
+  const mods = adminState.moderators || [];
+
+  const toolbar = `
+    <div class="mod-all-toolbar">
+      <div class="mod-layout-toggle" role="group" aria-label="Moderator layout">
+        <button type="button" class="mod-layout-btn ${layout === 'grid' ? 'active' : ''}" data-mod-layout="grid" title="Card grid">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+          Grid
+        </button>
+        <button type="button" class="mod-layout-btn ${layout === 'list' ? 'active' : ''}" data-mod-layout="list" title="Table list">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          List
+        </button>
+      </div>
+      <button type="button" class="btn btn-primary mod-add-user-btn" id="modAddUserBtn">Add User</button>
     </div>`;
+
+  let body;
+  if (!mods.length) {
+    body = `<div class="admin-empty">No moderators in the directory yet. Click <strong>Add User</strong> to create one.</div>`;
+  } else if (layout === 'list') {
+    body = renderModTableHTML(mods);
+  } else {
+    body = `<div class="mod-grid">${mods.map((m, i) => modCardHTML(m, i)).join('')}</div>`;
+  }
+
+  wrap.innerHTML = toolbar + body;
+  ensureModUserModal();
+
+  wrap.querySelectorAll('[data-mod-layout]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-mod-layout');
+      if (next !== 'grid' && next !== 'list') return;
+      if (adminState.modListLayout === next) return;
+      adminState.modListLayout = next;
+      renderModListView();
+    });
+  });
+  const addBtn = document.getElementById('modAddUserBtn');
+  if (addBtn) addBtn.addEventListener('click', () => openModUserModal('create'));
+
   wrap.querySelectorAll('.mod-card-head').forEach(head => {
-    head.addEventListener('click', () => {
+    head.addEventListener('click', (e) => {
+      if (e.target.closest('.mod-edit-btn')) return;
       const card = head.closest('.mod-card');
       const idx = parseInt(card.dataset.idx, 10);
       if (adminState.expandedMods[idx]) {
@@ -9248,6 +11086,391 @@ function renderModListView() {
       head.setAttribute('aria-expanded', !!adminState.expandedMods[idx]);
     });
   });
+  wrap.querySelectorAll('.mod-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-mod-idx'), 10);
+      const row = (adminState.moderators || [])[idx];
+      if (row) openModUserModal('edit', row);
+    });
+  });
+
+  // List header sort · first click A→Z, second click same header Z→A,
+  // switching headers resets to A→Z. Grid layout ignores this state.
+  wrap.querySelectorAll('[data-mod-sort]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-mod-sort');
+      if (!key) return;
+      const cur = adminState.modListSort || { key: null, dir: 'asc' };
+      if (cur.key === key) {
+        adminState.modListSort = { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+      } else {
+        adminState.modListSort = { key, dir: 'asc' };
+      }
+      renderModListView();
+    });
+  });
+}
+
+function renderModTableHTML(mods) {
+  const sortSpec = (adminState && adminState.modListSort) || null;
+  const sorted = sortSpec ? sortModeratorListRows(mods, sortSpec) : (mods || []).slice();
+  const head = `
+    <div class="mod-table-wrap">
+      <table class="mod-table">
+        <thead>
+          <tr>
+            ${modListSortHeaderButton('name', 'Name', sortSpec)}
+            ${modListSortHeaderButton('orbitLoginId', 'Orbit Login ID', sortSpec)}
+            ${modListSortHeaderButton('role', 'Role', sortSpec)}
+            ${modListSortHeaderButton('phone', 'Phone', sortSpec)}
+            ${modListSortHeaderButton('centificEmail', 'Centific Email', sortSpec)}
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>`;
+  const rows = sorted.map((m, i) => {
+    const f = extractModeratorFields(m);
+    const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim() || f.orbitLoginId || '—';
+    const origIdx = (adminState.moderators || []).indexOf(m);
+    const idx = origIdx >= 0 ? origIdx : i;
+    return `
+      <tr>
+        <td>
+          <div class="mod-table-name">
+            <div class="mod-avatar mod-avatar-sm">${escapeHTML(avatarLetters(f.firstName, f.lastName))}</div>
+            <span>${escapeHTML(name)}</span>
+          </div>
+        </td>
+        <td class="mod-table-mono">${escapeHTML(f.orbitLoginId || '—')}</td>
+        <td><span class="mod-role-pill">${escapeHTML(directoryLoginRoleLabel(f.LoginRole))}</span></td>
+        <td>${escapeHTML(f.phoneNumber || '—')}</td>
+        <td>${f.centificEmail ? `<a href="mailto:${escapeForUrl(f.centificEmail)}">${escapeHTML(f.centificEmail)}</a>` : '—'}</td>
+        <td class="mod-table-actions">
+          <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${idx}">Edit</button>
+        </td>
+      </tr>`;
+  }).join('');
+  return head + rows + '</tbody></table></div>';
+}
+
+function extractModeratorFields(m) {
+  m = m || {};
+  // Whitelist only — never pick Password / password / secret columns.
+  // If the directory read flow still returns Password, stripModeratorSecrets
+  // removes it before rows land in adminState.moderators / localStorage.
+  return {
+    orbitLoginId: pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id'),
+    firstName: pickField(m, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName', 'given_name', 'GivenName', 'Given Name', 'firstname', 'First'),
+    lastName: pickField(m, 'lastName', 'last_name', 'LastName', 'Last Name', 'surname', 'familyName', 'family_name', 'FamilyName', 'Family Name', 'lastname', 'Last'),
+    phoneNumber: pickField(m, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone'),
+    centificEmail: pickField(m, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email'),
+    personalEmail: pickField(m, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email'),
+    modAddress: pickField(m, 'modAddress', 'mod_address', 'ModAddress', 'Mod Address', 'address', 'Address'),
+    zipcode: pickField(m, 'zipcode', 'zipCode', 'Zipcode', 'Zip Code', 'zip', 'Zip'),
+    timeOff: pickField(m, 'timeOff', 'time_off', 'TimeOff', 'Time Off'),
+    smartPhone: pickField(m, 'smartPhone', 'smart_phone', 'SmartPhone', 'Smart Phone'),
+    carType: pickField(m, 'carType', 'car_type', 'CarType', 'Car Type', 'vehicleType', 'vehicle_type', 'VehicleType', 'Vehicle Type'),
+    'off-date': pickField(m, 'off-date', 'offDate', 'off_date', 'OffDate', 'Off Date'),
+    LoginRole: pickField(m, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE'),
+  };
+}
+
+// Drop any password/secret keys from a directory row before it is stored in
+// adminState.moderators or rendered. Defense in depth if the PA read flow
+// still maps Password — the read flow should exclude it (see docs).
+function stripModeratorSecrets(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+  const out = Object.assign({}, row);
+  Object.keys(out).forEach(k => {
+    const n = String(k).replace(/[\s_-]+/g, '').toLowerCase();
+    // Substring match so columns like NewPassword / tempPwd are dropped too.
+    if (/password|passwd|pwd|passphrase|secret/.test(n)) {
+      delete out[k];
+    }
+  });
+  return out;
+}
+
+function emptyModUserFormValues() {
+  return {
+    orbitLoginId: '',
+    firstName: '',
+    lastName: '',
+    LoginRole: 'Mod',
+    phoneNumber: '',
+    centificEmail: '',
+    personalEmail: '',
+    modAddress: '',
+    zipcode: '',
+    timeOff: '',
+    smartPhone: '',
+    carType: '',
+    'off-date': '',
+  };
+}
+
+function ensureModUserModal() {
+  if (document.getElementById('modUserModal')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'mod-user-modal-overlay';
+  overlay.id = 'modUserModalOverlay';
+  const modal = document.createElement('div');
+  modal.className = 'mod-user-modal';
+  modal.id = 'modUserModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.innerHTML = '<div id="modUserModalContent"></div>';
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+  overlay.addEventListener('click', () => closeModUserModal());
+}
+
+function openModUserModal(mode, row) {
+  ensureModUserModal();
+  const values = emptyModUserFormValues();
+  if (mode === 'edit' && row) {
+    const f = extractModeratorFields(row);
+    Object.keys(values).forEach(k => { values[k] = f[k] != null ? String(f[k]) : ''; });
+    values.LoginRole = canonicalizeDirectoryLoginRole(values.LoginRole) || 'Mod';
+  }
+  adminState.modUserModal = {
+    mode: mode === 'edit' ? 'edit' : 'create',
+    values,
+    originalOrbitLoginId: mode === 'edit' ? values.orbitLoginId : '',
+    error: '',
+    saving: false,
+  };
+  renderModUserModal();
+  showModUserModal();
+}
+
+function showModUserModal() {
+  const o = document.getElementById('modUserModalOverlay');
+  const m = document.getElementById('modUserModal');
+  if (o) o.classList.add('open');
+  if (m) m.classList.add('open');
+}
+
+function closeModUserModal() {
+  const o = document.getElementById('modUserModalOverlay');
+  const m = document.getElementById('modUserModal');
+  if (o) o.classList.remove('open');
+  if (m) m.classList.remove('open');
+  adminState.modUserModal = null;
+}
+
+function renderModUserModal() {
+  ensureModUserModal();
+  const state = adminState.modUserModal;
+  const content = document.getElementById('modUserModalContent');
+  if (!state || !content) return;
+  const v = state.values || emptyModUserFormValues();
+  const isEdit = state.mode === 'edit';
+  const writeConfigured = !!(ADMIN_PA_MODERATOR_WRITE_URL && String(ADMIN_PA_MODERATOR_WRITE_URL).trim());
+  const roleOpts = DIRECTORY_LOGIN_ROLE_OPTIONS.map(o =>
+    `<option value="${escapeHTML(o.value)}" ${canonicalizeDirectoryLoginRole(v.LoginRole) === o.value ? 'selected' : ''}>${escapeHTML(o.label)}</option>`
+  ).join('');
+
+  const field = (key, label, opts = {}) => {
+    const required = !!opts.required;
+    const type = opts.type || 'text';
+    const readonly = !!opts.readonly;
+    const hint = opts.hint || '';
+    if (type === 'select') {
+      return `
+        <label class="asgn-field">
+          <span class="asgn-field-label">${escapeHTML(label)}${required ? ' *' : ''}</span>
+          <select id="modUser_${key}" ${required ? 'required' : ''} ${state.saving ? 'disabled' : ''}>${roleOpts}</select>
+        </label>`;
+    }
+    return `
+      <label class="asgn-field">
+        <span class="asgn-field-label">${escapeHTML(label)}${required ? ' *' : ''}</span>
+        <input type="${escapeHTML(type)}" id="modUser_${key}" value="${escapeHTML(v[key] || '')}"
+          ${required ? 'required' : ''} ${readonly ? 'readonly' : ''} ${state.saving ? 'disabled' : ''}
+          autocomplete="off" />
+        ${hint ? `<div class="asgn-field-hint">${escapeHTML(hint)}</div>` : ''}
+      </label>`;
+  };
+
+  content.innerHTML = `
+    <div class="asgn-modal-head">
+      <div>
+        <div class="asgn-modal-title">${isEdit ? 'Edit user' : 'Add user'}</div>
+        <div class="asgn-modal-sub">${isEdit ? 'Update this directory profile' : 'Create a Moderator, Reviewer, or Admin directory profile'}</div>
+      </div>
+      <button type="button" class="icon-btn" id="modUserModalClose" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="asgn-modal-body">
+      ${!writeConfigured ? `
+        <div class="mod-user-config-banner" role="status">
+          Write flow not configured. Create the Power Automate flow described in
+          <code>docs/power-automate-moderator-write.md</code>, then paste its HTTP POST URL into
+          <code>ADMIN_PA_MODERATOR_WRITE_URL</code> in <code>twilight.js</code>.
+          Your form draft stays here until that URL is set.
+        </div>` : ''}
+      <div class="mod-user-form-grid">
+        ${field('orbitLoginId', 'Orbit Login ID', { required: true, readonly: isEdit, hint: isEdit ? 'Orbit Login ID cannot change on edit (Excel key column).' : 'Must be unique in the directory.' })}
+        ${field('LoginRole', 'Login Role', { required: true, type: 'select' })}
+        ${field('firstName', 'First Name', { required: true })}
+        ${field('lastName', 'Last Name', { required: true })}
+        ${field('phoneNumber', 'Phone Number')}
+        ${field('centificEmail', 'Centific Email', { type: 'email' })}
+        ${field('personalEmail', 'Personal Email', { type: 'email' })}
+        ${field('modAddress', 'Address')}
+        ${field('zipcode', 'Zipcode')}
+        ${field('timeOff', 'Time Off')}
+        ${field('smartPhone', 'Smart Phone')}
+        ${field('carType', 'Vehicle Type')}
+        ${field('off-date', 'Off Date')}
+      </div>
+      ${state.error ? `<div class="mod-user-form-error" role="alert">${escapeHTML(state.error)}</div>` : ''}
+    </div>
+    <div class="asgn-modal-foot">
+      <button type="button" class="btn btn-ghost" id="modUserCancelBtn" ${state.saving ? 'disabled' : ''}>Cancel</button>
+      <button type="button" class="btn btn-primary" id="modUserSaveBtn" ${state.saving ? 'disabled' : ''}>
+        ${state.saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create user')}
+      </button>
+    </div>`;
+
+  document.getElementById('modUserModalClose').addEventListener('click', closeModUserModal);
+  document.getElementById('modUserCancelBtn').addEventListener('click', closeModUserModal);
+  document.getElementById('modUserSaveBtn').addEventListener('click', () => submitModUserModal());
+}
+
+function readModUserFormValues() {
+  const out = emptyModUserFormValues();
+  Object.keys(out).forEach(k => {
+    const el = document.getElementById('modUser_' + k);
+    if (!el) return;
+    out[k] = String(el.value || '').trim();
+  });
+  return out;
+}
+
+function isBasicEmailOk(s) {
+  if (!s) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function validateModUserForm(values, mode, originalOrbitLoginId) {
+  if (!values.orbitLoginId) return 'Orbit Login ID is required.';
+  if (!values.firstName) return 'First name is required.';
+  if (!values.lastName) return 'Last name is required.';
+  if (!isValidDirectoryLoginRole(values.LoginRole)) {
+    return 'Login Role must be Moderator, Reviewer, or Admin.';
+  }
+  if (!isBasicEmailOk(values.centificEmail)) return 'Centific Email looks invalid.';
+  if (!isBasicEmailOk(values.personalEmail)) return 'Personal Email looks invalid.';
+  if (mode === 'create') {
+    const idLc = values.orbitLoginId.toLowerCase();
+    const dup = (adminState.moderators || []).some(m => {
+      const existing = String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase();
+      return existing && existing === idLc;
+    });
+    if (dup) return `Orbit Login ID "${values.orbitLoginId}" already exists.`;
+  }
+  if (mode === 'edit' && originalOrbitLoginId && values.orbitLoginId.toLowerCase() !== String(originalOrbitLoginId).toLowerCase()) {
+    return 'Orbit Login ID cannot be changed when editing.';
+  }
+  return '';
+}
+
+function applyModeratorWriteLocally(values, mode, originalOrbitLoginId) {
+  const rows = Array.isArray(adminState.moderators) ? adminState.moderators.slice() : [];
+  const lookupId = String(originalOrbitLoginId || values.orbitLoginId || '').toLowerCase();
+  const idx = rows.findIndex(m => {
+    const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+    return String(id || '').toLowerCase() === lookupId;
+  });
+  const next = Object.assign({}, idx >= 0 ? rows[idx] : {}, values);
+  if (idx >= 0) rows[idx] = next;
+  else rows.push(next);
+  adminState.moderators = rows;
+}
+
+async function refreshModeratorDirectoryInBackground() {
+  try {
+    const data = await fetchModeratorDirectory();
+    adminState.moderators = extractArray(data);
+    adminState.modError = null;
+    if (adminState.tab === 'moderators' && adminState.subtab === 'moderators') {
+      renderModerators();
+    }
+  } catch (e) {
+    // The write already succeeded and the optimistic row is visible. Keep it
+    // instead of replacing the screen with an error if this confirmation read
+    // encounters a transient Power Automate / Excel delay.
+    console.warn('[Twilight] Moderator confirmation refresh failed:', e && e.message);
+  }
+}
+
+async function submitModUserModal() {
+  const state = adminState.modUserModal;
+  if (!state || state.saving) return;
+  const values = readModUserFormValues();
+  values.LoginRole = canonicalizeDirectoryLoginRole(values.LoginRole);
+  state.values = values;
+  const err = validateModUserForm(values, state.mode, state.originalOrbitLoginId);
+  if (err) {
+    state.error = err;
+    renderModUserModal();
+    return;
+  }
+  if (!ADMIN_PA_MODERATOR_WRITE_URL || !String(ADMIN_PA_MODERATOR_WRITE_URL).trim()) {
+    state.error = 'Write flow not configured. Set ADMIN_PA_MODERATOR_WRITE_URL in twilight.js after creating the Power Automate flow (see docs/power-automate-moderator-write.md). Your draft is kept.';
+    renderModUserModal();
+    return;
+  }
+
+  state.saving = true;
+  state.error = '';
+  renderModUserModal();
+
+  const payload = {
+    operation: state.mode === 'edit' ? 'update' : 'create',
+    orbitLoginId: values.orbitLoginId,
+    firstName: values.firstName,
+    lastName: values.lastName,
+    LoginRole: values.LoginRole,
+    phoneNumber: values.phoneNumber,
+    centificEmail: values.centificEmail,
+    personalEmail: values.personalEmail,
+    modAddress: values.modAddress,
+    zipcode: values.zipcode,
+    timeOff: values.timeOff,
+    smartPhone: values.smartPhone,
+    carType: values.carType,
+    'off-date': values['off-date'],
+  };
+
+  try {
+    await fetchWithRetry(ADMIN_PA_MODERATOR_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+      maxAttempts: 2,
+    });
+    const savedMode = state.mode;
+    const originalOrbitLoginId = state.originalOrbitLoginId;
+    applyModeratorWriteLocally(values, savedMode, originalOrbitLoginId);
+    toast(state.mode === 'edit' ? 'User updated' : 'User created');
+    closeModUserModal();
+    renderModerators();
+    // Confirm against Excel without showing another loading spinner or making
+    // the admin wait for a second sequential PA request.
+    refreshModeratorDirectoryInBackground();
+  } catch (e) {
+    state.saving = false;
+    state.error = (e && e.message) ? e.message : String(e);
+    renderModUserModal();
+    toast('Could not save user');
+  }
 }
 
 function renderModTeamView() {
@@ -9428,6 +11651,7 @@ function modCardHTML(m, i, role) {
   // Excel column heading (PA's connector is sensitive to that).
   const carType   = pickField(m, 'carType', 'car_type', 'CarType', 'Car Type', 'vehicleType', 'vehicle_type', 'VehicleType', 'Vehicle Type');
   const smartPhone= pickField(m, 'smartPhone', 'smart_phone', 'SmartPhone', 'Smart Phone');
+  const loginRole = pickField(m, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE');
 
   // Last-resort display name resolution. The order is:
   //   1. First + Last  (the normal case)
@@ -9484,6 +11708,7 @@ function modCardHTML(m, i, role) {
     // serial number, numeric string, or ISO string · formatModDate normalizes
     // all three through coerceWeekRange and pretty-prints to "MMM D, YYYY".
     { label: 'Smart Phone', value: formatModDate(smartPhone) },
+    { label: 'Login Role', value: directoryLoginRoleLabel(loginRole) },
   ];
 
   return `
@@ -9506,6 +11731,9 @@ function modCardHTML(m, i, role) {
         <div class="mod-detail-inner">
           <div class="mod-detail-list">
             ${rows.map(r => modRowHTML(r)).join('')}
+          </div>
+          <div class="mod-card-actions">
+            <button type="button" class="btn btn-ghost mod-edit-btn" data-mod-idx="${i}">Edit</button>
           </div>
         </div>
       </div>
@@ -9567,8 +11795,7 @@ async function loadParticipants(force = false) {
   adminState._partPaginationWarning = false;
   renderParticipants();
   try {
-    const data = await fetchWithRetry(ADMIN_PA_PARTICIPANTS_URL, {
-      method: 'GET',
+    const data = await fetchPaRead(ADMIN_PA_PARTICIPANTS_URL, {
       signal: abortCtrl.signal,
       timeoutMs: 45000,
       maxAttempts: 3,
@@ -9695,6 +11922,19 @@ async function loadParticipants(force = false) {
 }
 
 function renderParticipants() {
+  // Only tear down Activities filters when Participants is actually the
+  // active subtab. loadParticipants() always calls renderParticipants() on
+  // completion (to refresh the count badge) — that used to wipe
+  // #modviewExtraFilters even while admin was on Activities, which made the
+  // Team / Moderator dropdowns vanish after an async race.
+  if (adminState.subtab === 'participants') {
+    const extraFilters = document.getElementById('modviewExtraFilters');
+    if (extraFilters) {
+      extraFilters.hidden = true;
+      extraFilters.innerHTML = '';
+      delete extraFilters.dataset.filterSig;
+    }
+  }
   const partCountEl = document.getElementById('partCount');
   if (partCountEl) {
     partCountEl.textContent = adminState.participants ? adminState.participants.length : '··';
@@ -10407,9 +12647,15 @@ const AGREEMENT_PDF_PASSWORD = 'Orbit2026';
 //
 // Row schema (the table you've created plus the two recommended additions):
 //   orbitLoginId       · moderator id
-//   firstName, lastName, phoneNumber, centificEmail, personalEmail
+//   firstName, lastName, phoneNumber, centificEmail
 //                      · moderator snapshot fields (same pattern as
 //                        Assignment rows)
+//   personalEmail      · TeamLog transport for the versioned team meta
+//                        JSON: {"type":"teamLakituProject","version":1,
+//                        "lakituProjectKey":"...","lakituProjectUrl":"...",
+//                        "ringDashboardKey":"...","ringDashboardUrl":"...",
+//                        "teamAddress":"..."}
+//                        (not a moderator personal email in this table)
 //   teamId             · numeric team ID (same value across all rows of
 //                        the same team)
 //   teamName           · display name
@@ -10439,7 +12685,9 @@ function buildTeamLogRows(team, status) {
       lastName:         mod ? (pickField(mod, 'lastName',  'last_name',  'LastName',  'Last Name')  || '') : '',
       phoneNumber:      mod ? (pickField(mod, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number') || '') : '',
       centificEmail:    mod ? (pickField(mod, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email') || '') : '',
-      personalEmail:    mod ? (pickField(mod, 'personalEmail', 'personal_email', 'PersonalEmail', 'Personal Email') || '') : '',
+      // TeamLog reuses personalEmail for the versioned Lakitu project JSON
+      // (encodeTeamLakituProjectPayload). Not a moderator email.
+      personalEmail:    encodeTeamLakituProjectPayload(team),
       teamId:           team.id,
       teamName:         team.name || '',
       role:             role,
@@ -10459,7 +12707,7 @@ function buildTeamLogRows(team, status) {
     rows.push({
       orbitLoginId: '',
       firstName: '', lastName: '', phoneNumber: '',
-      centificEmail: '', personalEmail: '',
+      centificEmail: '', personalEmail: encodeTeamLakituProjectPayload(team),
       teamId: team.id,
       teamName: team.name || '',
       role: 'primary',
@@ -10560,8 +12808,34 @@ async function fetchTeamsFromPA() {
           status: r.status || 'active',
           // Admin-assigned Lakitu project · taken from the newest row
           // (first seen, given the newest-first sort) so edits win.
-          lakituProjectKey: r.lakituProjectKey || '',
-          lakituProjectUrl: r.lakituProjectUrl || '',
+          // Prefer versioned JSON in personalEmail (TeamLog transport).
+          // Fall back to direct columns / key→url when legacy email or empty.
+          ...(function () {
+            const fromJson = parseTeamLakituProjectFromPersonalEmail(r.personalEmail);
+            let key = (fromJson && fromJson.lakituProjectKey) || r.lakituProjectKey || '';
+            let url = (fromJson && fromJson.lakituProjectUrl) || r.lakituProjectUrl || '';
+            if (!url && key) {
+              const proj = getLakituProjectByKey(key);
+              if (proj && proj.url) url = proj.url;
+            }
+            let ringKey = (fromJson && fromJson.ringDashboardKey) || r.ringDashboardKey || '';
+            let ringUrl = (fromJson && fromJson.ringDashboardUrl) || r.ringDashboardUrl || '';
+            if (!ringUrl && ringKey) {
+              const dash = getRingDashboardByKey(ringKey);
+              if (dash && dash.url) ringUrl = dash.url;
+            }
+            if (ringUrl && !isSafeHttpsUrl(ringUrl)) ringUrl = '';
+            const teamAddress = (fromJson && fromJson.teamAddress != null)
+              ? String(fromJson.teamAddress).trim()
+              : (r.teamAddress != null ? String(r.teamAddress).trim() : '');
+            return {
+              lakituProjectKey: key,
+              lakituProjectUrl: url,
+              ringDashboardKey: ringKey,
+              ringDashboardUrl: ringUrl,
+              teamAddress: teamAddress,
+            };
+          })(),
           createdAt: r.createdTimestamp || '',
           updatedAt: r.updatedTimestamp || '',
           primaryIds: [],
@@ -12689,11 +14963,16 @@ async function fetchAssignmentsFromPA() {
       } else if (!tl.error && Array.isArray(tl.teams) && tl.teams.length === 0) {
         // TeamLog read succeeded and Excel has no active teams. Drop the
         // browser cache so wiped tables do not keep showing old teams.
+        // Keep geo-demo teams (?geoDemo=1) so Activities still has Team 01 / 02.
+        const keepDemo = (t) => t && (t._pending || String(t.id || '').startsWith('demo-team-'));
         const pending = (typeof adminState !== 'undefined' && Array.isArray(adminState.teams))
-          ? adminState.teams.filter(t => t._pending)
+          ? adminState.teams.filter(keepDemo)
           : [];
-        const dropped = mergedTeams.filter(t => !t._pending).length;
-        mergedTeams = pending;
+        const fromMerged = mergedTeams.filter(keepDemo);
+        const keepMap = new Map();
+        [...pending, ...fromMerged].forEach(t => keepMap.set(String(t.id), t));
+        const dropped = mergedTeams.filter(t => !keepDemo(t)).length;
+        mergedTeams = [...keepMap.values()];
         if (dropped > 0) {
           console.log(`[Twilight] TeamLog empty · dropped ${dropped} cached team${dropped === 1 ? '' : 's'} (Excel is empty)`);
         }
@@ -12781,6 +15060,10 @@ async function fetchAssignmentsFromPA() {
   } catch (e) {}
 
   console.log(`[Twilight] Assignment sync: ${rows.length} rows → ${mergedAssignments.length} assignments, ${mergedTeams.length} teams`);
+
+  // Re-seed demo teams after cloud merge so Activities filters still have
+  // Team 01 / Team 02 when ?geoDemo=1 (cloud ingest is optional).
+  if (typeof mergeGeoDemoRoster === 'function') mergeGeoDemoRoster();
 
   // Re-render any visible UI that depends on assignments.
   //
@@ -16899,6 +19182,10 @@ function openTeamModal(teamId) {
     // Admin-assigned Lakitu project (see LAKITU_PROJECTS). Stored as the
     // project KEY on the modal; saveTeam resolves it to the label + url.
     lakituProjectKey: team ? (team.lakituProjectKey || '') : '',
+    // Admin-assigned Ring dashboard (see RING_DASHBOARDS).
+    ringDashboardKey: team ? (team.ringDashboardKey || '') : '',
+    // Office address used for moderator office check-in / check-out geofence.
+    teamAddress: team ? (team.teamAddress || '') : '',
     _availWeekAnchor: ymdLocal(monday),
     _overlapOpen: false,
     _backupOpen: false,
@@ -17116,6 +19403,19 @@ function renderTeamModal() {
         </select>
         <div class="asgn-field-hint">Assign the Lakitu project link this team's moderators should open · it appears as a clickable link in their Lakitu session field.</div>
       </div>
+      <div class="asgn-field">
+        <label class="asgn-field-label">Ring link <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <select id="teamRingDashboard" class="teams-sort" aria-label="Ring link">
+          <option value="" ${!m.ringDashboardKey ? 'selected' : ''}>No Ring dashboard assigned</option>
+          ${RING_DASHBOARDS.map(p => `<option value="${escapeHTML(p.key)}" ${m.ringDashboardKey === p.key ? 'selected' : ''}>${escapeHTML(p.label)}</option>`).join('')}
+        </select>
+        <div class="asgn-field-hint">Assign the Ring account dashboard this team's moderators should open from the Ring nav button and menu.</div>
+      </div>
+      <div class="asgn-field">
+        <label class="asgn-field-label">Team address <span style="color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+        <input id="teamAddressInput" type="text" value="${escapeHTML(m.teamAddress || '')}" placeholder="e.g. 14980 NE 31st St Ste 100, Redmond, WA 98052" autocomplete="street-address">
+        <div class="asgn-field-hint">Assigned map location for this team · used for office check-in and check-out geofence (falls back to Redmond HQ when empty).</div>
+      </div>
       <div class="team-avail-toolbar">
         <div class="team-avail-toolbar-left">
           <span class="team-avail-toolbar-label">Availability preview</span>
@@ -17184,6 +19484,18 @@ function renderTeamModal() {
   if (lakituProjSel) {
     lakituProjSel.addEventListener('change', e => {
       adminState.modal.lakituProjectKey = e.target.value || '';
+    });
+  }
+  const ringDashSel = document.getElementById('teamRingDashboard');
+  if (ringDashSel) {
+    ringDashSel.addEventListener('change', e => {
+      adminState.modal.ringDashboardKey = e.target.value || '';
+    });
+  }
+  const teamAddrInput = document.getElementById('teamAddressInput');
+  if (teamAddrInput) {
+    teamAddrInput.addEventListener('input', e => {
+      adminState.modal.teamAddress = e.target.value || '';
     });
   }
   document.querySelectorAll('[data-team-disclosure]').forEach(details => {
@@ -17267,6 +19579,13 @@ function saveTeam() {
   const lakituProjectKey = m.lakituProjectKey || '';
   const lakituProject = getLakituProjectByKey(lakituProjectKey);
   const lakituProjectUrl = lakituProject ? lakituProject.url : '';
+  // Ring dashboard (optional) · https URL only.
+  const ringDashboardKey = m.ringDashboardKey || '';
+  const ringDashboard = getRingDashboardByKey(ringDashboardKey);
+  let ringDashboardUrl = ringDashboard ? ringDashboard.url : '';
+  if (ringDashboardUrl && !isSafeHttpsUrl(ringDashboardUrl)) ringDashboardUrl = '';
+  // Team office address for geofence · trim; empty is allowed (HQ fallback).
+  const teamAddress = (m.teamAddress != null ? String(m.teamAddress) : '').trim();
   if (m.kind === 'createTeam') {
     // The team is local-only until either (a) an assignment uses it and
     // saves it via the assignment row, or (b) we have a TeamLog write URL
@@ -17284,6 +19603,9 @@ function saveTeam() {
       backupIds: m.backupIds,
       lakituProjectKey: lakituProjectKey,
       lakituProjectUrl: lakituProjectUrl,
+      ringDashboardKey: ringDashboardKey,
+      ringDashboardUrl: ringDashboardUrl,
+      teamAddress: teamAddress,
       createdAt: new Date().toISOString(),
     };
     if (!TEAMLOG_PA_WRITE_URL) {
@@ -17309,6 +19631,9 @@ function saveTeam() {
       t.backupIds = m.backupIds;
       t.lakituProjectKey = lakituProjectKey;
       t.lakituProjectUrl = lakituProjectUrl;
+      t.ringDashboardKey = ringDashboardKey;
+      t.ringDashboardUrl = ringDashboardUrl;
+      t.teamAddress = teamAddress;
       // Drop the legacy single-id field so memory stays clean. Old reads
       // via getTeamBackupIds() still work because they prefer the array.
       delete t.backupId;
@@ -21426,6 +23751,8 @@ function isAnyAsgnModalOpen() {
       '.teammate-sync-modal.open',
       '.cal-drill-modal.open',
       '#calGuideModal.open',
+      '#modUserModal.open',
+      '#modUserModalOverlay.open',
     ];
     for (const sel of selectors) {
       if (document.querySelector(sel)) return true;
@@ -21774,6 +24101,7 @@ function exportAssignments() {
 }
 /* ----------- Admin entry / exit ----------- */
 function startAdminApp() {
+  if (typeof stopModeratorGeofence === 'function') stopModeratorGeofence();
   if (typeof startWorklogPolling === 'function') startWorklogPolling();
     document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
@@ -21800,6 +24128,10 @@ function startAdminApp() {
   })();
   // Side menu wiring (re-uses the same drawer)
   document.getElementById('logoutSub').textContent = state.username;
+  // Seed local demo teams / moderators / pins when ?geoDemo=1 (or sticky flag).
+  // Does not require GPS or the disabled SessionState READ flow.
+  if (typeof applyGeoDemoMode === 'function') applyGeoDemoMode();
+  ensureGeoPingBroadcast();
   // Render
   renderAdmin();
   // Trigger initial moderator load if landing on Moderator Hub
@@ -22305,6 +24637,9 @@ function extractSyncableState(s) {
     // state · cross-pollinating it would mean Alice's "I saw the
     // 1h reminder" stops Bob from seeing his own reminder.
     arrivedAt:          s.arrivedAt          || '',
+    officeCheckedInAt:  s.officeCheckedInAt  || '',
+    officeCheckedOutAt: s.officeCheckedOutAt || '',
+    lastGeo:            s.lastGeo            || null,
     // Workflow / calibration guide acknowledgment. Object or null.
     // Synced so teammates can see "yes, the lead has acknowledged
     // the guide" without re-prompting, AND so admin pulling the
@@ -22335,6 +24670,26 @@ const _sessionStateSyncState = {
   lastSyncedActive:      null,
 };
 
+function getSessionStateWriteContext() {
+  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  if (asgn && asgn.id) return asgn;
+  // Location presence must still reach Admin when the moderator is not
+  // assigned today. A stable per-user/day synthetic context keeps the row
+  // valid for Excel while avoiding interference with real assignment sync.
+  if (state && state.modProfile && state.modProfile.orbitLoginId && state.lastGeo) {
+    const orbitId = String(state.modProfile.orbitLoginId);
+    const day = (typeof getPSTDateString === 'function')
+      ? getPSTDateString()
+      : new Date().toISOString().slice(0, 10);
+    return {
+      id: `geo_presence_${orbitId}_${day}`,
+      teamId: '',
+      _geoPresenceOnly: true,
+    };
+  }
+  return null;
+}
+
 // Trigger an interaction-driven cloud write. Called ONLY from
 // deliberate moderator-interaction sites · status button clicks,
 // camera/equipment toggles, scenario-note blur (commit, not
@@ -22355,9 +24710,9 @@ function triggerSessionStateSync() {
   if (!SESSIONSTATE_PA_WRITE_URL) return;         // not configured
   if (!state || !state.username) return;          // no logged-in user
   if (!state.modProfile || !state.modProfile.orbitLoginId) return;  // admin doesn't sync
-  // Only sync when there's a current assignment context · without an
-  // assignmentId, the row would be orphaned and useless to teammates.
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  // Real assignments use their assignmentId. Location-only presence uses
+  // a stable synthetic context so Admin can locate an unassigned moderator.
+  const asgn = getSessionStateWriteContext();
   if (!asgn || !asgn.id) return;
 
   if (_sessionStateSyncState.timer) {
@@ -22382,10 +24737,11 @@ const scheduleSessionStateSync = triggerSessionStateSync;
 // timer, page-unload, wrap-up confirm) ignore the return value, so this
 // is additive and safe. Shape: { ok, reason } where reason ∈
 // {written, nochange, inflight, notconfigured, noassignment, error}.
-async function flushSessionStateSync() {
+async function flushSessionStateSync(opts) {
+  opts = opts || {};
   if (!SESSIONSTATE_PA_WRITE_URL) return { ok: false, reason: 'notconfigured' };
   if (!state || !state.username || !state.modProfile) return { ok: false, reason: 'noassignment' };
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
+  const asgn = getSessionStateWriteContext();
   if (!asgn || !asgn.id) return { ok: false, reason: 'noassignment' };
 
   // Re-entry guard: if a write is already in flight, mark pending and
@@ -22414,7 +24770,7 @@ async function flushSessionStateSync() {
     // toggles it back (a misclick + undo), or where multiple click
     // handlers fire and only the last one matters. Keyed by assignment
     // ID so a session change properly resets the comparison baseline.
-    if (_sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
+    if (!opts.force && _sessionStateSyncState.lastSyncedAsgnId === String(asgn.id)
         && _sessionStateSyncState.lastSyncedStateJson === stateJson) {
       _sessionStateSyncState.inflight = false;
       return { ok: true, reason: 'nochange' };
@@ -22506,6 +24862,10 @@ async function flushSessionStateSync() {
 // can distinguish "no data" from "couldn't reach the server."
 async function fetchSessionStateRows() {
   if (!SESSIONSTATE_PA_READ_URL) return null;
+  // A disabled PA flow may be turned back on while the app is open. Use a
+  // one-minute cooldown after a disabled response instead of permanently
+  // disabling cloud reads until the next page reload.
+  if (_sessionStateReadRetryAt && Date.now() < _sessionStateReadRetryAt) return null;
   try {
     // Same resilient fetch as the write path. Read failures used to
     // silently return null and the polling loop would skip a beat ·
@@ -22515,9 +24875,8 @@ async function fetchSessionStateRows() {
     // longer (whole table fetch) but bounded enough that a stalled
     // read doesn't block subsequent polls.
     let parsed;
-    if (typeof fetchWithRetry === 'function') {
-      parsed = await fetchWithRetry(SESSIONSTATE_PA_READ_URL, {
-        method: 'GET',
+    if (typeof fetchPaRead === 'function') {
+      parsed = await fetchPaRead(SESSIONSTATE_PA_READ_URL, {
         timeoutMs: 30000,
         maxAttempts: 3,
       });
@@ -22576,7 +24935,7 @@ async function fetchSessionStateRows() {
     const canonicalLookup = {};
     for (const ck of CANONICAL_KEYS) canonicalLookup[normalize(ck)] = ck;
 
-    return rows.map(rawRow => {
+    const normalizedRows = rows.map(rawRow => {
       if (!rawRow || typeof rawRow !== 'object') return rawRow;
       const normalized = { ...rawRow };  // keep original keys for backwards-compat
       for (const k of Object.keys(rawRow)) {
@@ -22591,10 +24950,53 @@ async function fetchSessionStateRows() {
       }
       return normalized;
     });
+    ingestGeoPingsFromSessionRows(normalizedRows);
+    _sessionStateReadRetryAt = 0;
+    _sessionStateReadWarned = false;
+    return normalizedRows;
   } catch (e) {
-    console.warn('[Twilight] SessionState read error:', e && e.message);
+    const msg = (e && e.message) || String(e);
+    // Power Automate SessionState READ flow is often disabled
+    // (HTTP 400 WorkflowTriggerIsNotEnabled). Stop hammering it and keep
+    // using local / BroadcastChannel / demo pings for the Activities map.
+    if (/HTTP 400|WorkflowTriggerIsNotEnabled|not enabled/i.test(msg)) {
+      _sessionStateReadRetryAt = Date.now() + 60 * 1000;
+      if (!_sessionStateReadWarned) {
+        _sessionStateReadWarned = true;
+        console.warn('[Twilight] SessionState cloud read is disabled (PA flow not enabled). Retrying in one minute; Activities map will keep local pins meanwhile.');
+      }
+    } else {
+      console.warn('[Twilight] SessionState read error:', msg);
+    }
     return null;
   }
+}
+
+function ingestGeoPingsFromSessionRows(rows) {
+  if (!Array.isArray(rows)) return;
+  rows.forEach(r => {
+    let parsed = null;
+    try {
+      parsed = typeof r.stateJson === 'string' ? JSON.parse(r.stateJson) : r.stateJson;
+    } catch (_) { parsed = null; }
+    const g = parsed && parsed.lastGeo;
+    if (!g || !Number.isFinite(Number(g.lat)) || !Number.isFinite(Number(g.lng))) return;
+    const id = String(r.orbitLoginId || '').toLowerCase();
+    if (!id) return;
+    const existing = (loadGeoPings() || {})[id];
+    const at = Number(g.at) || Date.parse(r.lastActive) || Date.now();
+    if (existing && existing.at && existing.at > at) return;
+    const name = (typeof getModeratorDisplayName === 'function') ? getModeratorDisplayName(id) : id;
+    recordGeoPing({
+      orbitLoginId: id,
+      name: g.name || name,
+      role: g.role || 'moderator',
+      lat: Number(g.lat),
+      lng: Number(g.lng),
+      accuracy: g.accuracy,
+      at,
+    }, { fromCloud: true });
+  });
 }
 
 // Return the newest SessionState row per (orbitLoginId, assignmentId)
@@ -22830,6 +25232,16 @@ function mergeTeammateState(syncableState) {
       state.remindersShown = [];
     }
   }
+  if (syncableState.officeCheckedInAt) {
+    const incoming = String(syncableState.officeCheckedInAt);
+    const current  = String(state.officeCheckedInAt || '');
+    if (!current || incoming < current) state.officeCheckedInAt = incoming;
+  }
+  if (syncableState.officeCheckedOutAt) {
+    const incoming = String(syncableState.officeCheckedOutAt);
+    const current  = String(state.officeCheckedOutAt || '');
+    if (!current || incoming > current) state.officeCheckedOutAt = incoming;
+  }
   if (syncableState.equipment)          state.equipment          = { ...state.equipment, ...syncableState.equipment };
   if (syncableState.stations) {
     // Deep merge stations · for each station, overlay scenarios + cameras.
@@ -22897,6 +25309,9 @@ function applySelfSyncReplace(s) {
     : {};
   state.sessionCompletedAt = s.sessionCompletedAt || null;
   state.arrivedAt          = s.arrivedAt          || '';
+  state.officeCheckedInAt  = s.officeCheckedInAt  || '';
+  state.officeCheckedOutAt = s.officeCheckedOutAt || '';
+  state.lastGeo            = s.lastGeo            || null;
   state.calGuideAck        = s.calGuideAck         || null;
   // Personal per-device reminder tracking is re-derived from the
   // adopted arrival anchor (same rationale as mergeTeammateState).
@@ -22904,12 +25319,7 @@ function applySelfSyncReplace(s) {
   saveState();
 }
 
-// Page-unload handler · ensures any pending debounced sync flushes
-// before the tab closes. Uses navigator.sendBeacon when available
-// (survives the unload event reliably) and falls back to a synchronous
-// fetch otherwise. The localStorage save already happened on every
-// state change, so this only protects the cloud sync.
-window.addEventListener('beforeunload', () => {
+function sendSessionStateBeacon(reason) {
   if (_sessionStateSyncState.timer) {
     clearTimeout(_sessionStateSyncState.timer);
     _sessionStateSyncState.timer = null;
@@ -22917,11 +25327,15 @@ window.addEventListener('beforeunload', () => {
   // If there's no in-flight write but there was a pending debounce, we
   // want to fire one last write. Construct the payload inline to avoid
   // depending on async fetch which beforeunload kills mid-flight.
-  if (!SESSIONSTATE_PA_WRITE_URL) return;
-  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return;
-  const asgn = (typeof getOperatorAssignment === 'function') ? getOperatorAssignment() : null;
-  if (!asgn || !asgn.id) return;
+  if (!SESSIONSTATE_PA_WRITE_URL) return false;
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return false;
+  const asgn = getSessionStateWriteContext();
+  if (!asgn || !asgn.id) return false;
   try {
+    if (state.lastGeo) {
+      state.lastGeo.syncReason = reason || 'app_close';
+      saveState();
+    }
     const payload = {
       sessionStateId: `ss_${state.modProfile.orbitLoginId}_${asgn.id}_${Date.now()}`,
       assignmentId:   String(asgn.id),
@@ -22934,21 +25348,75 @@ window.addEventListener('beforeunload', () => {
     // sendBeacon is fire-and-forget but reliably delivered even during
     // page unload. The browser queues it and sends it post-unload.
     const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-    navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
+    return navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
   } catch (e) {
     // Best-effort · nothing we can do if it fails during unload.
+    return false;
   }
+}
+
+function postSessionStateLifecycleUpdate(reason) {
+  if (!SESSIONSTATE_PA_WRITE_URL) return Promise.resolve(false);
+  if (!state || !state.modProfile || !state.modProfile.orbitLoginId) return Promise.resolve(false);
+  const asgn = getSessionStateWriteContext();
+  if (!asgn || !asgn.id) return Promise.resolve(false);
+  try {
+    if (state.lastGeo) {
+      state.lastGeo.syncReason = reason || 'lifecycle';
+      saveState();
+    }
+    // Build the complete body before logout resets in-memory state. `keepalive`
+    // lets this request finish while the app transitions to the login screen.
+    const payload = {
+      sessionStateId: `ss_${state.modProfile.orbitLoginId}_${asgn.id}_${Date.now()}`,
+      assignmentId:   String(asgn.id),
+      teamId:         String(asgn.teamId || ''),
+      orbitLoginId:   String(state.modProfile.orbitLoginId),
+      stateJson:      JSON.stringify(extractSyncableState(state)),
+      lastActive:     new Date().toISOString(),
+      appVersion:     APP_VERSION,
+    };
+    const body = JSON.stringify(payload);
+    return fetch(SESSIONSTATE_PA_WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return true;
+    }).catch(() => {
+      // Beacon remains the unload-safe fallback if the normal request cannot
+      // start (brief offline transition, browser shutdown, etc.).
+      try {
+        const blob = new Blob([body], { type: 'application/json' });
+        return navigator.sendBeacon(SESSIONSTATE_PA_WRITE_URL, blob);
+      } catch (_) {
+        return false;
+      }
+    });
+  } catch (_) {
+    return Promise.resolve(false);
+  }
+}
+
+// Page-unload handler · uploads the latest captured location when the tab
+// closes. Browser unload cannot wait for a new GPS fix, so this sends the
+// most recent open/interval location using sendBeacon.
+window.addEventListener('beforeunload', () => {
+  sendSessionStateBeacon('app_close');
 });
 
 const WORKLOG_STATUS_LABELS = {
+  office_checkin:          'Office check-in',
   arrived:                 'Check-in',
   // Workflow guide acknowledgment · fires once per session when the mod
   // clicks the "I acknowledge..." button in the cal-guide modal at
   // Station 0a. Deliberately NOT added to WORKLOG_STATUS_ORDER below
   // since it's a one-shot meta event, not a progression milestone.
-  // Including it in the ORDER array would break the slice(1, 7) calls
-  // that render station-progress dots (would offset all stations by
-  // one). Label-only is enough for buildWorklogRow's statusLabel field.
+  // Including it in the ORDER array would break station-progress dots
+  // (use WORKLOG_STATION_DOT_STATUSES instead of raw slice). Label-only
+  // is enough for buildWorklogRow's statusLabel field.
   cal_guide_acknowledged:  'Workflow guide acknowledged',
   station_0a_done:         'In session',
   station_0b_done:         'In session',
@@ -22958,14 +25426,21 @@ const WORKLOG_STATUS_LABELS = {
   station_3_done:          'In session',
   station_4_done:          'In session',
   session_done:            'Completed',
+  office_checkout:         'Office check-out',
 };
 
-// Ordering for "what is the latest status" calculations
+// Ordering for "what is the latest status" calculations.
+// Full day geo flow: office_checkin → arrived → stations → session_done → office_checkout.
 const WORKLOG_STATUS_ORDER = [
+  'office_checkin',
   'arrived', 'station_0a_done', 'station_0b_done', 'station_0c_done',
   'station_1_done', 'station_2_done', 'station_3_done', 'station_4_done',
   'session_done',
+  'office_checkout',
 ];
+
+// Station progress dots only (excludes office geo + arrived + session_done).
+const WORKLOG_STATION_DOT_STATUSES = WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
 // Maps a station's internal key to its Worklog status code
 const STATION_KEY_TO_STATUS = {
@@ -23208,6 +25683,8 @@ function deriveLatestStatusFromSessionState(asgnId) {
   let sessionCompletedAt = null;
   const stationCompletedAt = {};
   let arrivedAt = null;
+  let officeCheckedInAt = null;
+  let officeCheckedOutAt = null;
   let attributionRow = null;  // the row we'll borrow timestamp + orbitLoginId from
   for (const r of matching) {
     let parsed;
@@ -23215,6 +25692,14 @@ function deriveLatestStatusFromSessionState(asgnId) {
     catch (_) { continue; }
     if (parsed.sessionCompletedAt && !sessionCompletedAt) {
       sessionCompletedAt = parsed.sessionCompletedAt;
+      if (!attributionRow) attributionRow = r;
+    }
+    if (parsed.officeCheckedOutAt && !officeCheckedOutAt) {
+      officeCheckedOutAt = parsed.officeCheckedOutAt;
+      if (!attributionRow) attributionRow = r;
+    }
+    if (parsed.officeCheckedInAt && !officeCheckedInAt) {
+      officeCheckedInAt = parsed.officeCheckedInAt;
       if (!attributionRow) attributionRow = r;
     }
     if (parsed.stationCompletedAt) {
@@ -23260,6 +25745,7 @@ function deriveLatestStatusFromSessionState(asgnId) {
 
   // Priority walk. First match wins.
   const checks = [
+    { has: officeCheckedOutAt,                        status: 'office_checkout', at: officeCheckedOutAt },
     { has: sessionCompletedAt,                        status: 'session_done',    at: sessionCompletedAt },
     { has: stationCompletedAt['Station4'],            status: 'station_4_done',  at: stationCompletedAt['Station4'] },
     { has: stationCompletedAt['Station3'],            status: 'station_3_done',  at: stationCompletedAt['Station3'] },
@@ -23269,6 +25755,7 @@ function deriveLatestStatusFromSessionState(asgnId) {
     { has: stationCompletedAt['Station0b'],           status: 'station_0b_done', at: stationCompletedAt['Station0b'] },
     { has: stationCompletedAt['Station0a'],           status: 'station_0a_done', at: stationCompletedAt['Station0a'] },
     { has: arrivedAt,                                 status: 'arrived',         at: arrivedAt },
+    { has: officeCheckedInAt,                         status: 'office_checkin',  at: officeCheckedInAt },
   ];
   for (const c of checks) {
     if (c.has) {
@@ -23331,7 +25818,10 @@ function isSessionLocked(asgn) {
   }
   if (!asgn) return false;
   const my = (typeof getMyLatestStatusForAssignment === 'function') ? getMyLatestStatusForAssignment(asgn.id) : null;
-  return !!(my && my.status === 'session_done');
+  if (!my) return false;
+  if (my.status === 'session_done' || my.status === 'office_checkout') return true;
+  return (typeof statusOrderIdx === 'function') &&
+    statusOrderIdx(my.status) >= statusOrderIdx('session_done');
 }
 
 function getAllWorklogRowsForAssignment(asgnId) {
@@ -25070,7 +27560,8 @@ function renderMySessionSection() {
 
   const isArrived   = statusOrderIdx(displayStatus) >= statusOrderIdx('arrived');
   const isInSession = statusOrderIdx(displayStatus) >= statusOrderIdx('station_0a_done') && statusOrderIdx(displayStatus) < statusOrderIdx('session_done');
-  const isComplete  = displayStatus === 'session_done';
+  const isComplete  = displayStatus === 'session_done' || displayStatus === 'office_checkout' ||
+    statusOrderIdx(displayStatus) >= statusOrderIdx('session_done');
 
   // Equipment check · Confirm Arrival is only available once equipment is packed
   const requiredEquipment = (typeof EQUIPMENT_LIST !== 'undefined') ? EQUIPMENT_LIST.filter(e => !e.optional) : [];
@@ -25161,7 +27652,8 @@ function renderMySessionSection() {
   if (arrivalBtn) {
     arrivalBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      pushWorklogStatus(asgn, 'arrived');
+      if (typeof confirmOperatorArrival === 'function') confirmOperatorArrival();
+      else pushWorklogStatus(asgn, 'arrived');
     });
   }
   const startBtn = el.querySelector('.worklog-btn-start');
@@ -25211,14 +27703,17 @@ function renderMySessionSection() {
 function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, isCancelled, equipmentReady) {
   if (isCancelled) return '';
 
-  const todayStr = getPSTDateString();  // PST team-reference day (matches login welcome + My Session)
-  const isToday = asgn.date === todayStr;
+  const todayStr = getPSTDateString();
   const isFuture = asgn.date > todayStr;
   const arrivedIdx = statusOrderIdx('arrived');
   const myIdx = statusOrderIdx(myStatus);
   const teamIdx = statusOrderIdx(teamStatus);
+  const phase = (typeof getModeratorGeoPhase === 'function') ? getModeratorGeoPhase(asgn) : null;
+  const officeIn = (typeof hasOfficeCheckin === 'function') ? hasOfficeCheckin(asgn) : false;
+  const stationDots = (typeof WORKLOG_STATION_DOT_STATUSES !== 'undefined' && WORKLOG_STATION_DOT_STATUSES)
+    ? WORKLOG_STATION_DOT_STATUSES
+    : WORKLOG_STATUS_ORDER.filter(s => String(s).startsWith('station_'));
 
-  // ---- Future assignment ----
   if (isFuture) {
     return `<div class="worklog-row">
       <button class="worklog-btn worklog-btn-disabled" disabled>
@@ -25227,20 +27722,19 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Completed (mine OR team) ----
-  if (myStatus === 'session_done' || teamStatus === 'session_done') {
-    const teammateCompleted = teamStatus === 'session_done' && myStatus !== 'session_done';
+  if (myStatus === 'session_done' || teamStatus === 'session_done' ||
+      myStatus === 'office_checkout' || teamStatus === 'office_checkout' ||
+      statusOrderIdx(displayStatus) >= statusOrderIdx('session_done')) {
     return `<div class="worklog-summary done">
       <div class="worklog-summary-head">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
           <path d="M3 8l3 3 7-7" stroke="var(--green-text)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>Session complete${teammateCompleted ? ' (by teammate)' : ''}</span>
+        <span>Session complete</span>
       </div>
     </div>`;
   }
 
-  // ---- Phase 1a: not yet arrived ----
   if (myIdx < arrivedIdx && teamIdx < arrivedIdx) {
     if (!equipmentReady) {
       return `<div class="worklog-row">
@@ -25254,7 +27748,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     }
     return `<div class="worklog-row">
       <div class="worklog-copy">
-        Traveling to the assigned location. When you arrive, please confirm your arrival.
+        When you arrive at the assigned location, confirm arrival.
       </div>
       <button class="worklog-btn worklog-btn-arrival worklog-btn-primary">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -25266,7 +27760,6 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Phase 1b: arrived, not yet started a station ----
   if (statusOrderIdx(displayStatus) === arrivedIdx) {
     return `<div class="worklog-row">
       <div class="worklog-copy">
@@ -25281,7 +27774,6 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>`;
   }
 
-  // ---- Phase 2: in session · show progress bar ----
   const stationLabelMap = {
     station_0a_done: 'Station 0a complete',
     station_0b_done: 'Station 0b complete',
@@ -25302,7 +27794,7 @@ function renderWorklogControlsHTML(asgn, displayStatus, myStatus, teamStatus, is
     </div>
     ${teammateName ? `<div class="worklog-teammate-hint">Updated by ${escapeHTML(teammateName.split(' ')[0])}</div>` : ''}
     <div class="worklog-step-bar">
-      ${WORKLOG_STATUS_ORDER.slice(1, 7).map(step => {
+      ${stationDots.slice(0, 6).map(step => {
         const completed = statusOrderIdx(displayStatus) >= statusOrderIdx(step);
         return `<div class="worklog-step ${completed ? 'done' : ''}"></div>`;
       }).join('')}
@@ -25478,6 +27970,16 @@ function openWrapUpModal(asgn) {
         // teammate merges can compare timestamps; included in
         // extractSyncableState).
         try { state.sessionCompletedAt = new Date().toISOString(); saveState(); } catch (_) {}
+        // Capture and upload the moderator's current location with the final
+        // completion state. This is intentionally fire-and-forget so GPS does
+        // not hold the completion screen open.
+        try {
+          if (typeof syncModeratorLocationToSessionState === 'function') {
+            syncModeratorLocationToSessionState('session_completed');
+          }
+        } catch (_) {}
+        // Refresh geo banners · checkout only happens back at HQ.
+        try { if (typeof tickModeratorGeoFlow === 'function') tickModeratorGeoFlow({ force: true }); } catch (_) {}
         // Push final SessionState so admin Performance + teammate-sync see the
         // completion marker, then flush immediately (terminal action · worth
         // the round trip).
@@ -25784,6 +28286,14 @@ function finishSessionForDay() {
 }
 
 function logoutAndClearOperatorState() {
+  // Send the latest captured location before clearing the in-memory profile.
+  // The request body is snapshotted synchronously, then finishes in the
+  // background while the login screen appears.
+  try {
+    if (typeof postSessionStateLifecycleUpdate === 'function') {
+      postSessionStateLifecycleUpdate('logout');
+    }
+  } catch (_) {}
   // Reset the auto-guide station tracker so the next login re-evaluates from
   // scratch (otherwise an in-app logout→login onto the same station could skip
   // the re-pop). state.calGuideAck resets with the new session independently.
@@ -25828,6 +28338,8 @@ function logoutAndClearOperatorState() {
   if (typeof stopSessionStatePolling === 'function') stopSessionStatePolling();
   if (typeof stopMidnightWatcher === 'function') stopMidnightWatcher();
   if (typeof stopModAssignmentRefresh === 'function') stopModAssignmentRefresh();
+  if (typeof stopModeratorGeofence === 'function') stopModeratorGeofence();
+  if (typeof closeGeoFenceModal === 'function') closeGeoFenceModal();
   if (window._mySessionCarouselIdx) window._mySessionCarouselIdx = 0;
   // Force adminState reload on next access
   adminState._asgnLoaded = false;
@@ -25838,11 +28350,15 @@ function logoutAndClearOperatorState() {
   if (adminAppEl) adminAppEl.classList.remove('active');
   const loginEl = document.getElementById('loginScreen');
   if (loginEl) loginEl.style.display = 'flex';
+  clearPendingAuth();
+  closePasswordChangeModal();
+  clearLoginPasswordInputs();
   const loginInput = document.getElementById('loginUsername');
   if (loginInput) {
     loginInput.value = '';
     setTimeout(() => loginInput.focus(), 100);
   }
+  syncLoginPasswordFieldForUsername();
 }
 
 
@@ -27574,6 +30090,7 @@ function startApp() {
   // and admin edits without needing to log out / refresh / use the
   // nav refresh button.
   if (typeof startModAssignmentRefresh === 'function') startModAssignmentRefresh();
+  if (typeof startModeratorGeofence === 'function') startModeratorGeofence();
   // Expose the initial-fetch promise so the welcome-modal trigger
   // (registered in doLogin) can await it before deciding which
   // variant to show. Stored on window so it's reachable from the
@@ -28798,200 +31315,623 @@ function setLoginError(message) {
   }
 }
 
+function clearLoginPasswordInputs() {
+  const pw = document.getElementById('loginPassword');
+  if (pw) pw.value = '';
+  const n = document.getElementById('pwChangeNew');
+  if (n) n.value = '';
+  const c = document.getElementById('pwChangeConfirm');
+  if (c) c.value = '';
+}
+
 function setLoginLoading(isLoading) {
   const btn = document.getElementById('loginBtn');
   const input = document.getElementById('loginUsername');
+  const pw = document.getElementById('loginPassword');
   if (isLoading) {
     btn.disabled = true;
     btn.style.opacity = '0.7';
     btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:6px;vertical-align:-1px;"></span>Verifying…';
     input.disabled = true;
+    if (pw) pw.disabled = true;
   } else {
     btn.disabled = false;
     btn.style.opacity = '';
     btn.innerHTML = 'Sign In <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="margin-left:4px"><path d="M5 4l4 4-4 4M3 8h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     input.disabled = false;
+    // Re-apply passwordless visibility (may keep password disabled for allowlist admins)
+    syncLoginPasswordFieldForUsername();
   }
 }
 
+// Hide/disable password when the typed username is on the passwordless
+// admin allowlist (Admin-orbit / Ritu-Orbit / John-Orbit).
+function syncLoginPasswordFieldForUsername() {
+  const userEl = document.getElementById('loginUsername');
+  const field = document.getElementById('loginPasswordField');
+  const pw = document.getElementById('loginPassword');
+  if (!userEl || !field || !pw) return;
+  const passwordless = isPasswordlessAdminUsername(userEl.value.trim());
+  field.style.display = passwordless ? 'none' : '';
+  pw.disabled = !!passwordless;
+  if (passwordless) pw.value = '';
+  pw.required = !passwordless;
+  // Warm the Orbit Login ID spelling index while the user is still
+  // typing so sign-in doesn't wait on a directory read.
+  if (!passwordless && userEl.value.trim() && typeof loadOrbitLoginIdIndex === 'function') {
+    loadOrbitLoginIdIndex().catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Password auth via dedicated Power Automate flow (ADMIN_PA_MODERATOR_LOGIN_URL).
+// SECURITY: never fetch/compare/log/cache Excel Password in the browser.
+// Typed passwords live only in input DOM / local vars until POST, then clear.
+// Do NOT use ADMIN_PA_MODERATORS_URL for login — that read flow must not
+// return Password (and the client strips it if it does).
+// ---------------------------------------------------------------------------
+
+// In-memory only (never localStorage / never state). Holds safe profile +
+// orbit id between a successful login that requires setPassword and the
+// setPassword POST. Cleared on success, cancel, logout, or failed auth.
+// (_pendingAuthPassword is kept for clearPendingAuth compatibility; setPassword
+// no longer re-sends the old typed password.)
+let _pendingAuthPassword = null;
+let _pendingAuthProfile = null; // safe profile fields only
+let _pendingAuthOrbitId = null;
+let _loginInFlight = false;
+
+function clearPendingAuth() {
+  _pendingAuthPassword = null;
+  _pendingAuthProfile = null;
+  _pendingAuthOrbitId = null;
+}
+
+// Orbit Login IDs are typed by people but used as the Excel key column,
+// where lookups match the stored spelling exactly. Build a
+// normalized -> exact map from the directory so "david-orbit" or
+// "DAVID-ORBIT " signs in as the stored "David-Orbit".
+let _orbitLoginIdIndexPromise = null;
+
+function orbitLoginIdMatchKey(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+async function loadOrbitLoginIdIndex() {
+  if (!_orbitLoginIdIndexPromise) {
+    _orbitLoginIdIndexPromise = (async () => {
+      const map = new Map();
+      const addRows = (rows) => {
+        (Array.isArray(rows) ? rows : []).forEach(row => {
+          if (!row || typeof row !== 'object') return;
+          const exact = String(pickField(row, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').trim();
+          if (!exact) return;
+          const key = orbitLoginIdMatchKey(exact);
+          if (key && !map.has(key)) map.set(key, exact);
+        });
+      };
+      try { addRows(typeof adminState !== 'undefined' && adminState ? adminState.moderators : null); } catch (_) {}
+      if (map.size) return map;
+      try {
+        addRows(extractArray(await fetchModeratorDirectory({ timeoutMs: 20000, maxAttempts: 2 })));
+      } catch (e) {
+        console.warn('[Twilight] Orbit Login ID index unavailable:', (e && e.message) || e);
+      }
+      return map;
+    })();
+  }
+  const index = await _orbitLoginIdIndexPromise;
+  // A transient read failure must not freeze auto-correct for the session.
+  if (!index || !index.size) _orbitLoginIdIndexPromise = null;
+  return index;
+}
+
+async function resolveCanonicalOrbitLoginId(typed) {
+  const trimmed = String(typed || '').trim();
+  if (!trimmed) return trimmed;
+  const admin = ADMIN_USERNAMES.find(u => orbitLoginIdMatchKey(u) === orbitLoginIdMatchKey(trimmed));
+  if (admin) return admin;
+  try {
+    const index = await loadOrbitLoginIdIndex();
+    if (index && index.size) {
+      return index.get(orbitLoginIdMatchKey(trimmed)) || trimmed;
+    }
+  } catch (_) {}
+  return trimmed;
+}
+
+function unwrapAuthResponse(data) {
+  // PA sometimes returns a JSON string, or wraps the real payload in
+  // body/data/result. Unwrap before doLogin reads ok / reason.
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) return data;
+    try { return unwrapAuthResponse(JSON.parse(trimmed)); } catch (_) { return data; }
+  }
+  if (!data || typeof data !== 'object') return data;
+  if ('ok' in data || 'mustChangePassword' in data || 'profile' in data || 'error' in data || 'reason' in data) {
+    return data;
+  }
+  let body = data.body != null ? data.body
+    : (data.data != null ? data.data
+      : (data.result != null ? data.result
+        : (data.Output != null ? data.Output
+          : (data.output != null ? data.output : null))));
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (_) { return data; }
+  }
+  if (body && typeof body === 'object') return unwrapAuthResponse(body);
+  return data;
+}
+
+function buildSafeModProfileFromAuth(src) {
+  // Safe fields only — never copy Password / password / secret fields.
+  const orbitId = pickField(src, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
+  const fName   = pickField(src, 'firstName', 'first_name', 'FirstName', 'First Name');
+  const lName   = pickField(src, 'lastName',  'last_name',  'LastName',  'Last Name');
+  const phone   = pickField(src, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone');
+  const cEmail  = pickField(src, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email');
+  const loginRole = pickField(src, 'LoginRole', 'loginRole', 'login_role', 'Login Role', 'LOGINROLE');
+  const profile = {
+    orbitLoginId: orbitId,
+    firstName: fName,
+    lastName: lName,
+    phoneNumber: phone,
+    centificEmail: cEmail,
+  };
+  if (loginRole) profile.LoginRole = loginRole;
+  profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
+  return profile;
+}
+
+function isAuthUrlConfigured() {
+  return !!(ADMIN_PA_MODERATOR_LOGIN_URL && String(ADMIN_PA_MODERATOR_LOGIN_URL).trim());
+}
+
+async function postPasswordAuth(payload) {
+  // Dev/test intercept · set window.__orbitTestAuthHandler = async (payload) => ({...})
+  // to stub PA without a real URL. Checked before the empty-URL guard so
+  // browser tests can exercise login/setPassword. Never set in production.
+  if (typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function') {
+    return unwrapAuthResponse(await window.__orbitTestAuthHandler(payload));
+  }
+  const url = String(ADMIN_PA_MODERATOR_LOGIN_URL || '').trim();
+  if (!url) {
+    const err = new Error('Login flow is not configured yet.');
+    err.isAuthConfigMissing = true;
+    throw err;
+  }
+  try {
+    const data = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+      maxAttempts: 2,
+    });
+    return unwrapAuthResponse(data);
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/^HTTP 401/.test(msg)) {
+      const err = new Error('invalid_credentials');
+      err.isInvalidCredentials = true;
+      throw err;
+    }
+    // PA returns 502 NoResponse when the flow ends without hitting a
+    // Response action — usually Excel "Get a row" failing on an unknown
+    // Orbit Login ID with no run-after branch.
+    if (/^HTTP 50\d/.test(msg)) {
+      const err = new Error('auth_flow_no_response');
+      err.isAuthFlowNoResponse = true;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+function setPwChangeError(message) {
+  const el = document.getElementById('pwChangeError');
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.style.display = 'block';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+function openPasswordChangeModal() {
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (!overlay) return;
+  setPwChangeError(null);
+  const n = document.getElementById('pwChangeNew');
+  const c = document.getElementById('pwChangeConfirm');
+  if (n) n.value = '';
+  if (c) c.value = '';
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden', 'false');
+  setTimeout(() => { try { if (n) n.focus(); } catch (_) {} }, 50);
+}
+
+function closePasswordChangeModal() {
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden', 'true');
+  setPwChangeError(null);
+  const n = document.getElementById('pwChangeNew');
+  const c = document.getElementById('pwChangeConfirm');
+  if (n) n.value = '';
+  if (c) c.value = '';
+}
+
+function cancelForcedPasswordChange() {
+  clearPendingAuth();
+  closePasswordChangeModal();
+  clearLoginPasswordInputs();
+  setLoginError(null);
+  const loginEl = document.getElementById('loginScreen');
+  if (loginEl) loginEl.style.display = 'flex';
+  const user = document.getElementById('loginUsername');
+  if (user) setTimeout(() => user.focus(), 50);
+}
+
+async function submitForcedPasswordChange() {
+  const newEl = document.getElementById('pwChangeNew');
+  const confEl = document.getElementById('pwChangeConfirm');
+  const submitBtn = document.getElementById('pwChangeSubmit');
+  const cancelBtn = document.getElementById('pwChangeCancel');
+  const newPw = newEl ? newEl.value : '';
+  const conf = confEl ? confEl.value : '';
+  setPwChangeError(null);
+
+  if (!newPw || newPw.length < 8) {
+    setPwChangeError('Password must be at least 8 characters.');
+    return;
+  }
+  if (newPw === DEFAULT_FIRST_LOGIN_PASSWORD) {
+    setPwChangeError('Choose a different password than the default first-login password.');
+    return;
+  }
+  if (newPw !== conf) {
+    setPwChangeError('New password and confirmation do not match.');
+    return;
+  }
+  // setPassword only needs the Orbit Login ID + the new password in `password`
+  // (PA contract). The old typed password is not re-sent.
+  if (!_pendingAuthOrbitId) {
+    setPwChangeError('Session expired. Return to login and try again.');
+    return;
+  }
+  if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
+    setPwChangeError('Login flow is not configured yet.');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  try {
+    const orbitId = _pendingAuthOrbitId;
+    const profile = _pendingAuthProfile;
+    // PA contract: operation=setPassword puts the NEW password in `password`.
+    // Do not send a separate newPassword field (the flow does not read it).
+    const result = await postPasswordAuth({
+      operation: 'setPassword',
+      orbitLoginId: orbitId,
+      password: newPw,
+    });
+    // Clear secrets from memory and DOM immediately after POST returns.
+    clearPendingAuth();
+    if (newEl) newEl.value = '';
+    if (confEl) confEl.value = '';
+    clearLoginPasswordInputs();
+
+    if (!result || result.ok === false) {
+      setPwChangeError('Could not update password. Check your connection and try again.');
+      // Restore pending orbit/profile without the password so user must re-login
+      closePasswordChangeModal();
+      setLoginError('Could not update password. Please sign in again.');
+      return;
+    }
+
+    closePasswordChangeModal();
+    // Prefer a fresh safe profile from the setPassword response if provided;
+    // otherwise use the profile already returned by the login call.
+    const nextProfile = (result.profile && typeof result.profile === 'object')
+      ? buildSafeModProfileFromAuth(result.profile)
+      : profile;
+    routeAfterSuccessfulAuth(orbitId, nextProfile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId }));
+  } catch (e) {
+    if (e && e.isInvalidCredentials) {
+      setPwChangeError('The new password was not saved. In Condition 2 (Parameters), left box must be operation, middle is equal to, right box setPassword. True must go to Update a row.');
+    } else if (e && e.isAuthConfigMissing) {
+      setPwChangeError('Login flow is not configured yet.');
+    } else if (e && e.isAuthFlowNoResponse) {
+      setPwChangeError('The login flow did not return a response. Ask an admin to check it.');
+    } else {
+      setPwChangeError("Couldn't reach the password service. Check your connection and try again.");
+      console.error('setPassword failed:', e);
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+  }
+}
+
+function routeAfterSuccessfulAuth(orbitId, profile) {
+  const safe = profile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId });
+  const id = safe.orbitLoginId || orbitId;
+  // Role comes only from the PA profile response — never from client input.
+  // Directory LoginRole=Admin → admin app. Hardcoded passwordless allowlist
+  // names (Admin-orbit / Ritu-Orbit / John-Orbit) enter admin without PA.
+  const roleIsAdmin = directoryRoleIsAdmin(safe);
+  const roleExplicitNonAdmin = !!(safe.LoginRole && !roleIsAdmin);
+  const enterAdmin = roleIsAdmin || (isAdminUsername(id) && !roleExplicitNonAdmin);
+
+  if (enterAdmin) {
+    const enteredName = isAdminUsername(id) ? canonicalAdminUsername(id) : id;
+    const savedA = loadState(enteredName);
+    if (savedA && savedA.username &&
+        (isAdminUsername(savedA.username) ||
+         String(savedA.username).toLowerCase() === String(enteredName).toLowerCase())) {
+      state = savedA;
+      state.username = enteredName;
+    } else {
+      state = defaultState();
+      state.username = enteredName;
+    }
+    state.modProfile = safe;
+    state.isAdmin = true;
+    saveState();
+    setLastLoginUsername(enteredName);
+    startAdminApp();
+    return;
+  }
+
+  const saved = loadState(id);
+  let resumed = false;
+  if (saved && saved.username && saved.username.toLowerCase() === String(id).toLowerCase()) {
+    state = saved;
+    state.username = id;
+    resumed = true;
+  } else {
+    state = defaultState();
+    state.username = id;
+  }
+  state.modProfile = safe;
+  state.isAdmin = false;
+  if (maybeResetStaleSession()) resumed = false;
+  saveState();
+  setLastLoginUsername(id);
+  _loginWelcomePending = true;
+  startApp();
+  if (resumed && state.participantId) {
+    setTimeout(() => {
+      if (typeof showToast === 'function') {
+        const partLabel = state.participantName
+          ? state.participantName
+          : (state.participantId ? `participant ${state.participantId}` : 'your session');
+        showToast(`Resumed where you left off · ${partLabel}`, 'success', 4500);
+      }
+    }, 500);
+  }
+  setTimeout(async () => {
+    if (!_loginWelcomePending) return;
+    _loginWelcomePending = false;
+    try {
+      const initial = window._orbitInitialAsgnRefresh;
+      if (initial && typeof initial.then === 'function') {
+        await Promise.race([
+          initial,
+          new Promise(resolve => setTimeout(resolve, 2500)),
+        ]);
+      }
+      checkLoginWelcome();
+    } catch (e) {
+      console.warn('[Twilight] Welcome check error:', e && e.message);
+      try { checkLoginWelcome(); } catch (_) {}
+    }
+  }, 900);
+}
+
+function enterPasswordlessAdmin(enteredName) {
+  const enteredAdminName = canonicalAdminUsername(enteredName);
+  const saved = loadState(enteredAdminName);
+  if (saved && saved.username && isAdminUsername(saved.username)) {
+    state = saved;
+    state.username = enteredAdminName;
+  } else {
+    state = defaultState();
+    state.username = enteredAdminName;
+  }
+  state.isAdmin = true;
+  saveState();
+  setLastLoginUsername(enteredAdminName);
+  startAdminApp();
+}
+
 async function doLogin() {
+  if (_loginInFlight) return;
   const v = document.getElementById('loginUsername').value.trim();
+  const pwEl = document.getElementById('loginPassword');
+  // Read password into a local var only — never assign to state / localStorage.
+  let typedPassword = pwEl ? pwEl.value : '';
   setLoginError(null);
   if (!v) {
     shakeLoginCard();
     return;
   }
-  // Admin login · match against the list of allowed admin usernames
-  // (case-insensitive). Multiple admins (Admin-orbit, Ritu-Orbit,
-  // John-Orbit) can sign in; the username they typed is preserved and
-  // rendered in the top nav so each admin sees their own identity.
-  // Same-account behavior for everyone · all admins share the same
-  // localStorage cache because the data layer (Excel) is the source
-  // of truth and admin-specific separation isn't a data concept here.
-  if (isAdminUsername(v)) {
-    const enteredAdminName = canonicalAdminUsername(v);
-    // Admin login uses the same per-username slot pattern as operators.
-    // Each admin (Admin-orbit, Ritu-Orbit, John-Orbit) has their own
-    // localStorage slot keyed by their username. Admins primarily read
-    // data from the cloud (Excel via PA), so the slot contents are
-    // small · mostly UI state like which tab they had open. Per-user
-    // slots prevent admin A's tab choice from leaking into admin B's
-    // session when they swap on the same device.
-    const saved = loadState(enteredAdminName);
-    if (saved && saved.username && isAdminUsername(saved.username)) {
-      state = saved;
-      state.username = enteredAdminName;
-    } else {
-      state = defaultState();
-      state.username = enteredAdminName;
-    }
-    saveState();
-    setLastLoginUsername(enteredAdminName);
-    startAdminApp();
+
+  // Passwordless allowlist: Admin-orbit / Ritu-Orbit / John-Orbit.
+  if (isPasswordlessAdminUsername(v)) {
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    clearPendingAuth();
+    enterPasswordlessAdmin(v);
     return;
   }
 
-  // Operator login · must match an orbitLoginId in the Moderators table.
-  // Uses the same resilient fetchWithRetry helper as loadModerators so a
-  // transient PA hiccup during login doesn't bounce the user back to
-  // the error state. Login is the most painful spot to hit a slow PA
-  // flow · admin/mod is trying to GET INTO the app, so timeout +
-  // retries matter more than anywhere else.
+  if (!typedPassword) {
+    setLoginError('Enter your password to sign in.');
+    shakeLoginCard();
+    return;
+  }
+
+  if (!isAuthUrlConfigured() && !(typeof window !== 'undefined' && typeof window.__orbitTestAuthHandler === 'function')) {
+    setLoginError('Login flow is not configured yet. Ask an admin to finish the Orbit moderator login Power Automate setup (ADMIN_PA_MODERATOR_LOGIN_URL).');
+    shakeLoginCard();
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    return;
+  }
+
+  _loginInFlight = true;
   setLoginLoading(true);
   try {
-    const data = await fetchWithRetry(ADMIN_PA_MODERATORS_URL, {
-      method: 'GET',
-      timeoutMs: 45000,
-      maxAttempts: 3,
-    });
-    const moderators = extractArray(data);
+    // Typed IDs are matched case-insensitively, then corrected to the
+    // spelling stored in the directory (the Excel key column).
+    const loginId = await resolveCanonicalOrbitLoginId(v);
+    if (loginId !== v) {
+      const userEl = document.getElementById('loginUsername');
+      if (userEl) userEl.value = loginId;
+      if (isPasswordlessAdminUsername(loginId)) {
+        if (pwEl) pwEl.value = '';
+        typedPassword = '';
+        clearPendingAuth();
+        setLoginLoading(false);
+        _loginInFlight = false;
+        enterPasswordlessAdmin(loginId);
+        return;
+      }
+    }
 
-    // Find the moderator (case-insensitive match on orbitLoginId)
-    const matched = moderators.find(m => {
-      const id = pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-      return String(id || '').toLowerCase() === v.toLowerCase();
+    const data = await postPasswordAuth({
+      operation: 'login',
+      orbitLoginId: loginId,
+      password: typedPassword,
     });
 
-    if (!matched) {
+    // Clear the password from the input as soon as the POST returns.
+    if (pwEl) pwEl.value = '';
+
+    if (!data || data.ok === false) {
+      typedPassword = '';
       setLoginLoading(false);
-      setLoginError("That username isn't recognized. Please use your Orbit Login ID exactly as registered.");
+      _loginInFlight = false;
+      // Distinguish "no such row" from "wrong password" so a misconfigured
+      // flow is obvious instead of looking like a bad password.
+      const reason = String((data && (data.reason || data.error || data.message)) || '').trim();
+      const reasonKey = reason.replace(/[\s_-]+/g, '').toLowerCase();
+      if (reason) console.warn('[Twilight] Login rejected · reason:', reason, '· keys:', data && typeof data === 'object' ? Object.keys(data) : []);
+      if (reasonKey === 'notfound' || /notfound/.test(reasonKey)) {
+        // If the directory already knows this ID, PA's Condition 1 is wrong
+        // (Excel found the row but the flow still answered notFound).
+        let knownInDirectory = false;
+        try {
+          const index = await loadOrbitLoginIdIndex();
+          knownInDirectory = !!(index && index.has(orbitLoginIdMatchKey(loginId)));
+        } catch (_) {}
+        if (knownInDirectory) {
+          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” In Condition 1 (Parameters), type 1 is equal to 1. True must go to Condition 2.');
+        } else {
+          setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
+        }
+      } else {
+        setLoginError('Orbit Login ID or password is incorrect.');
+      }
       shakeLoginCard();
       return;
     }
 
-    // Cache the moderator profile so the operator app can use it
-    const orbitId  = pickField(matched, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id');
-    const fName    = pickField(matched, 'firstName', 'first_name', 'FirstName', 'First Name');
-    const lName    = pickField(matched, 'lastName',  'last_name',  'LastName',  'Last Name');
-    const phone    = pickField(matched, 'phoneNumber', 'phone_number', 'PhoneNumber', 'Phone Number', 'phone');
-    const cEmail   = pickField(matched, 'centificEmail', 'centific_email', 'CentificEmail', 'Centific Email', 'workEmail', 'email');
-    const profile = {
-      orbitLoginId: orbitId, firstName: fName, lastName: lName, phoneNumber: phone, centificEmail: cEmail,
-    };
-    profile.name = [fName, lName].filter(Boolean).join(' ').trim() || orbitId;
+    const rawProfile = (data.profile && typeof data.profile === 'object') ? data.profile : {};
+    const profile = buildSafeModProfileFromAuth(Object.assign({}, rawProfile, {
+      orbitLoginId: pickField(rawProfile, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || loginId,
+    }));
+    const orbitId = profile.orbitLoginId || loginId;
+    const mustChange = !!data.mustChangePassword;
 
-    // Role routing · the Moderators table's `LoginRole` column decides
-    // the app. LoginRole = "Admin" → admin app (keeping the profile so the
-    // admin's real name prints as decided_by on approvals). Any other value
-    // ("Mod"/"Moderator"/blank) falls through to the moderator app below.
-    if (directoryRoleIsAdmin(matched)) {
-      const savedA = loadState(orbitId);
-      if (savedA && savedA.username && savedA.username.toLowerCase() === orbitId.toLowerCase()) {
-        state = savedA; state.username = orbitId;
-      } else {
-        state = defaultState(); state.username = orbitId;
-      }
-      state.modProfile = profile;
-      state.isAdmin = true;          // persisted flag so auto-resume re-routes to admin
-      saveState();
-      setLastLoginUsername(orbitId);
+    if (mustChange) {
+      // Keep orbit id + safe profile only. The old typed password is not
+      // needed for setPassword (PA writes the NEW password from `password`).
+      typedPassword = '';
+      clearPendingAuth();
+      _pendingAuthProfile = profile;
+      _pendingAuthOrbitId = orbitId;
       setLoginLoading(false);
-      startAdminApp();
+      _loginInFlight = false;
+      openPasswordChangeModal();
       return;
     }
 
-    // Try to restore saved state for THIS specific user. Pass orbitId
-    // so loadState() looks in the per-username slot
-    // (centific_orbit_session_<orbitId>) rather than the legacy global
-    // key. If the user has prior session data, it's returned here ·
-    // their participant ID, equipment checklist, scenario progress,
-    // and notes all come back intact.
-    const saved = loadState(orbitId);
-    let resumed = false;
-    if (saved && saved.username && saved.username.toLowerCase() === orbitId.toLowerCase()) {
-      state = saved;
-      state.username = orbitId; // canonicalize casing
-      resumed = true;
-    } else {
-      state = defaultState();
-      state.username = orbitId;
-    }
-    state.modProfile = profile;
-    // Day-boundary guard: if the restored slot is from a prior day, reset to
-    // a fresh session for today. The mod closed the app and reopened on a
-    // new day · yesterday's participant/station data must not carry over.
-    if (maybeResetStaleSession()) resumed = false;
-    saveState();
-    setLastLoginUsername(orbitId);
+    typedPassword = '';
+    clearPendingAuth();
     setLoginLoading(false);
-    // Mark this as a FRESH login (not auto-resume on refresh) so the
-    // welcome modal fires. The flag is consumed by the timer below
-    // and reset, so subsequent renderApp/state changes don't re-trigger.
-    _loginWelcomePending = true;
-    startApp();
-    // After the app paints, surface a non-intrusive toast confirming
-    // the resume happened · gives the operator visual confirmation
-    // that their progress was preserved (vs silently restoring, which
-    // could feel unsettling if they expected a fresh slate). The toast
-    // includes the participant name if known so they can verify it's
-    // the right session before continuing.
-    if (resumed && state.participantId) {
-      setTimeout(() => {
-        if (typeof showToast === 'function') {
-          const partLabel = state.participantName
-            ? state.participantName
-            : (state.participantId ? `participant ${state.participantId}` : 'your session');
-          showToast(`Resumed where you left off · ${partLabel}`, 'success', 4500);
-        }
-      }, 500);
-    }
-    // Trigger the login welcome modal (Feature 1 / Feature 2). Runs
-    // ~900ms after paint so the operator sees the app briefly before
-    // the modal appears. This is BEFORE the teammate-sync check
-    // (~1200ms) so the welcome decision happens first; if welcome
-    // shows a "today completed" or "next session" modal, the teammate
-    // sync check skips (its own dedupe sees the welcome overlay).
-    //
-    // CRITICAL: we AWAIT the initial assignment fetch before deciding
-    // which welcome variant to show. Otherwise a fresh-device mod
-    // would always see "no_session" because their local cache is
-    // empty before the fetch lands. The fetch resolves typically in
-    // 400-800ms; we cap the wait at 2.5s so a flaky network doesn't
-    // block the welcome forever (fallback: show whatever local cache
-    // has, same as the old behavior).
-    setTimeout(async () => {
-      if (!_loginWelcomePending) return;
-      _loginWelcomePending = false;
-      try {
-        const initial = window._orbitInitialAsgnRefresh;
-        if (initial && typeof initial.then === 'function') {
-          await Promise.race([
-            initial,
-            new Promise(resolve => setTimeout(resolve, 2500)),  // safety timeout
-          ]);
-        }
-        checkLoginWelcome();
-      } catch (e) {
-        console.warn('[Twilight] Welcome check error:', e && e.message);
-        // Still try the welcome check with whatever state we have
-        try { checkLoginWelcome(); } catch (_) {}
-      }
-    }, 900);
+    _loginInFlight = false;
+    routeAfterSuccessfulAuth(orbitId, profile);
   } catch (e) {
+    if (pwEl) pwEl.value = '';
+    typedPassword = '';
+    clearPendingAuth();
     setLoginLoading(false);
-    setLoginError("Couldn't reach the moderator directory. Check your connection and try again.");
-    console.error('Login fetch failed:', e);
+    _loginInFlight = false;
+    if (e && e.isInvalidCredentials) {
+      setLoginError('Orbit Login ID or password is incorrect.');
+    } else if (e && e.isAuthConfigMissing) {
+      setLoginError('Login flow is not configured yet. Ask an admin to finish the Orbit moderator login Power Automate setup (ADMIN_PA_MODERATOR_LOGIN_URL).');
+    } else if (e && e.isAuthFlowNoResponse) {
+      setLoginError("Check your Orbit Login ID spelling. If it's correct, the login flow needs an admin fix (no response returned).");
+    } else {
+      setLoginError("Couldn't reach the password service. Check your connection and try again.");
+      console.error('Login auth failed:', e);
+    }
+    shakeLoginCard();
   }
+}
+
+function wirePasswordLoginUi() {
+  const userEl = document.getElementById('loginUsername');
+  const pwEl = document.getElementById('loginPassword');
+  if (userEl && !userEl._pwSyncWired) {
+    userEl._pwSyncWired = true;
+    userEl.addEventListener('input', syncLoginPasswordFieldForUsername);
+    userEl.addEventListener('change', syncLoginPasswordFieldForUsername);
+  }
+  if (pwEl && !pwEl._enterWired) {
+    pwEl._enterWired = true;
+    pwEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+  }
+  const submit = document.getElementById('pwChangeSubmit');
+  const cancel = document.getElementById('pwChangeCancel');
+  const conf = document.getElementById('pwChangeConfirm');
+  if (submit && !submit._wired) {
+    submit._wired = true;
+    submit.addEventListener('click', () => { submitForcedPasswordChange(); });
+  }
+  if (cancel && !cancel._wired) {
+    cancel._wired = true;
+    cancel.addEventListener('click', () => { cancelForcedPasswordChange(); });
+  }
+  if (conf && !conf._enterWired) {
+    conf._enterWired = true;
+    conf.addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitForcedPasswordChange();
+    });
+  }
+  // Overlay click must NOT dismiss into the app (forced change).
+  const overlay = document.getElementById('pwChangeOverlay');
+  if (overlay && !overlay._wired) {
+    overlay._wired = true;
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) {
+        // Ignore backdrop clicks — cancel is the only escape.
+        e.stopPropagation();
+      }
+    });
+  }
+  syncLoginPasswordFieldForUsername();
 }
 
 // Dock the nav action buttons into the right-side Helios rail on desktop, or
@@ -29085,6 +32025,7 @@ function init() {
   }
 
   // Login bindings
+  wirePasswordLoginUi();
   document.getElementById('loginBtn').addEventListener('click', doLogin);
   document.getElementById('loginUsername').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
@@ -29242,6 +32183,10 @@ function init() {
     document.getElementById('adminApp').classList.remove('active');
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('loginUsername').value = '';
+    clearPendingAuth();
+    closePasswordChangeModal();
+    clearLoginPasswordInputs();
+    syncLoginPasswordFieldForUsername();
     document.getElementById('loginUsername').focus();
   });
 

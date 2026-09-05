@@ -2918,7 +2918,45 @@ button, a, label, input, select, textarea,
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
+.login-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .login-card .btn { width: 100%; justify-content: center; padding: 14px; margin-top: 8px; }
+/* Forced first-login password change · blocks app entry until saved */
+.pw-change-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(6px);
+}
+.pw-change-overlay.open { display: flex; }
+.pw-change-modal {
+  background: var(--card-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+  padding: 28px 26px;
+  width: 100%; max-width: 400px;
+  animation: fadeUp 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.pw-change-modal h2 {
+  font-size: 20px; font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+.pw-change-modal .pw-change-sub {
+  font-size: 14px; font-weight: 300;
+  color: var(--text2);
+  line-height: 1.45;
+  margin: 0 0 20px;
+}
+.pw-change-actions {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 8px;
+}
+.pw-change-actions .btn { width: 100%; justify-content: center; }
 .login-meta {
   margin-top: 22px;
   display: flex; align-items: center; justify-content: space-between;
@@ -3992,6 +4030,23 @@ input#ent_lakitu.lakitu-invalid {
   display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap; min-width: 0; flex: 1;
 }
+.modview-extra-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: -6px 0 16px;
+  position: relative;
+  z-index: 5;
+}
+.modview-extra-filters[hidden] {
+  display: none !important;
+}
+.activities-demo-ping-btn {
+  font-size: 12px !important;
+  padding: 6px 10px !important;
+  white-space: nowrap;
+}
 .subtab-toggle {
   display: inline-flex; gap: 3px;
   background: var(--bg3); border: 0.5px solid var(--border);
@@ -4071,6 +4126,177 @@ input#ent_lakitu.lakitu-invalid {
 @media (max-width: 1180px) { .mod-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 880px)  { .mod-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px)  { .mod-grid { grid-template-columns: 1fr; } }
+
+/* Moderator All view · grid/list toggle + add user */
+.mod-all-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.mod-layout-toggle {
+  display: inline-flex; gap: 3px;
+  background: var(--bg3); border: 0.5px solid var(--border);
+  border-radius: 11px; padding: 3px;
+}
+.mod-layout-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  color: var(--text2); background: transparent; border: none;
+  border-radius: 8px; padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.mod-layout-btn:hover { color: var(--text); }
+.mod-layout-btn.active {
+  background: var(--bg2); color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .mod-layout-btn.active { background: var(--bg4); }
+
+.mod-table-wrap {
+  overflow-x: auto;
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  background: var(--card-bg);
+}
+.mod-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13.5px;
+}
+.mod-table th {
+  text-align: left;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text3);
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+  white-space: nowrap;
+}
+
+.mod-table th .mod-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.mod-table th .mod-sort-btn:hover,
+.mod-table th .mod-sort-btn:focus-visible {
+  color: var(--text);
+}
+.mod-table th .mod-sort-btn:focus-visible {
+  outline: 2px solid var(--accent, #3b82f6);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.mod-table th .mod-sort-btn.is-active {
+  color: var(--text);
+}
+.mod-table th .mod-sort-indicator {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.mod-table td {
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.mod-table tr:last-child td { border-bottom: none; }
+.mod-table-name {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600;
+}
+.mod-avatar-sm {
+  width: 28px; height: 28px; font-size: 11px;
+}
+.mod-table-mono {
+  font-family: var(--font-num);
+  font-size: 12.5px; color: var(--text2);
+}
+.mod-role-pill {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--bg3); color: var(--text2);
+  border: 0.5px solid var(--border);
+}
+.mod-table-actions { text-align: right; white-space: nowrap; }
+.mod-card-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+  display: flex; justify-content: flex-end;
+}
+
+/* Create / edit user modal */
+.mod-user-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8, 12, 18, 0.45);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 620;
+}
+.mod-user-modal-overlay.open { opacity: 1; pointer-events: all; }
+.mod-user-modal {
+  position: fixed; left: 50%; top: 50%;
+  transform: translate(-50%, -46%) scale(0.98);
+  width: min(720px, calc(100vw - 28px));
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  background: var(--card-bg);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 621;
+}
+.mod-user-modal.open {
+  opacity: 1; pointer-events: all;
+  transform: translate(-50%, -50%) scale(1);
+}
+.mod-user-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+@media (max-width: 640px) {
+  .mod-user-form-grid { grid-template-columns: 1fr; }
+}
+.mod-user-config-banner {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg3));
+  border: 0.5px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--text);
+  font-size: 13px; line-height: 1.45;
+}
+.mod-user-config-banner code {
+  font-family: var(--font-num);
+  font-size: 12px;
+}
+.mod-user-form-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 12%, var(--bg3));
+  border: 0.5px solid color-mix(in srgb, #ef4444 40%, var(--border));
+  color: var(--text);
+  font-size: 13px;
+}
 
 .mod-card {
   background: var(--card-bg);
@@ -10302,6 +10528,12 @@ button.perf-stat-chip.scheduled.active {
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 [data-theme="dark"] .modview-btn.active { background: var(--bg4); }
+.activities-map-filters {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
 .activities-team-filter {
   display: inline-flex; align-items: center; gap: 8px;
   animation: activitiesFilterIn 0.18s ease both;
@@ -10331,6 +10563,7 @@ button.perf-stat-chip.scheduled.active {
   to { opacity: 1; transform: translateX(0); }
 }
 @media (max-width: 600px) {
+  .activities-map-filters { width: 100%; }
   .activities-team-filter { width: 100%; }
   .activities-team-select { flex: 1; min-width: 0; }
 }
@@ -12181,10 +12414,14 @@ button.perf-stat-chip.scheduled.active {
     <div class="login-mark" role="img" aria-label="Centific logo"></div>
     <div class="login-eyebrow">Centific Data Collection</div>
     <h1 class="login-title">Project Twilight</h1>
-    <p class="login-sub">Enter your username to begin a session. Your progress will save automatically as you work.</p>
+    <p class="login-sub">Enter your Orbit Login ID and password to begin a session. Your progress will save automatically as you work.</p>
     <div class="login-field">
       <label for="loginUsername">Username</label>
-      <input type="text" id="loginUsername" placeholder="enter your username" autocomplete="username" autocapitalize="off" autocorrect="off">
+      <input type="text" id="loginUsername" placeholder="enter your username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="login-field" id="loginPasswordField">
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" placeholder="enter your password" autocomplete="current-password">
     </div>
     <button class="btn btn-primary" id="loginBtn">
       Sign In
@@ -12194,6 +12431,27 @@ button.perf-stat-chip.scheduled.active {
     </button>
     <div class="login-meta" style="justify-content: center">
       <span id="loginVersionLabel"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Forced first-login password change (cannot dismiss into the app) -->
+<div id="pwChangeOverlay" class="pw-change-overlay" aria-hidden="true">
+  <div class="pw-change-modal" role="dialog" aria-modal="true" aria-labelledby="pwChangeTitle">
+    <h2 id="pwChangeTitle">Set a new password</h2>
+    <p class="pw-change-sub">This is your first sign-in (or your password still needs updating). Choose a new password of at least 8 characters to continue.</p>
+    <div class="login-field">
+      <label for="pwChangeNew">New password</label>
+      <input type="password" id="pwChangeNew" autocomplete="new-password" spellcheck="false">
+    </div>
+    <div class="login-field">
+      <label for="pwChangeConfirm">Confirm password</label>
+      <input type="password" id="pwChangeConfirm" autocomplete="new-password" spellcheck="false">
+    </div>
+    <div id="pwChangeError" style="display:none; margin: 0 0 12px; font-size: 13.5px; color: var(--red); text-align: center; line-height: 1.4;"></div>
+    <div class="pw-change-actions">
+      <button type="button" class="btn btn-primary" id="pwChangeSubmit">Save password &amp; continue</button>
+      <button type="button" class="btn btn-ghost" id="pwChangeCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -12251,40 +12509,17 @@ button.perf-stat-chip.scheduled.active {
                 stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
         </svg>
       </button>
-      <!-- Lakitu quick link · opens Amazon's session console in a new tab.
-           Placed before the Refresh button so it sits in a predictable
-           "external action" zone alongside other utility buttons. The
-           rel="noopener noreferrer" pair is the standard security hardening
-           for any target="_blank" link: prevents the destination page from
-           accessing window.opener (which could otherwise navigate this tab
-           or read its origin). target="_blank" is what opens the new tab.
-
-           Visual: icon-only square button on every screen size, sized
-           to match the user-chip avatar. The brand name "Lakitu App"
-           appears in the menu drawer's Quick Links row instead · kept
-           out of the nav so the nav's visual rhythm stays consistent
-           across breakpoints. -->
-      <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+      <!-- Ring dashboard quick link · opens the Ring account dashboard
+           in a new tab. id stays navLakituBtn so the Helios rail still
+           docks this node. rel="noopener noreferrer" with target="_blank"
+           keeps the destination from accessing window.opener. -->
+      <a href="https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e" target="_blank" rel="noopener noreferrer"
          class="icon-btn nav-lakitu-btn" id="navLakituBtn"
-         aria-label="Open Lakitu App in a new tab"
-         title="Open Lakitu App (sessions)">
-        <!-- Sized to 22x22 to match the user-chip avatar (.user-chip .avatar)
-             so the two "identity markers" in the nav read at the same
-             visual weight. The viewBox stays 16x16 · only the rendered
-             size grows, which keeps the path coordinates simple. -->
+         aria-label="Open Ring dashboard in a new tab"
+         title="Open Ring dashboard">
         <svg class="nav-lakitu-icon" width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <!-- Lakitu Ring app logo: a white triangle inside a black circle.
-               (The source asset has a green app-icon background; we drop
-               that so the logo reads cleanly in both dark and light themes.)
-               Hardcoded #000 / #fff (not currentColor) so the brand mark
-               looks identical in dark and light modes · it shouldn't
-               invert with the surroundings. -->
-          <circle cx="8" cy="8" r="7.25" fill="#000"/>
-          <!-- Upward-pointing equilateral triangle, centered inside the
-               circle. Apex at top (~y=4.0), base across (~y=11.5). Slight
-               rounding via stroke-linejoin so the triangle's corners
-               feel intentional rather than razor-sharp. -->
-          <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+          <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+          <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
         </svg>
       </a>
       <button class="icon-btn" id="navRefreshBtn" aria-label="Refresh schedule" title="Refresh next-session queue">
@@ -12476,27 +12711,18 @@ button.perf-stat-chip.scheduled.active {
          an outbound-arrow glyph so the moderator can tell at a glance
          which menu rows leave the app vs. navigate within it. -->
     <div class="menu-section-label">Quick Links</div>
-    <a href="https://lakitu.ring.amazon.dev/sessions" target="_blank" rel="noopener noreferrer"
+    <a href="https://account.ring.com/account/dashboard?l=cc1589fd-d875-4973-b488-5f1c2b5f0f3e" target="_blank" rel="noopener noreferrer"
        class="menu-row menu-row-link" id="lakituRow">
       <div class="label">
-        <!-- Drop the .ic wrapper's default bg3 background here · the
-             Lakitu logo's black disc IS the icon shape, so a tinted
-             wrapper would visually fight with it. Size matches other
-             .ic wrappers (30x30) so the row alignment stays consistent
-             with sibling menu rows like My Calendar / Export. -->
         <span class="ic" style="background: transparent; padding: 0;">
-          <!-- Same Lakitu logo as the nav button · keeps the brand
-               glyph consistent wherever the link appears in the app.
-               White triangle inside a black disc; theme-independent
-               colors so the brand looks identical in dark and light. -->
           <svg width="26" height="26" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="7.25" fill="#000"/>
-            <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+            <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+            <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
           </svg>
         </span>
         <div>
-          <div class="text">Lakitu App</div>
-          <div class="desc">Open Amazon's session console in a new tab</div>
+          <div class="text">Ring</div>
+          <div class="desc">Open the Ring dashboard in a new tab</div>
         </div>
       </div>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="opacity: 0.55;">
@@ -12639,7 +12865,7 @@ button.perf-stat-chip.scheduled.active {
   <span id="toastText"></span>
 </div>
 
-<script src="twilight.js" defer></script>
+<script src="twilight.js?v=geo-demo-1" defer></script>
 
 <style id="activities-map-style">
 /* Activities map · Helios-style neumorphic outer + inset well (vizWell frame) */
@@ -12741,6 +12967,196 @@ button.perf-stat-chip.scheduled.active {
   box-shadow: 0 0 0 4px var(--brand-soft, rgba(198,138,0,0.22)),
               0 6px 16px rgba(0,0,0,0.28);
   border: 2px solid var(--bg, #fff);
+}
+.activities-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  justify-content: center;
+  margin-top: 10px;
+  pointer-events: none;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.activities-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.activities-map-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+}
+.activities-map-legend i.role-primary { background: var(--brand, #00F0FF); }
+.activities-map-legend i.role-backup { background: var(--amber, #F59E0B); }
+.activities-map-legend i.role-moderator { background: var(--blue, #3b82f6); }
+.activities-map-legend i.role-fence {
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #00F0FF;
+  border-color: transparent;
+}
+.activities-map-legend i.role-fence-hq {
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #C68A00;
+  border-color: transparent;
+}
+.geo-mod-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+}
+.geo-mod-marker.is-primary { background: var(--brand, #00F0FF); }
+.geo-mod-marker.is-backup { background: var(--amber, #F59E0B); }
+.geo-mod-marker.is-moderator { background: var(--blue, #3b82f6); }
+.geo-mod-marker.is-stale { opacity: 0.45; }
+.geo-fence-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(8,10,12,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.geo-fence-overlay[hidden] { display: none !important; }
+.geo-fence-modal {
+  width: min(440px, 100%);
+  background: var(--bg2, var(--bg));
+  color: var(--text);
+  border-radius: 18px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+}
+.geo-fence-modal h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.geo-fence-modal p {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text2);
+  margin: 0 0 16px;
+}
+.geo-fence-modal .geo-role-pill {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft, rgba(0,240,255,0.12));
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.geo-fence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.welcome-worklog-banner-sub .geo-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text3);
+}
+.geo-status-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 70;
+  pointer-events: none;
+}
+.geo-status-banner-inner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg2, var(--bg));
+  border: 0.5px solid var(--border);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+}
+.geo-status-banner-text { flex: 1; min-width: 0; }
+.geo-status-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.geo-status-banner-sub {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.35;
+  margin-top: 2px;
+}
+.geo-status-banner-extra {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+.geo-status-banner[data-phase="need_office_checkin"] .geo-status-banner-inner,
+.geo-status-banner[data-phase="stations_complete"] .geo-status-banner-inner {
+  border-color: rgba(198,138,0,0.45);
+}
+.geo-status-banner[data-phase="office_checkout"] .geo-status-banner-inner {
+  border-color: rgba(34,197,94,0.35);
+}
+.geo-status-refresh { flex-shrink: 0; font-size: 12px; padding: 7px 10px; }
+.geo-qa-panel {
+  position: fixed;
+  top: 72px;
+  right: 12px;
+  z-index: 71;
+  width: min(240px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg2, var(--bg));
+  border: 0.5px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}
+.geo-qa-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+.geo-qa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.geo-qa-actions .btn {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.geo-qa-current {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text2);
+}
+@media (max-width: 720px) {
+  .geo-status-banner { bottom: 64px; }
+  .geo-qa-panel { top: auto; bottom: 140px; right: 8px; left: 8px; width: auto; }
 }
 /* MapLibre chrome · blend with Helios tokens */
 .activities-viz-well .maplibregl-ctrl-group {
