@@ -10741,36 +10741,50 @@ function assignmentMatchesActivitiesFocus(a) {
   return true;
 }
 
+function activitiesFenceCoordKey(lat, lng) {
+  return Number(lat).toFixed(5) + ',' + Number(lng).toFixed(5);
+}
+
+function activitiesPointIsHq(lat, lng) {
+  try {
+    return haversineMeters(lat, lng, GEO_HQ_CENTER.lat, GEO_HQ_CENTER.lng) < 80;
+  } catch (_) {
+    return false;
+  }
+}
+
 function activitiesFenceFeatures() {
+  // Office fence = HQ only (amber). Assignment fence = team assigned
+  // address and/or participant assignment address (blue). Team Address
+  // used to be drawn as a second office, which painted the assignment
+  // location in the office color.
   const features = [
     Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
-      properties: { kind: 'office' },
+      properties: { kind: 'office', label: 'Office' },
     }),
   ];
+  const seen = new Set([activitiesFenceCoordKey(GEO_HQ_CENTER.lat, GEO_HQ_CENTER.lng)]);
   const cache = loadGeocodeCache();
-  // When a team is selected and has an assigned office address, draw that
-  // team office fence in addition to global HQ.
+  const addAssignmentFence = (addr) => {
+    const q = String(addr || '').trim();
+    if (!q) return;
+    const hit = cache[q.toLowerCase()];
+    if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) return;
+    if (activitiesPointIsHq(hit.lat, hit.lng)) return;
+    const key = activitiesFenceCoordKey(hit.lat, hit.lng);
+    if (seen.has(key)) return;
+    seen.add(key);
+    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
+      properties: { kind: 'assignment', label: 'Assignment', address: q },
+    }));
+  };
   const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
   const teamAddr = (typeof getTeamOfficeAddress === 'function')
     ? getTeamOfficeAddress(team)
     : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
-  if (teamAddr) {
-    const hit = cache[teamAddr.toLowerCase()];
-    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
-      features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HQ_RADIUS_M), {
-        properties: { kind: 'office', officeSource: 'team' },
-      }));
-    }
-  }
+  addAssignmentFence(teamAddr);
   const asgns = (adminState.assignments || []).filter(a => assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a));
-  asgns.forEach(a => {
-    const addr = assignmentFenceAddress(a);
-    const hit = cache[addr.toLowerCase()];
-    if (!hit) return;
-    features.push(Object.assign(geofenceCirclePolygon(hit.lng, hit.lat, GEOFENCE_HOME_RADIUS_M), {
-      properties: { kind: 'assignment' },
-    }));
-  });
+  asgns.forEach(a => addAssignmentFence(assignmentFenceAddress(a)));
   return { type: 'FeatureCollection', features };
 }
 
@@ -10793,18 +10807,16 @@ async function prefetchActivityHomeGeocodes() {
 
 
 // Activities map fence colors · office (amber) vs assignment (blue).
-// Kept as named constants so legend CSS and MapLibre paint stay in sync.
-
-// Activities map fence colors · office (amber) vs assignment (blue).
-// Named constants keep the legend CSS and MapLibre paint in sync.
+// Moderator pins are red so they do not look like the assignment fence.
 const ACTIVITIES_FENCE_COLOR_OFFICE = '#D97706';
 const ACTIVITIES_FENCE_COLOR_ASSIGNMENT = '#2563EB';
+const ACTIVITIES_MODERATOR_PIN_COLOR = '#DC2626';
 const ACTIVITIES_FENCE_MATCH_COLOR = [
-  'match', ['get', 'kind'],
-  'hq', ACTIVITIES_FENCE_COLOR_OFFICE,
-  'office', ACTIVITIES_FENCE_COLOR_OFFICE,
-  'home', ACTIVITIES_FENCE_COLOR_ASSIGNMENT,
-  'assignment', ACTIVITIES_FENCE_COLOR_ASSIGNMENT,
+  'case',
+  ['any',
+    ['==', ['get', 'kind'], 'office'],
+    ['==', ['get', 'kind'], 'hq']],
+  ACTIVITIES_FENCE_COLOR_OFFICE,
   ACTIVITIES_FENCE_COLOR_ASSIGNMENT
 ];
 
@@ -10832,30 +10844,28 @@ function pointInsideRadiusM(lat, lng, centerLat, centerLng, radiusM) {
 
 function getActivitiesAssignmentCenter() {
   const cache = loadGeocodeCache();
+  const team = (typeof getSelectedActivitiesTeam === 'function') ? getSelectedActivitiesTeam() : null;
+  const candidates = [];
   const asgns = (adminState.assignments || []).filter(a =>
     assignmentMatchesActivitiesFocus(a) && !!assignmentFenceAddress(a)
   );
-  for (const a of asgns) {
-    const addr = assignmentFenceAddress(a);
-    const hit = cache[addr.toLowerCase()];
-    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
-      return { lat: hit.lat, lng: hit.lng, address: addr, assignment: a };
-    }
+  asgns.forEach(a => candidates.push(assignmentFenceAddress(a)));
+  const teamAddr = (typeof getTeamOfficeAddress === 'function')
+    ? getTeamOfficeAddress(team)
+    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
+  if (teamAddr) candidates.push(teamAddr);
+  for (const addr of candidates) {
+    const q = String(addr || '').trim();
+    if (!q) continue;
+    const hit = cache[q.toLowerCase()];
+    if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) continue;
+    if (activitiesPointIsHq(hit.lat, hit.lng)) continue;
+    return { lat: hit.lat, lng: hit.lng, address: q };
   }
   return null;
 }
 
-function getActivitiesOfficeCenter(team) {
-  const teamAddr = (typeof getTeamOfficeAddress === 'function')
-    ? getTeamOfficeAddress(team)
-    : (team && team.teamAddress ? String(team.teamAddress).trim() : '');
-  if (teamAddr) {
-    const cache = loadGeocodeCache();
-    const hit = cache[teamAddr.toLowerCase()];
-    if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
-      return { lat: hit.lat, lng: hit.lng, address: teamAddr, source: 'team' };
-    }
-  }
+function getActivitiesOfficeCenter() {
   return {
     lat: GEO_HQ_CENTER.lat,
     lng: GEO_HQ_CENTER.lng,
@@ -10942,6 +10952,64 @@ function activitiesFitPoints(map, points, duration) {
   });
 }
 
+function teamContainingOrbitId(orbitId) {
+  const id = String(orbitId || '').toLowerCase();
+  if (!id) return null;
+  return (adminState.teams || []).find(t => {
+    if (!t) return false;
+    const ids = (t.primaryIds || []).concat(
+      (typeof getTeamBackupIds === 'function') ? (getTeamBackupIds(t) || []) : (t.backupIds || [])
+    );
+    return ids.some(x => String(x).toLowerCase() === id);
+  }) || null;
+}
+
+function activitiesModeratorFirstName(orbitId, ping) {
+  const id = String(orbitId || '').toLowerCase();
+  const row = (adminState.moderators || []).find(m => {
+    const mid = String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase();
+    return mid && mid === id;
+  });
+  if (row) {
+    const first = pickField(row, 'firstName', 'first_name', 'FirstName', 'First Name', 'givenName');
+    if (first) return String(first).trim();
+  }
+  const fromPing = String((ping && ping.name) || '').trim().split(/\s+/)[0];
+  return fromPing || String(orbitId || '').trim();
+}
+
+function activitiesPersonPopupHtml(orbitId, ping, role) {
+  const first = activitiesModeratorFirstName(orbitId, ping);
+  const team = teamContainingOrbitId(orbitId);
+  const teamName = team && (team.name || team.teamName) ? String(team.name || team.teamName).trim() : '';
+  const roleLabel = fenceRoleLabel(role);
+  let html = '<div class="activities-hover-pop">';
+  html += '<strong>' + escapeHTML(first) + '</strong>';
+  if (teamName) html += '<span>' + escapeHTML(teamName) + '</span>';
+  else html += '<span>' + escapeHTML(roleLabel) + '</span>';
+  html += '</div>';
+  return html;
+}
+
+function activitiesPlaceHoverPopup(map, marker, html) {
+  if (!map || !marker || typeof maplibregl === 'undefined') return;
+  const popup = new maplibregl.Popup({
+    offset: 16,
+    closeButton: false,
+    closeOnClick: false,
+    className: 'activities-hover-popup',
+  });
+  popup.setHTML(html);
+  const el = marker.getElement();
+  if (!el) return;
+  el.addEventListener('mouseenter', () => {
+    try { popup.setLngLat(marker.getLngLat()).addTo(map); } catch (_) {}
+  });
+  el.addEventListener('mouseleave', () => {
+    try { popup.remove(); } catch (_) {}
+  });
+}
+
 async function playActivitiesSelectionAnimation(map) {
   if (!map) return;
   const focusKey = (adminState.activitiesModeratorId || '') + '|' + (adminState.activitiesTeamId || '');
@@ -10967,45 +11035,31 @@ async function playActivitiesSelectionAnimation(map) {
         await activitiesEaseTo(map, { center: [ping.lng, ping.lat], zoom: 14, duration: 1000 });
       }
     } else if (team) {
-      // 1) Assignment location first
-      const asgnCenter = getActivitiesAssignmentCenter();
-      if (asgnCenter && still()) {
+      // Team pick: Office HQ, then assigned address, then frame both.
+      // Do not frame on a moderator pin.
+      const office = getActivitiesOfficeCenter();
+      const assigned = getActivitiesAssignmentCenter();
+      if (office && still()) {
         await activitiesEaseTo(map, {
-          center: [asgnCenter.lng, asgnCenter.lat],
+          center: [office.lng, office.lat],
+          zoom: 15,
+          duration: 900,
+        });
+      }
+      if (assigned && still()) {
+        await activitiesEaseTo(map, {
+          center: [assigned.lng, assigned.lat],
           zoom: 15,
           duration: 1100,
         });
       }
-      // 2) Then last-active team member
-      const member = getActivitiesLatestTeamMemberPing(team);
-      if (member && still()) {
-        await activitiesEaseTo(map, {
-          center: [member.lng, member.lat],
-          zoom: 14.5,
-          duration: 1100,
-        });
-        // 3) If outside both office + assignment fences, zoom out so both
-        // fences stay visible with the person still in frame.
-        const office = getActivitiesOfficeCenter(team);
-        const insideOffice = pointInsideRadiusM(
-          member.lat, member.lng, office.lat, office.lng, GEOFENCE_HQ_RADIUS_M
-        );
-        const insideAsgn = asgnCenter
-          ? pointInsideRadiusM(
-              member.lat, member.lng, asgnCenter.lat, asgnCenter.lng, GEOFENCE_HOME_RADIUS_M
-            )
-          : false;
-        if (!insideOffice && !insideAsgn && still()) {
-          const pts = [{ lat: member.lat, lng: member.lng }, office];
-          if (asgnCenter) pts.push(asgnCenter);
-          await activitiesFitPoints(map, pts, 1300);
-        }
-      } else if (!asgnCenter && still()) {
-        const office = getActivitiesOfficeCenter(team);
+      if (office && assigned && still()) {
+        await activitiesFitPoints(map, [office, assigned], 1300);
+      } else if (!assigned && office && still()) {
         await activitiesEaseTo(map, {
           center: [office.lng, office.lat],
           zoom: ACTIVITIES_MAP_ZOOM,
-          duration: 900,
+          duration: 800,
         });
       }
     } else if (still()) {
@@ -11061,9 +11115,32 @@ function placeActivitiesGeofence(map, opts) {
     map.setPaintProperty('twilight-geofence-line', 'line-opacity', 0.9);
   } catch (_) {}
 
-  document.querySelectorAll('.geo-mod-marker').forEach(el => {
+  document.querySelectorAll('.geo-mod-marker, .activities-map-marker, .geo-place-marker').forEach(el => {
     try { if (el.__marker) el.__marker.remove(); } catch (_) {}
   });
+
+  const office = getActivitiesOfficeCenter();
+  const officeEl = document.createElement('div');
+  officeEl.className = 'geo-place-marker is-office';
+  const officeMarker = new maplibregl.Marker({ element: officeEl })
+    .setLngLat([office.lng, office.lat])
+    .addTo(map);
+  officeEl.__marker = officeMarker;
+  activitiesPlaceHoverPopup(map, officeMarker,
+    '<div class="activities-hover-pop"><strong>Office</strong><span>' + escapeHTML(GEO_HQ_ADDRESS) + '</span></div>');
+
+  const assigned = getActivitiesAssignmentCenter();
+  if (assigned) {
+    const asgnEl = document.createElement('div');
+    asgnEl.className = 'geo-place-marker is-assignment';
+    const asgnMarker = new maplibregl.Marker({ element: asgnEl })
+      .setLngLat([assigned.lng, assigned.lat])
+      .addTo(map);
+    asgnEl.__marker = asgnMarker;
+    activitiesPlaceHoverPopup(map, asgnMarker,
+      '<div class="activities-hover-pop"><strong>Assignment</strong><span>' + escapeHTML(assigned.address || 'Assigned address') + '</span></div>');
+  }
+
   const team = getSelectedActivitiesTeam();
   const focusMod = String(getSelectedActivitiesModeratorId() || '').toLowerCase();
   const allowed = new Map();
@@ -11094,13 +11171,11 @@ function placeActivitiesGeofence(map, opts) {
     }
     const el = document.createElement('div');
     el.className = 'geo-mod-marker is-' + role + ((now - (ping.at || 0) > GEO_PING_STALE_MS) ? ' is-stale' : '');
-    const label = (ping.name || id) + ' · ' + fenceRoleLabel(role);
-    el.title = label;
     const marker = new maplibregl.Marker({ element: el })
       .setLngLat([ping.lng, ping.lat])
-      .setPopup(new maplibregl.Popup({ offset: 14 }).setText(label))
       .addTo(map);
     el.__marker = marker;
+    activitiesPlaceHoverPopup(map, marker, activitiesPersonPopupHtml(idRaw, ping, role));
   });
   updateActivitiesMapCaption();
   // Camera motion is driven only by Team/Moderator selection.
