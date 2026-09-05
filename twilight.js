@@ -1311,13 +1311,22 @@ function entryBarHTML() {
   // Only render a clickable href for http(s) URLs. Non-http schemes are
   // treated as "no link" even if getAssignedLakituUrl returned a value.
   const assignedLakituHref = (assignedLakitu && isSafeHttpUrl(assignedLakitu)) ? assignedLakitu : '';
-  if (assignedLakitu) {
+  if (assignedLakitu && typeof shouldBindAssignedSessionLinks === 'function' && shouldBindAssignedSessionLinks()) {
     const curPid = (state.participantId || '').trim();
     if ((!curPid || !isValidLakituUrl(curPid)) && state.participantId !== assignedLakitu) {
       state.participantId = assignedLakitu;
       if (typeof saveState === 'function') saveState();
     }
   }
+
+  const assignedRingRaw = (typeof getAssignedRingUrl === 'function')
+    ? getAssignedRingUrl()
+    : (typeof DEFAULT_RING_DASHBOARD_URL !== 'undefined' ? DEFAULT_RING_DASHBOARD_URL : '');
+  const assignedRingHref = (assignedRingRaw && typeof isSafeHttpsUrl === 'function' && isSafeHttpsUrl(assignedRingRaw))
+    ? assignedRingRaw : '';
+  const showSessionLinks = typeof shouldBindAssignedSessionLinks === 'function'
+    ? shouldBindAssignedSessionLinks()
+    : true;
 
   return `
     <div class="entry-bar">
@@ -1364,20 +1373,36 @@ function entryBarHTML() {
             </div>
           </span>
         </span>
-        ${assignedLakituHref ? `
+        <div class="entry-session-links">
+        ${showSessionLinks && assignedLakituHref ? `
         <a id="ent_lakitu" class="entry-lakitu-btn" href="${escapeHTML(assignedLakituHref)}" target="_blank" rel="noopener noreferrer" title="Open the admin-assigned Lakitu session" data-lakitu-url="${escapeHTML(assignedLakituHref)}">
           <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="7.25" fill="#000"/>
             <path d="M8 4 L11.6 11.5 L4.4 11.5 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
           </svg>
-          <span>Open Lakitu session</span>
+          <span>Open Lakitu</span>
           <svg class="entry-lakitu-btn-ext" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </a>
         ` : `
-        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Session Assigned</div>
+        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Lakitu</div>
         `}
+        ${showSessionLinks && assignedRingHref ? `
+        <a id="ent_ring" class="entry-lakitu-btn entry-ring-btn" href="${escapeHTML(assignedRingHref)}" target="_blank" rel="noopener noreferrer" title="Open Ring dashboard" data-ring-url="${escapeHTML(assignedRingHref)}">
+          <svg class="entry-lakitu-btn-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7.25" fill="#1A1A1A"/>
+            <circle cx="8" cy="8" r="4.35" fill="none" stroke="#fff" stroke-width="1.85"/>
+          </svg>
+          <span>Open Ring</span>
+          <svg class="entry-lakitu-btn-ext" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M5 9l4-4M5 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        ` : `
+        <div id="ent_ring" class="entry-lakitu-none" aria-disabled="true">No Ring</div>
+        `}
+        </div>
       </div>
       <div class="entry-divider"></div>
       <div class="entry-field entry-field-wide">
@@ -3396,6 +3421,39 @@ function getAssignedLakituUrl() {
 
 // Admin-assigned Ring dashboard for the moderator's active team, or the
 // default Ring dashboard when none is assigned.
+function isOperatorSessionComplete(asgn) {
+  if (!asgn) return false;
+  if (asgn.status === 'Completed') return true;
+  try {
+    const my = (typeof getMyLatestStatusForAssignment === 'function')
+      ? getMyLatestStatusForAssignment(asgn.id) : null;
+    if (my && (my.status === 'session_done' || my.status === 'office_checkout')) return true;
+    if (my && typeof statusOrderIdx === 'function'
+        && statusOrderIdx(my.status) >= statusOrderIdx('session_done')) return true;
+  } catch (_) {}
+  return false;
+}
+
+// Lakitu/Ring stay bound for the active session only. After wrap-up
+// queues session_done, the session URL must not carry into the next booking.
+function shouldBindAssignedSessionLinks() {
+  const asgn = (typeof getActiveOperatorAssignment === 'function')
+    ? getActiveOperatorAssignment() : null;
+  if (!asgn) return false;
+  return !isOperatorSessionComplete(asgn);
+}
+
+function clearSessionBackendBindingsAfterComplete(asgn) {
+  if (state) {
+    state.participantId = '';
+    try { if (typeof saveState === 'function') saveState(); } catch (_) {}
+  }
+  try {
+    if (typeof triggerSessionStateSync === 'function') triggerSessionStateSync();
+  } catch (_) {}
+  return asgn || null;
+}
+
 function getAssignedRingUrl() {
   let team = null;
   const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
@@ -25950,6 +26008,11 @@ function pushWorklogStatus(asgn, status, opts) {
     completeAssignment(asgn.id, {
       completedBy: event.moderatorName || '',
     });
+    // Empty the session Lakitu binding only after wrap-up is queued, so
+    // the next booking does not inherit this session's URL.
+    if (typeof clearSessionBackendBindingsAfterComplete === 'function') {
+      clearSessionBackendBindingsAfterComplete(asgn);
+    }
   }
 
   // Trigger UI re-render
@@ -27518,6 +27581,12 @@ function renderMySessionSection() {
   const tileTeam = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn) : team;
   if (tileTeam) {
     const mates = getOperatorTeammates(tileTeam);
+    const teamAddr = (typeof getTeamOfficeAddress === 'function')
+      ? getTeamOfficeAddress(tileTeam)
+      : (tileTeam.teamAddress ? String(tileTeam.teamAddress).trim() : '');
+    const teamAddrMap = teamAddr
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(teamAddr)}`
+      : '';
     teamHTML = `
       <div class="assigned-tile-team">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -27526,7 +27595,17 @@ function renderMySessionSection() {
           <path d="M2.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5M7.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
         </svg>
         <span><strong>${escapeHTML(tileTeam.name)}</strong>${mates.length > 0 ? '<br>with ' + mates.map(m => escapeHTML(m.name) + (m.isBackup ? ' <span style="opacity:0.6">(BU)</span>' : '')).join(', ') : ''}</span>
-      </div>`;
+      </div>
+      ${teamAddr ? `
+      <div class="assigned-tile-row assigned-tile-team-address">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 14c3-3.5 5-6 5-8a5 5 0 0 0-10 0c0 2 2 4.5 5 8z" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="8" cy="6" r="1.5" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+        <span><span class="assigned-tile-team-address-label">Team address</span><br>
+          <a href="${teamAddrMap}" target="_blank" rel="noopener noreferrer" title="Open team address in Google Maps">${escapeHTML(teamAddr)}</a>
+        </span>
+      </div>` : ''}`;
   }
 
   const navHTML = total > 1 ? `
