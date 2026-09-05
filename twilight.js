@@ -1254,19 +1254,20 @@ function bindWelcomeWorklogActions() {
 
 // Render the Team cell in the entry bar · shows team name + teammate(s) when assigned
 function entryTeamCellHTML() {
-  // Show the team that owns the ACTIVE (currently-shown) assignment · not the
-  // operator's first team membership. For a multi-team mod these differ, which
-  // is why the entry cell was showing the wrong pair.
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  const team = (typeof teamForAssignment === 'function')
-    ? teamForAssignment(asgn)
+  const team = (typeof getSessionDisplayTeam === 'function')
+    ? getSessionDisplayTeam()
     : ((typeof getOperatorTeam === 'function') ? getOperatorTeam() : null);
   if (!team) return '<span style="color: var(--text3); font-style: italic; font-weight: 400;">Not assigned</span>';
   const mates = (typeof getOperatorTeammates === 'function') ? getOperatorTeammates(team) : [];
   const mateNames = mates.map(m => m.name.split(' ')[0]).join(', ');
+  const showMeta = typeof shouldBindAssignedSessionLinks === 'function'
+    ? shouldBindAssignedSessionLinks() : true;
+  const teamAddr = showMeta && typeof getTeamOfficeAddress === 'function'
+    ? getTeamOfficeAddress(team) : '';
   return `
     <span class="entry-team-name">${escapeHTML(team.name)}</span>
     ${mates.length > 0 ? `<span class="entry-team-mates"> · with ${escapeHTML(mateNames)}</span>` : ''}
+    ${teamAddr ? `<div class="entry-team-address"><span class="entry-team-address-label">Team address</span><br>${escapeHTML(teamAddr)}</div>` : ''}
   `;
 }
 
@@ -3407,10 +3408,14 @@ function modListSortHeaderButton(key, label, sortSpec) {
 // entry-bar team cell does (team that owns the active assignment, else the
 // operator's first team membership) so the link matches the session shown.
 function getAssignedLakituUrl() {
-  let team = null;
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
-  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let team = (typeof getSessionDisplayTeam === 'function') ? getSessionDisplayTeam() : null;
+  if (!team) {
+    const asgn = (typeof getAssignedOpenSession === 'function')
+      ? getAssignedOpenSession()
+      : ((typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  }
   let url = (typeof resolveTeamLakituProjectUrl === 'function')
     ? resolveTeamLakituProjectUrl(team)
     : (team && team.lakituProjectUrl ? String(team.lakituProjectUrl).trim() : '');
@@ -3421,26 +3426,57 @@ function getAssignedLakituUrl() {
 
 // Admin-assigned Ring dashboard for the moderator's active team, or the
 // default Ring dashboard when none is assigned.
-function isOperatorSessionComplete(asgn) {
+function isSessionWrapUpDone(asgn) {
   if (!asgn) return false;
   if (asgn.status === 'Completed') return true;
   try {
     const my = (typeof getMyLatestStatusForAssignment === 'function')
       ? getMyLatestStatusForAssignment(asgn.id) : null;
-    if (my && (my.status === 'session_done' || my.status === 'office_checkout')) return true;
-    if (my && typeof statusOrderIdx === 'function'
-        && statusOrderIdx(my.status) >= statusOrderIdx('session_done')) return true;
+    if (my && my.status === 'session_done') return true;
   } catch (_) {}
   return false;
 }
 
-// Lakitu/Ring stay bound for the active session only. After wrap-up
-// queues session_done, the session URL must not carry into the next booking.
-function shouldBindAssignedSessionLinks() {
-  const asgn = (typeof getActiveOperatorAssignment === 'function')
+function getAssignedOpenSession() {
+  const isOpen = (a) => {
+    if (!a) return false;
+    if (a.status === 'Cancelled' || a.status === 'Unassigned') return false;
+    return !isSessionWrapUpDone(a);
+  };
+  const active = (typeof getActiveOperatorAssignment === 'function')
     ? getActiveOperatorAssignment() : null;
-  if (!asgn) return false;
-  return !isOperatorSessionComplete(asgn);
+  if (isOpen(active)) return active;
+  const lists = [];
+  try {
+    if (typeof getOperatorCarouselAssignments === 'function') {
+      lists.push(getOperatorCarouselAssignments() || []);
+    }
+  } catch (_) {}
+  try {
+    if (typeof getOperatorAssignments === 'function') {
+      lists.push(getOperatorAssignments() || []);
+    }
+  } catch (_) {}
+  for (const list of lists) {
+    const hit = (list || []).find(isOpen);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function getSessionDisplayTeam() {
+  const asgn = getAssignedOpenSession();
+  if (asgn && typeof teamForAssignment === 'function') {
+    const t = teamForAssignment(asgn);
+    if (t) return t;
+  }
+  return (typeof getOperatorTeam === 'function') ? getOperatorTeam() : null;
+}
+
+// Team address + Lakitu + Ring stay live from the moment a session is
+// assigned until Station 4 wrap-up queues session_done. Not the reverse.
+function shouldBindAssignedSessionLinks() {
+  return !!getAssignedOpenSession();
 }
 
 function clearSessionBackendBindingsAfterComplete(asgn) {
@@ -3455,10 +3491,14 @@ function clearSessionBackendBindingsAfterComplete(asgn) {
 }
 
 function getAssignedRingUrl() {
-  let team = null;
-  const asgn = (typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null;
-  if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
-  else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  let team = (typeof getSessionDisplayTeam === 'function') ? getSessionDisplayTeam() : null;
+  if (!team) {
+    const asgn = (typeof getAssignedOpenSession === 'function')
+      ? getAssignedOpenSession()
+      : ((typeof getActiveOperatorAssignment === 'function') ? getActiveOperatorAssignment() : null);
+    if (typeof teamForAssignment === 'function') team = teamForAssignment(asgn);
+    else if (typeof getOperatorTeam === 'function') team = getOperatorTeam();
+  }
   let url = (typeof resolveTeamRingDashboardUrl === 'function')
     ? resolveTeamRingDashboardUrl(team)
     : '';
@@ -27581,9 +27621,14 @@ function renderMySessionSection() {
   const tileTeam = (typeof teamForAssignment === 'function') ? teamForAssignment(asgn) : team;
   if (tileTeam) {
     const mates = getOperatorTeammates(tileTeam);
-    const teamAddr = (typeof getTeamOfficeAddress === 'function')
-      ? getTeamOfficeAddress(tileTeam)
-      : (tileTeam.teamAddress ? String(tileTeam.teamAddress).trim() : '');
+    const showMeta = typeof shouldBindAssignedSessionLinks === 'function'
+      ? shouldBindAssignedSessionLinks() : true;
+    const addrTeam = (typeof getSessionDisplayTeam === 'function' && getSessionDisplayTeam()) || tileTeam;
+    const teamAddr = showMeta
+      ? ((typeof getTeamOfficeAddress === 'function')
+          ? getTeamOfficeAddress(addrTeam)
+          : (addrTeam.teamAddress ? String(addrTeam.teamAddress).trim() : ''))
+      : '';
     const teamAddrMap = teamAddr
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(teamAddr)}`
       : '';
