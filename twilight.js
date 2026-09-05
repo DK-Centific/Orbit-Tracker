@@ -11065,6 +11065,9 @@ function placeActivitiesGeofence(map, opts) {
   const office = getActivitiesOfficeCenter();
   const officeEl = document.createElement('div');
   officeEl.className = 'geo-place-marker is-office';
+  officeEl.setAttribute('role', 'img');
+  officeEl.setAttribute('aria-label', 'Office');
+  officeEl.title = 'Office';
   const officeMarker = new maplibregl.Marker({ element: officeEl })
     .setLngLat([office.lng, office.lat])
     .addTo(map);
@@ -11294,18 +11297,12 @@ function syncActivitiesMapTheme() {
 }
 
 function placeActivitiesMapMarker(map) {
-  if (!map || typeof maplibregl === 'undefined') return;
+  // Office pin is the Centific logo from placeActivitiesGeofence — do not
+  // stack a second HQ circle on the same point.
+  if (!map) return;
   document.querySelectorAll('.activities-map-marker').forEach(el => {
     try { if (el.__marker) el.__marker.remove(); } catch (_) {}
   });
-  const markerEl = document.createElement('div');
-  markerEl.className = 'activities-map-marker';
-  markerEl.title = ACTIVITIES_MAP_ADDRESS;
-  const marker = new maplibregl.Marker({ element: markerEl })
-    .setLngLat([ACTIVITIES_MAP_CENTER.lng, ACTIVITIES_MAP_CENTER.lat])
-    .setPopup(new maplibregl.Popup({ offset: 18 }).setText(ACTIVITIES_MAP_ADDRESS))
-    .addTo(map);
-  markerEl.__marker = marker;
 }
 
 function ensureActivitiesMapThemeObserver() {
