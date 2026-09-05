@@ -3459,14 +3459,23 @@ a.menu-row:focus-visible, a.menu-row-link:focus-visible {
 /* Lakitu + Ring sit side-by-side in the session entry field. */
 .entry-session-links {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+  min-width: 0;
 }
 .entry-session-links .entry-lakitu-btn,
 .entry-session-links .entry-lakitu-none {
   margin-top: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  max-width: 100%;
+}
+/* Give Lakitu+Ring enough room to sit side-by-side on laptop widths. */
+.entry-bar .entry-field-lakitu {
+  flex: 1.8 1 260px;
+  min-width: 260px;
 }
 .entry-ring-btn .entry-lakitu-btn-logo circle:first-child { fill: #1A1A1A; }
 

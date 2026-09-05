@@ -1385,7 +1385,7 @@ function entryBarHTML() {
           </svg>
         </a>
         ` : `
-        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Lakitu link</div>
+        <div id="ent_lakitu" class="entry-lakitu-none" aria-disabled="true">No Lakitu</div>
         `}
         ${assignedRingHref ? `
         <a id="ent_ring" class="entry-lakitu-btn entry-ring-btn" href="${escapeHTML(assignedRingHref)}" target="_blank" rel="noopener noreferrer" title="Open Ring dashboard" data-ring-url="${escapeHTML(assignedRingHref)}">
@@ -1399,7 +1399,7 @@ function entryBarHTML() {
           </svg>
         </a>
         ` : `
-        <div id="ent_ring" class="entry-lakitu-none" aria-disabled="true">No Ring link</div>
+        <div id="ent_ring" class="entry-lakitu-none" aria-disabled="true">No Ring</div>
         `}
         </div>
       </div>
