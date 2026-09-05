@@ -1,93 +1,174 @@
-# Login flow — only these boxes
+# Login flow — match this screen exactly
 
-The website cannot check the password. Anyone can read the page.
-Power Automate is the lock. You need **four** Conditions. No formulas.
+Your Power Automate uses the **new designer**. Instructions below use
+only words that appear on that screen.
 
-Do **not** open **Expression**. Do **not** type `empty`, `true`, or `false`.
-Do **not** type `1` as the Orbit Login ID. That number is only for Condition 1.
+You will **not** see: Yes, No, is empty, Configure run after, Expression
+(unless you open it — do not).
 
----
+You **will** see:
 
-## What each Condition must say
-
-**Condition 1** (already done)
-
-- Left: `1`
-- Middle: **is equal to**
-- Right: `1`
-- **True** → Condition 2
-- **False** → Response `{ "ok": false, "reason": "notFound" }`
-
-**Condition 2** (password change)
-
-- Left: Dynamic content → **operation**
-- Middle: **is equal to**
-- Right: type `setPassword` (one word, capital P)
-- **True** → Excel **Update a row** (write into **Password** only) → Response `{ "ok": true }`
-- **False** → Condition 3
-
-**Condition 3** (first login?)
-
-- Left: Dynamic content → **Get a row** → **Password**
-- Middle: **is equal to**
-- Right: leave blank (do not type anything)
-- **True** → Condition 4
-- **False** → Condition 5
-
-**Condition 4** (first password)
-
-- Left: Dynamic content → **password**
-- Middle: **is equal to**
-- Right: type `Twilight2006`
-- **True** → Response `{ "ok": true, "mustChangePassword": true }`
-- **False** → Response `{ "ok": false, "reason": "wrongPassword" }`
-
-**Condition 5** (normal login)
-
-- Left: Dynamic content → **password**
-- Middle: **is equal to**
-- Right: Dynamic content → **Get a row** → **Password**
-- **True** → Response `{ "ok": true }`
-- **False** → Response `{ "ok": false, "reason": "wrongPassword" }`
-
-Every Response: Status **200**.
+- Tabs on a selected card: **Parameters**, **Settings**, **Code view**, **Testing**, **About**
+- Condition paths labeled **True** and **False** (not Yes / No)
+- Middle list: contains, does not contain, **is equal to**, is not equal to,
+  is greater than, is greater or equal to, is less than, is less or equal to,
+  starts with, does not start with, ends with, does not end with
+- Right box placeholder: **Choose a value**
+- Green Excel pills (from **Get a row**) and lightning pills (from the trigger / Parse JSON)
 
 ---
 
-## Do Condition 3 now (this is the one still failing)
+## Why this kept failing
 
-This designer has no **is empty**. Use **is equal to** and a blank right box.
+Earlier steps named buttons that are **not on your screen**. You were not
+doing it wrong. Those clicks do not exist here.
+
+Also: a purple **fx** formula compared to the word `false` never matches,
+because Power Automate stores `False`. That sent every login to **False**.
+
+---
+
+## Your flow order (must look like this)
+
+```
+manual
+  → Parse JSON
+  → Get a row
+  → Condition 1
+        False → Response 5
+        True  → Condition 2
+                    True  → Update a row → Response 6
+                    False → Condition 3
+                                True  → Condition 4
+                                False → Condition 5
+```
+
+Do not type `1` on the website login. That `1` is only inside Condition 1.
+
+---
+
+## Condition 1 — Parameters tab
+
+1. Click **Condition 1**.
+2. Stay on the **Parameters** tab.
+3. Left box: type `1`
+4. Middle: **is equal to** (checkmark on that row)
+5. Right box: type `1`
+6. **True** side must go to **Condition 2**
+7. **False** side must go to **Response 5**
+
+---
+
+## Condition 2 — Parameters tab
+
+1. Click **Condition 2**.
+2. **Parameters** tab.
+3. Left box: lightning pill **operation**
+4. Middle: **is equal to**
+5. Right box: type `setPassword` (capital P, no spaces)
+6. **True** → **Update a row** then **Response 6**
+7. **False** → **Condition 3**
+
+---
+
+## Condition 3 — Parameters tab (do this now)
+
+This is the first-login check. Your middle list has no **is empty**.
 
 1. Click **Condition 3**.
-2. Left: keep the **Password** pill (Excel).
-3. Middle: **is equal to**.
-4. Right: click the box and delete anything in it. Leave the placeholder “Choose a value”.
-5. **Save**.
-
-Then click **Condition 4**:
-1. Left: **password** (the one the person typed).
-2. Middle: **is equal to**.
-3. Right: type `Twilight2006`.
-4. **Save**.
+2. **Parameters** tab.
+3. Left box: green Excel pill **Password** (from **Get a row**).
+   If you see a purple **fx** pill, click it and press Delete, then pick **Password**.
+4. Middle: open the list → click **is equal to** (the one with the checkmark in your screenshot).
+5. Right box: leave **Choose a value**. Click it and delete any text. Do not type `true` or `false`.
+6. **True** → **Condition 4**
+7. **False** → **Condition 5**
+8. Top right: **Save**.
 
 ---
 
-## Test
+## Condition 4 — Parameters tab
+
+1. Click **Condition 4**.
+2. **Parameters** tab.
+3. Left box: lightning pill **password** (typed password — not the Excel Password).
+4. Middle: **is equal to**
+5. Right box: type `Twilight2006`
+6. **True** → Response body `{ "ok": true, "mustChangePassword": true }`
+7. **False** → Response body `{ "ok": false, "reason": "wrongPassword" }`
+8. **Save**.
+
+---
+
+## Condition 5 — Parameters tab
+
+1. Click **Condition 5**.
+2. **Parameters** tab.
+3. Left box: lightning pill **password**
+4. Middle: **is equal to**
+5. Right box: green Excel pill **Password**
+6. **True** → Response body `{ "ok": true }`
+7. **False** → Response body `{ "ok": false, "reason": "wrongPassword" }`
+8. **Save**.
+
+---
+
+## Response cards
+
+Click each Response. **Parameters** tab.
+
+- Status code: `200`
+- **Response 5** body:
+
+```json
+{ "ok": false, "reason": "notFound" }
+```
+
+- First-login success body:
+
+```json
+{ "ok": true, "mustChangePassword": true }
+```
+
+- Wrong password body:
+
+```json
+{ "ok": false, "reason": "wrongPassword" }
+```
+
+- Success / after Update a row body:
+
+```json
+{ "ok": true }
+```
+
+---
+
+## Update a row (under Condition 2 True)
+
+1. Click **Update a row**.
+2. **Parameters** tab.
+3. **Key Column**: `orbitLoginId`
+4. **Key Value**: lightning pill **orbitLoginId**
+5. The Excel **Password** field: lightning pill **password**
+6. Do not fill **NewPassword**
+
+---
+
+## Excel for David-orbit
+
+In `Moderator_Masterlist.xlsx`:
+
+- **Password** cell: empty
+- **NewPassword** cell: empty
+
+---
+
+## Test on the website
 
 1. Refresh the site.
 2. Orbit Login ID: `david-orbit`
 3. Password: `Twilight2006`
-4. Sign in.
+4. Click Sign In.
 
-You should be asked to pick a new password.
-
----
-
-## Excel (David)
-
-Open `Moderator_Masterlist.xlsx` → **David-orbit**.
-
-- **Password** = empty
-- **NewPassword** = empty (clear it if it has anything)
-
-Login only reads **Password**.
+You should see the box to create a new password.

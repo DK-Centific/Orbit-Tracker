@@ -31833,7 +31833,7 @@ async function doLogin() {
           knownInDirectory = !!(index && index.has(orbitLoginIdMatchKey(loginId)));
         } catch (_) {}
         if (knownInDirectory) {
-          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” In Condition 1, clear both boxes and type 1 on each side (is equal to). Leave True going to Condition 2.');
+          setLoginError('Your Orbit Login ID is in the directory, but the login flow still says “not found.” In Condition 1 (Parameters), type 1 is equal to 1. True must go to Condition 2.');
         } else {
           setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
         }
