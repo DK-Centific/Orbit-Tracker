@@ -31644,7 +31644,7 @@ async function submitForcedPasswordChange() {
     routeAfterSuccessfulAuth(orbitId, nextProfile || buildSafeModProfileFromAuth({ orbitLoginId: orbitId }));
   } catch (e) {
     if (e && e.isInvalidCredentials) {
-      setPwChangeError('Orbit Login ID or password is incorrect.');
+      setPwChangeError('The new password was not saved. In Condition 2 (Parameters), left box must be operation, middle is equal to, right box setPassword. True must go to Update a row.');
     } else if (e && e.isAuthConfigMissing) {
       setPwChangeError('Login flow is not configured yet.');
     } else if (e && e.isAuthFlowNoResponse) {

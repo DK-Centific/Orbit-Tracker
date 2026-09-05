@@ -59,15 +59,43 @@ Do not type `1` on the website login. That `1` is only inside Condition 1.
 
 ---
 
-## Condition 2 — Parameters tab
+## Condition 2 — Parameters tab (do this now — new password save)
+
+First sign-in worked. Saving the new password did not. Condition 2 is
+sending that save down the **False** path (same as a normal login), so
+the new password is checked against `Twilight2006` and fails.
 
 1. Click **Condition 2**.
+2. Stay on the **Parameters** tab.
+3. Left box: delete whatever is there.
+4. Left box: click it → pick **operation** (lightning pill).  
+   If you do not see **operation**, click **Parse JSON** first (steps below), **Save**, then come back.
+5. Middle: **is equal to**
+6. Right box: type `setPassword`  
+   You should see exactly: `setPassword` (capital P, no spaces).
+7. **True** side must show **Update a row** then **Response 6**
+8. **False** side must show **Condition 3**
+9. Top right: **Save**.
+
+### If **operation** is missing from the pick list
+
+1. Click **Parse JSON**.
 2. **Parameters** tab.
-3. Left box: lightning pill **operation**
-4. Middle: **is equal to**
-5. Right box: type `setPassword` (capital P, no spaces)
-6. **True** → **Update a row** then **Response 6**
-7. **False** → **Condition 3**
+3. **Schema** — replace with this (copy all of it):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "orbitLoginId": { "type": "string" },
+    "password": { "type": "string" },
+    "operation": { "type": "string" }
+  }
+}
+```
+
+4. **Save**.
+5. Do Condition 2 again. **operation** should now appear.**
 
 ---
 
