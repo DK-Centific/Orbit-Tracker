@@ -1,5 +1,31 @@
 # Login flow — match this screen exactly
 
+## Do this now (default password still asks for a new password)
+
+The new password was saved in **NewPassword**. **Password** is still empty.
+Empty **Password** + `Twilight2006` always opens “Set a new password.”
+
+**Excel (one time)**
+
+1. Open `Moderator_Masterlist.xlsx`.
+2. Find **David-orbit**.
+3. Copy whatever is in **NewPassword** into **Password**.
+4. Clear **NewPassword**.
+5. Save the file.
+
+**Update a row (so the next save goes to the right column)**
+
+1. Click **Update a row**.
+2. Tab: **Parameters**.
+3. Scroll until you see both **Password** and **NewPassword**.
+4. Click **Password** → pick the lightning pill **password**.
+5. If **NewPassword** has a pill or any text, click it → Delete until it is empty.
+6. **Save**.
+
+Then on the website, `Twilight2006` should be rejected. Sign in with the new password.
+
+---
+
 Your Power Automate uses the **new designer**. Instructions below use
 only words that appear on that screen.
 
@@ -178,8 +204,8 @@ Click each Response. **Parameters** tab.
 2. **Parameters** tab.
 3. **Key Column**: `orbitLoginId`
 4. **Key Value**: lightning pill **orbitLoginId**
-5. The Excel **Password** field: lightning pill **password**
-6. Do not fill **NewPassword**
+5. **Password**: lightning pill **password**
+6. **NewPassword**: empty (delete any pill)
 
 ---
 
