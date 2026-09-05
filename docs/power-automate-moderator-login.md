@@ -27,7 +27,7 @@ When an HTTP request is received
         |
    Excel: Get a row
         |
-   Condition 1  —  row found?
+   Condition 1  —  row found?   (string(empty(body)) is equal to false)
         |
    NO → Response  { "ok": false, "reason": "notFound" }
         |
@@ -107,12 +107,18 @@ You add **5 Conditions**. Each one has a Yes side and a No side.
 3. Left box: **Expression** tab. Paste:
 
 ```
-empty(outputs('Get_a_row')?['body'])
+string(empty(outputs('Get_a_row')?['body']))
 ```
 
 4. Click **OK**.
 5. Middle dropdown: pick **is equal to**. (This is an operator. You are not adding a new step.)
-6. Right box: type `true`.
+6. Right box: type `false`.
+
+The `string(...)` wrapper matters. Power Automate compares the right box as
+text, so a bare `true` / `false` never matches a real true/false value and the
+condition always takes the same branch.
+
+Yes = row found. No = row missing.
 
 **No** side of Condition 1:
 
@@ -161,12 +167,14 @@ Leave the **Yes** side empty for now. Next steps go on **Yes**.
 3. Left box: **Expression**. Paste:
 
 ```
-empty(outputs('Get_a_row')?['body']?['Password'])
+string(empty(outputs('Get_a_row')?['body']?['Password']))
 ```
 
 4. **OK**.
 5. Middle: **is equal to**.
-6. Right box: `true`.
+6. Right box: type `true`.
+
+Yes = Password is blank (first login). No = Password is already set.
 
 ---
 
@@ -235,6 +243,35 @@ You should have:
 - 6 Response steps
 
 If a Response is sitting **between** two Conditions (not inside Yes or No), drag it into the correct Yes or No box.
+
+---
+
+## If every login says "not found" (or "incorrect")
+
+The flow runs, returns **Succeeded**, and always answers
+`{"ok": false, "reason": "notFound"}` — even for IDs that exist in Excel.
+
+Cause: Condition 1 compares a true/false value against the **text** `true`,
+which never matches, so every run takes the **No** branch.
+
+Fix:
+
+1. Open the flow → **Edit** → click **Condition 1**.
+2. Left box → **Expression** tab → replace it with:
+
+```
+string(empty(outputs('Get_a_row')?['body']))
+```
+
+3. Right box → type `false`.
+4. Click **Condition 3** and do the same thing. Left box:
+
+```
+string(empty(outputs('Get_a_row')?['body']?['Password']))
+```
+
+5. Condition 3 right box → type `true`.
+6. **Save**.
 
 ---
 

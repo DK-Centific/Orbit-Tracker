@@ -31807,7 +31807,15 @@ async function doLogin() {
       typedPassword = '';
       setLoginLoading(false);
       _loginInFlight = false;
-      setLoginError('Orbit Login ID or password is incorrect.');
+      // Distinguish "no such row" from "wrong password" so a misconfigured
+      // flow is obvious instead of looking like a bad password.
+      const reason = String((data && (data.reason || data.error)) || '').trim();
+      if (reason) console.warn('[Twilight] Login rejected · reason:', reason);
+      if (/notfound/i.test(reason.replace(/[\s_-]+/g, ''))) {
+        setLoginError('That Orbit Login ID was not found in the directory. Ask an admin to check the login flow.');
+      } else {
+        setLoginError('Orbit Login ID or password is incorrect.');
+      }
       shakeLoginCard();
       return;
     }
