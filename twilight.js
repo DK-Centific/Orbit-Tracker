@@ -10773,7 +10773,7 @@ function activitiesPointIsHq(lat, lng) {
 
 function activitiesFenceFeatures() {
   // Office fence = HQ only (light pink). Assignment fence = team address
-  // (same light pink). Office pin is magenta so HQ stays distinct.
+  // (blue, matching the assignment dot). Office pin is magenta.
   const features = [
     Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
       properties: { kind: 'office', label: 'Office' },
