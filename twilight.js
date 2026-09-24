@@ -9979,6 +9979,30 @@ function fenceRoleLabel(role) {
   return 'Moderator';
 }
 
+function activitiesDirectoryRow(orbitId) {
+  const id = String(orbitId || '').toLowerCase();
+  if (!id) return null;
+  return (adminState.moderators || []).find(m => {
+    const mid = String(pickField(m, 'orbitLoginId', 'orbit_login_id', 'OrbitLoginID', 'OrbitLoginId', 'Orbit Login ID', 'loginId', 'username', 'id') || '').toLowerCase();
+    return mid && mid === id;
+  }) || null;
+}
+
+// Pin color follows the person's LoginRole, not the team's primary/backup
+// slot. A Moderator listed as the team's primary must stay red.
+function activitiesMarkerRole(orbitId, ping) {
+  const row = activitiesDirectoryRow(orbitId);
+  if (row && !directoryRoleIsAdmin(row)) {
+    const v = directoryLoginRole(row).toLowerCase();
+    if (v === 'backup') return 'backup';
+    if (v === 'primary') return 'primary';
+    return 'moderator';
+  }
+  const pr = String((ping && ping.role) || '').toLowerCase();
+  if (pr === 'primary' || pr === 'backup') return pr;
+  return 'moderator';
+}
+
 function loadGeoPings() {
   try {
     const raw = localStorage.getItem(GEO_PINGS_KEY);
@@ -10748,9 +10772,8 @@ function activitiesPointIsHq(lat, lng) {
 }
 
 function activitiesFenceFeatures() {
-  // Office fence = HQ only (amber). Assignment fence = team Team Address
-  // (blue). Drawing Team Address as a second office was why assignment
-  // looked like the office color.
+  // Office fence = HQ only (light pink). Assignment fence = team address
+  // (same light pink). Office pin is magenta so HQ stays distinct.
   const features = [
     Object.assign(geofenceCirclePolygon(GEO_HQ_CENTER.lng, GEO_HQ_CENTER.lat, GEOFENCE_HQ_RADIUS_M), {
       properties: { kind: 'office', label: 'Office' },
@@ -10803,8 +10826,9 @@ async function prefetchActivityHomeGeocodes() {
   }
 }
 
-const ACTIVITIES_FENCE_COLOR_OFFICE = '#D97706';
-const ACTIVITIES_FENCE_COLOR_ASSIGNMENT = '#2563EB';
+const ACTIVITIES_OFFICE_PIN_COLOR = '#D946EF';
+const ACTIVITIES_FENCE_COLOR_OFFICE = '#F9A8D4';
+const ACTIVITIES_FENCE_COLOR_ASSIGNMENT = '#F9A8D4';
 const ACTIVITIES_FENCE_MATCH_COLOR = [
   'case',
   ['any',
@@ -11089,15 +11113,14 @@ function placeActivitiesGeofence(map, opts) {
 
   const team = getSelectedActivitiesTeam();
   const focusMod = String(getSelectedActivitiesModeratorId() || '').toLowerCase();
-  const allowed = new Map();
-  const collect = (ids, role) => {
-    (ids || []).forEach(id => allowed.set(String(id).toLowerCase(), role));
+  const allowed = new Set();
+  const collect = (ids) => {
+    (ids || []).forEach(id => allowed.add(String(id).toLowerCase()));
   };
   if (team) {
-    collect(team.primaryIds, 'primary');
+    collect(team.primaryIds);
     collect(
-      (typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds,
-      'backup'
+      (typeof getTeamBackupIds === 'function') ? getTeamBackupIds(team) : team.backupIds
     );
   }
   const pings = loadGeoPings();
@@ -11107,14 +11130,8 @@ function placeActivitiesGeofence(map, opts) {
     const ping = pings[idRaw];
     if (!ping || !Number.isFinite(ping.lat) || !Number.isFinite(ping.lng)) return;
     if (focusMod && id !== focusMod) return;
-    let role = ping.role || 'moderator';
-    if (!focusMod && team) {
-      const mapped = allowed.get(id);
-      if (!mapped) return;
-      role = mapped;
-    } else if (!focusMod && allowed.has(id)) {
-      role = allowed.get(id);
-    }
+    if (!focusMod && team && !allowed.has(id)) return;
+    const role = activitiesMarkerRole(idRaw, ping);
     const el = document.createElement('div');
     el.className = 'geo-mod-marker is-' + role + ((now - (ping.at || 0) > GEO_PING_STALE_MS) ? ' is-stale' : '');
     const marker = new maplibregl.Marker({ element: el })
